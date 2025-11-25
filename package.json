@@ -1,0 +1,43 @@
+{
+  "name": "tickethub",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@icons-pack/react-simple-icons": "^13.8.0",
+    "@paystack/inline-js": "^2.22.7",
+    "@radix-ui/react-icons": "^1.3.2",
+    "framer-motion": "^12.23.24",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.554.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
+    "react-paystack": "^6.0.0",
+    "react-qr-code": "^2.0.18",
+    "react-router-dom": "^7.9.6",
+    "simple-icons": "^15.22.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/leaflet": "^1.9.21",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@types/react-router-dom": "^5.3.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.22",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.2"
+  }
+}
