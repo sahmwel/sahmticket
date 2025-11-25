@@ -1,3 +1,4 @@
+// src/pages/EventDetails.tsx
 'use client';
 
 import { useParams, Link, useNavigate } from "react-router-dom";
@@ -40,20 +41,51 @@ export interface Event {
   ticketTiers?: TicketTier[];
 }
 
-// ———————————————————————— Props ————————————————————————
-interface EventDetailsProps {
-  events: Event[]; // All events passed from parent (e.g., via context, loader, or API)
-}
+// ———————————————————————— Dummy Data (real events) ————————————————————————
+const dummyEvents: Event[] = [
+  {
+    id: "1",
+    title: "Detty December Shutdown 2025",
+    image: "https://images.unsplash.com/photo-1540039156060-2b5bee3f0852?w=1200&h=800&fit=crop",
+    description: "The biggest end-of-year party in Lagos. Afrobeat legends, champagne showers, and vibes that never end.",
+    date: "2025-12-27",
+    time: "9:00 PM",
+    location: "Lagos, Nigeria",
+    venue: "Eko Hotel & Suites",
+    address: "Victoria Island, Lagos",
+    price: "₦15,000",
+    lat: 6.4281,
+    lng: 3.4211,
+    ticketTiers: [
+      { name: "Regular", price: "₦15,000", description: "General admission" },
+      { name: "VIP", price: "₦50,000", description: "Fast entry + VIP area" },
+      { name: "Table for 6", price: "₦500,000", description: "Premium table + bottles" },
+    ],
+  },
+  {
+    id: "2",
+    title: "Afrobeats Night Kaduna",
+    image: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&h=800&fit=crop",
+    description: "The hottest Afrobeat artists live in Kaduna!",
+    date: "2025-11-30",
+    time: "8:00 PM",
+    location: "Kaduna, Nigeria",
+    venue: "Murtala Square",
+    price: "₦10,000",
+    lat: 10.5105,
+    lng: 7.4165,
+  },
+  // Add more events as needed
+];
 
 // ———————————————————————— Component ————————————————————————
-export default function EventDetails({ events }: EventDetailsProps) {
+export default function EventDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-
   const [buyingTier, setBuyingTier] = useState<string | null>(null);
 
   // Find current event
-  const event = events.find((e) => e.id === id);
+  const event = dummyEvents.find((e) => e.id === id);
 
   // Generate unique order ID
   const generateOrderId = () =>
@@ -86,20 +118,20 @@ export default function EventDetails({ events }: EventDetailsProps) {
     }, 1800);
   };
 
-  // Loading state (in real app, use React Router loader or Suspense)
+  // Loading / Not Found
   if (!event) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4" />
-          <p className="text-xl font-semibold text-purple-700">Loading event...</p>
+          <p className="text-xl font-semibold text-purple-700">Event not found</p>
         </div>
       </div>
     );
   }
 
-  // Similar events (exclude current)
-  const similarEvents = events
+  // Similar events
+  const similarEvents = dummyEvents
     .filter((e) => e.id !== event.id && e.location.includes(event.location.split(",")[0]))
     .slice(0, 6);
 
