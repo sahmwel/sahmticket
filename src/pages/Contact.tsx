@@ -27,8 +27,8 @@ export default function Contact() {
             {
               icon: Mail,
               title: "Email Us",
-              info: "hello@Sahmtickethub.online",
-              link: "mailto:hello@Sahmtickethub.online",
+              info: "info@Sahmtickethub.online",
+              link: "mailto:info@Sahmtickethub.online",
               color: "from-purple-600 to-pink-600"
             },
             {

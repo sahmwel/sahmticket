@@ -6,6 +6,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import {
   Calendar,
   MapPin,
+  Clock, // Add Clock icon for time
   Music,
   Users,
   Headphones,
@@ -21,7 +22,28 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import L from "leaflet";
+import { events as eventsData, Event } from "../data/events";
 import "leaflet/dist/leaflet.css";
+
+// Date/time formatters (match Home/EventDetails)
+const formatEventDate = (isoOrLabel: string) =>
+  new Date(isoOrLabel).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  });
+
+const formatEventTime = (isoOrTime?: string) => {
+  if (!isoOrTime) return "";
+  if (!isoOrTime.includes("T")) return isoOrTime;
+
+  const d = new Date(isoOrTime);
+  return d.toLocaleTimeString("en-GB", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -30,26 +52,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
-
-// Types
-export interface Event {
-  id: string;
-  title: string;
-  date: string;
-  time: string;
-  price: string;
-  image: string;
-  badge?: string;
-  category: string;
-  venue: string;
-  city: string;
-  coords: [number, number];
-}
-
-// Props
-interface EventsPageProps {
-  events?: Event[];
-}
 
 const categories = [
   { name: "House Party", icon: Moon, color: "from-pink-500 to-rose-500" },
@@ -73,14 +75,15 @@ function ChangeView({ center }: { center: [number, number] }) {
   return null;
 }
 
-export default function EventsPage({ events = [] }: EventsPageProps) {
+export default function EventsPage() {
   const [viewMode, setViewMode] = useState<"map" | "list">("list");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [userLocation, setUserLocation] = useState<[number, number]>([6.5244, 3.3792]); // Default: Lagos
+  const [userLocation, setUserLocation] = useState<[number, number]>([6.5244, 3.3792]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const navigate = useNavigate();
 
-  // Get user location
+  const events: Event[] = eventsData;
+
   useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -91,12 +94,18 @@ export default function EventsPage({ events = [] }: EventsPageProps) {
     }
   }, []);
 
-  // Filter events by category
+  const isNearUser = (coords: [number, number]) => {
+    const [lat, lng] = coords;
+    const [uLat, uLng] = userLocation;
+    const dLat = Math.abs(lat - uLat);
+    const dLng = Math.abs(lng - uLng);
+    return dLat < 0.5 && dLng < 0.5;
+  };
+
   const filteredEvents = selectedCategory === "All"
     ? events
     : events.filter((e) => e.category === selectedCategory);
 
-  // Featured events for carousel (first 4)
   const featuredEvents = events.slice(0, 4);
 
   const goToEvent = (id: string) => {
@@ -116,7 +125,7 @@ export default function EventsPage({ events = [] }: EventsPageProps) {
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-gray-900 mb-3">
             Discover Events Around You
           </h1>
-          <p className="text-lg sm:text-xl text-gray-700">Hottest vibes in Nigeria & beyond</p>
+          <p className="text-lg sm:text-xl text-gray-700">Events near you & across Nigeria</p>
         </motion.div>
 
         {/* Featured Carousel */}
@@ -151,19 +160,20 @@ export default function EventsPage({ events = [] }: EventsPageProps) {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
                       <div className="absolute bottom-6 left-6 right-6 sm:bottom-8 sm:left-8 sm:right-8 text-white">
-                        {event.badge && (
+                        {(event as any).badge && (
                           <span className="inline-block bg-red-600 px-4 py-2 rounded-full text-sm font-bold">
-                            {event.badge}
+                            {(event as any).badge}
                           </span>
                         )}
                         <h3 className="text-3xl sm:text-4xl md:text-6xl font-black mt-4 leading-tight">
                           {event.title}
                         </h3>
-                        <p className="text-xl sm:text-2xl mt-2 flex items-center gap-2">
-                          <Calendar size={22} /> {event.date}
+                        <p className="text-xl sm:text-2xl mt-2 flex items-center gap-3">
+                          <Calendar size={22} />
+                          <span className="font-semibold">{formatEventDate(event.date)}</span>
                         </p>
                         <p className="text-2xl sm:text-3xl font-bold text-purple-400 mt-4">
-                          {event.price}
+                          {event.ticketTiers?.[0]?.price ?? event.price ?? "N/A"}
                         </p>
                       </div>
                     </div>
@@ -177,9 +187,8 @@ export default function EventsPage({ events = [] }: EventsPageProps) {
                   <button
                     key={i}
                     onClick={() => setCurrentSlide(i)}
-                    className={`w-3 h-3 rounded-full transition-all ${
-                      currentSlide === i ? "bg-white w-10" : "bg-white/50"
-                    }`}
+                    className={`w-3 h-3 rounded-full transition-all ${currentSlide === i ? "bg-white w-10" : "bg-white/50"
+                      }`}
                   />
                 ))}
               </div>
@@ -211,38 +220,6 @@ export default function EventsPage({ events = [] }: EventsPageProps) {
           </button>
         </div>
 
-        {/* Category Filter */}
-        <div className="mb-10 overflow-x-auto scrollbar-hide">
-          <div className="flex gap-3 sm:gap-4 pb-4 min-w-max">
-            <button
-              onClick={() => setSelectedCategory("All")}
-              className={`px-5 sm:px-6 py-3 sm:py-4 rounded-2xl font-bold text-sm sm:text-base whitespace-nowrap transition-all ${
-                selectedCategory === "All"
-                  ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
-                  : "bg-white"
-              }`}
-            >
-              All Events
-            </button>
-            {categories.map((cat) => {
-              const Icon = cat.icon;
-              return (
-                <button
-                  key={cat.name}
-                  onClick={() => setSelectedCategory(cat.name)}
-                  className={`flex items-center gap-2 sm:gap-3 px-5 sm:px-6 py-3 sm:py-4 rounded-2xl font-bold text-sm sm:text-base whitespace-nowrap transition-all ${
-                    selectedCategory === cat.name
-                      ? `bg-gradient-to-r ${cat.color} text-white`
-                      : "bg-white"
-                  }`}
-                >
-                  <Icon size={20} /> {cat.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Map View */}
         {viewMode === "map" && (
           <div className="h-96 md:h-[70vh] rounded-3xl overflow-hidden shadow-2xl mb-12">
@@ -253,20 +230,33 @@ export default function EventsPage({ events = [] }: EventsPageProps) {
                 <Popup>You are here</Popup>
               </Marker>
               {filteredEvents.map((event) => (
-                <Marker key={event.id} position={event.coords}>
+                <Marker key={event.id} position={event.coords as [number, number]}>
                   <Popup>
                     <div
                       onClick={() => goToEvent(event.id)}
-                      className="cursor-pointer text-center"
+                      className="cursor-pointer text-center min-w-[250px]"
                     >
                       <img
                         src={event.image}
                         alt={event.title}
                         className="w-full h-32 object-cover rounded-lg mb-2"
                       />
-                      <h4 className="font-bold text-base">{event.title}</h4>
-                      <p className="text-sm text-gray-600">{event.venue}</p>
-                      <p className="font-bold text-purple-600 mt-1">{event.price}</p>
+                      <h4 className="font-bold text-base mb-2">{event.title}</h4>
+                      <div className="flex items-center gap-2 text-sm mb-1">
+                        <Calendar size={16} className="text-purple-600 flex-shrink-0" />
+                        <span>{formatEventDate(event.date)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm mb-1">
+                        <Clock size={16} className="text-purple-600 flex-shrink-0" />
+                        <span>{formatEventTime(event.date)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm mb-2">
+                        <MapPin size={16} className="text-purple-600 flex-shrink-0" />
+                        <span>{event.location}</span>
+                      </div>
+                      <p className="font-bold text-purple-600">
+                        {event.ticketTiers?.[0]?.price ?? "N/A"}
+                      </p>
                     </div>
                   </Popup>
                 </Marker>
@@ -277,65 +267,188 @@ export default function EventsPage({ events = [] }: EventsPageProps) {
 
         {/* List View */}
         {viewMode === "list" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-            {filteredEvents.length === 0 ? (
-              <p className="col-span-full text-center text-gray-500 text-lg py-12">
-                No events found in this category.
-              </p>
-            ) : (
-              filteredEvents.map((event, i) => (
-                <motion.div
-                  key={event.id}
-                  initial={{ opacity: 0, y: 40 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  viewport={{ once: true }}
+          <>
+            {/* Category Filter Chips */}
+            <div className="mb-10 overflow-x-auto scrollbar-hide">
+              <div className="flex gap-3 sm:gap-4 pb-4 min-w-max">
+                <button
+                  onClick={() => setSelectedCategory("All")}
+                  className={`px-5 sm:px-6 py-3 sm:py-4 rounded-2xl font-bold text-sm sm:text-base whitespace-nowrap transition-all shadow-lg ${
+                    selectedCategory === "All"
+                      ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
+                      : "bg-white text-gray-800 border border-gray-200"
+                  }`}
                 >
-                  <div
-                    onClick={() => goToEvent(event.id)}
-                    className="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all cursor-pointer border border-purple-100 overflow-hidden group"
+                  All Events ({events.length})
+                </button>
+                {categories.map((cat) => {
+                  const count = events.filter(e => e.category === cat.name).length;
+                  const Icon = cat.icon;
+                  return (
+                    <button
+                      key={cat.name}
+                      onClick={() => setSelectedCategory(cat.name)}
+                      className={`flex items-center gap-2 sm:gap-3 px-5 sm:px-6 py-3 sm:py-4 rounded-2xl font-bold text-sm sm:text-base whitespace-nowrap transition-all shadow-lg ${
+                        selectedCategory === cat.name
+                          ? `bg-gradient-to-r ${cat.color} text-white`
+                          : "bg-white text-gray-800 border border-gray-200"
+                      }`}
+                    >
+                      <Icon size={20} className="w-5 h-5 flex-shrink-0" />
+                      {cat.name} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selected Category Events */}
+            <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-6">
+              {selectedCategory}
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 mb-16">
+              {filteredEvents.length === 0 ? (
+                <p className="col-span-full text-center text-gray-500 text-lg py-12">
+                  No events found in this category.
+                </p>
+              ) : (
+                filteredEvents.map((event, i) => (
+                  <motion.div
+                    key={event.id}
+                    initial={{ opacity: 0, y: 40 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    viewport={{ once: true }}
                   >
-                    <div className="relative">
-                      <img
-                        src={event.image}
-                        alt={event.title}
-                        className="w-full h-56 sm:h-64 object-cover group-hover:scale-110 transition-transform duration-700"
-                      />
-                      {event.badge && (
-                        <div className="absolute top-4 left-4 bg-gradient-to-r from-red-600 to-pink-600 text-white px-4 py-2 rounded-full text-xs font-bold">
-                          {event.badge}
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-5 sm:p-6">
-                      <h3 className="text-xl sm:text-2xl font-black text-gray-900 group-hover:text-purple-600 transition">
-                        {event.title}
-                      </h3>
-                      <div className="mt-4 space-y-3 text-gray-700">
-                        <div className="flex items-center gap-3">
-                          <Calendar size={18} className="text-purple-600" />
-                          <div>
-                            <p className="font-semibold text-sm sm:text-base">{event.date}</p>
-                            <p className="text-xs sm:text-sm text-gray-500">{event.time}</p>
+                    <div
+                      onClick={() => goToEvent(event.id)}
+                      className="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all cursor-pointer border border-purple-100 overflow-hidden group"
+                    >
+                      <div className="relative">
+                        <img
+                          src={event.image}
+                          alt={event.title}
+                          className="w-full h-56 sm:h-64 object-cover group-hover:scale-110 transition-transform duration-700"
+                        />
+                        {(event as any).badge && (
+                          <div className="absolute top-4 left-4 bg-gradient-to-r from-red-600 to-pink-600 text-white px-4 py-2 rounded-full text-xs font-bold">
+                            {(event as any).badge}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <MapPin size={18} className="text-purple-600" />
-                          <p className="font-medium text-sm sm:text-base">{event.venue}</p>
-                        </div>
+                        )}
                       </div>
-                      <div className="mt-6 sm:mt-8">
-                        <button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3.5 sm:py-4 rounded-2xl flex items-center justify-center gap-2 hover:scale-105 transition-transform text-sm sm:text-base shadow-lg">
-                          <Ticket size={22} />
-                          Get Ticket • {event.price}
-                        </button>
+                      <div className="p-5 sm:p-6">
+                        <h3 className="text-xl sm:text-2xl font-black text-gray-900 group-hover:text-purple-600 transition">
+                          {event.title}
+                        </h3>
+                        <div className="mt-4 space-y-3 text-gray-700">
+                          <div className="flex items-center gap-3">
+                            <Calendar size={18} className="text-purple-600 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-sm sm:text-base truncate">
+                                {formatEventDate(event.date)}
+                              </p>
+                              <p className="text-xs sm:text-sm text-gray-500">
+                                {formatEventTime(event.date || (event as any).time)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <MapPin size={18} className="text-purple-600 flex-shrink-0" />
+                            <p className="font-medium text-sm sm:text-base truncate">{event.location}</p>
+                          </div>
+                          {(event as any).coords && isNearUser((event as any).coords) && (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
+                              <MapPinned size={14} />
+                              Near you
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-6 sm:mt-8">
+                          <button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3.5 sm:py-4 rounded-2xl flex items-center justify-center gap-2 hover:scale-105 transition-transform text-sm sm:text-base shadow-lg">
+                            <Ticket size={22} />
+                            Get Ticket • {event.ticketTiers?.[0]?.price ?? "N/A"}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))
-            )}
-          </div>
+                  </motion.div>
+                ))
+              )}
+            </div>
+
+            {/* Events near you */}
+            <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-6">
+              Events near you
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+              {events
+                .filter((event) => event.coords && isNearUser(event.coords))
+                .map((event, i) => (
+                  <motion.div
+                    key={event.id}
+                    initial={{ opacity: 0, y: 40 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    viewport={{ once: true }}
+                  >
+                    <div
+                      onClick={() => goToEvent(event.id)}
+                      className="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all cursor-pointer border border-purple-100 overflow-hidden group"
+                    >
+                      <div className="relative">
+                        <img
+                          src={event.image}
+                          alt={event.title}
+                          className="w-full h-56 sm:h-64 object-cover group-hover:scale-110 transition-transform duration-700"
+                        />
+                        {(event as any).badge && (
+                          <div className="absolute top-4 left-4 bg-gradient-to-r from-red-600 to-pink-600 text-white px-4 py-2 rounded-full text-xs font-bold">
+                            {(event as any).badge}
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-5 sm:p-6">
+                        <h3 className="text-xl sm:text-2xl font-black text-gray-900 group-hover:text-purple-600 transition">
+                          {event.title}
+                        </h3>
+                        <div className="mt-4 space-y-3 text-gray-700">
+                          <div className="flex items-center gap-3">
+                            <Calendar size={18} className="text-purple-600 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-sm sm:text-base truncate">
+                                {formatEventDate(event.date)}
+                              </p>
+                              <p className="text-xs sm:text-sm text-gray-500">
+                                {formatEventTime(event.date || event.time)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <MapPin size={18} className="text-purple-600 flex-shrink-0" />
+                            <p className="font-medium text-sm sm:text-base truncate">{event.location}</p>
+                          </div>
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
+                            <MapPinned size={14} />
+                            Near you
+                          </span>
+                        </div>
+                        <div className="mt-6 sm:mt-8">
+                          <button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3.5 sm:py-4 rounded-2xl flex items-center justify-center gap-2 hover:scale-105 transition-transform text-sm sm:text-base shadow-lg">
+                            <Ticket size={22} />
+                            Get Ticket • {event.ticketTiers?.[0]?.price ?? "N/A"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              {events.filter((event) => event.coords && isNearUser(event.coords)).length === 0 && (
+                <p className="col-span-full text-center text-gray-500 text-lg py-12">
+                  No events near your location right now.
+                </p>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

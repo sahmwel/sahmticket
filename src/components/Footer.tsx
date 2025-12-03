@@ -68,7 +68,7 @@ export default function Footer() {
             <h3 className="text-2xl font-bold mb-6">Get in Touch</h3>
             <div className="space-y-5 text-pink-200 mb-8">
               <a href="mailto:hello@sahmtickethub.online" className="flex items-center gap-3 hover:text-white transition">
-                <Mail size={18} /> hello@sahmtickethub.online
+                <Mail size={18} /> info@sahmtickethub.online
               </a>
               <a href="tel:+2347035651109" className="flex items-center gap-3 hover:text-white transition">
                 <Phone size={18} /> +234 703 565 1109

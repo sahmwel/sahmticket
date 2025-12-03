@@ -1,19 +1,37 @@
 // vite.config.ts
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        additionalData: `@import "@/styles/variables.scss";`, // if you have SCSS
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            return 'vendor'; // put all node_modules in a 'vendor' chunk
+            return 'vendor';
           }
         }
       }
     },
-    chunkSizeWarningLimit: 1000, // increase limit to 1 MB if needed
+    chunkSizeWarningLimit: 1000,
+  },
+  server: {
+    fs: {
+      allow: ['..']
+    }
   }
 });

@@ -1,47 +1,51 @@
-'use client';
+// src/components/EventMap.tsx
+import { useEffect, useRef } from "react";
+import L from "leaflet";
 
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-interface EventMapProps {
+interface Props {
   lat: number;
   lng: number;
-  venue: string;
-  address?: string;
+  venue?: string;
 }
 
-// Fix for default marker icon issues in Leaflet (TS-safe)
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
+export default function EventMap({ lat, lng, venue }: Props) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
 
-export default function EventMap({ lat, lng, venue, address }: EventMapProps) {
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    // Only create the map once
+    if (!mapRef.current) {
+      mapRef.current = L.map(containerRef.current).setView([lat, lng], 15);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+      }).addTo(mapRef.current);
+
+      L.marker([lat, lng])
+        .addTo(mapRef.current)
+        .bindPopup(venue || "Event location")
+        .openPopup();
+    } else {
+      // If props change, just move the view and marker
+      mapRef.current.setView([lat, lng], 15);
+    }
+
+    // Cleanup on unmount ONLY
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, [lat, lng, venue]);
+
   return (
-    <div className="w-full h-96 rounded-3xl overflow-hidden shadow-2xl">
-      <MapContainer
-        center={[lat, lng]}
-        zoom={16}
-        scrollWheelZoom={false}
-        style={{ width: '100%', height: '100%' }}
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          // TypeScript-safe: attribution works on TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        />
-        <Marker position={[lat, lng]}>
-          <Popup>
-            <strong>{venue}</strong>
-            {address && <div>{address}</div>}
-          </Popup>
-        </Marker>
-      </MapContainer>
-    </div>
+    <div
+      ref={containerRef}
+      className="w-full h-full"
+      style={{ minHeight: 250 }}
+    />
   );
 }
