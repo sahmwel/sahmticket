@@ -1,331 +1,295 @@
-'use client';
-
+// src/components/AuthModal.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabaseClient.ts";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  X,
-  Mail,
-  Lock,
-  User,
-  Phone,
-  Check,
-  AlertCircle,
-  ArrowLeft,
-  Eye,
-  EyeOff,
-} from "lucide-react";
-import LogoWhite from "/src/assets/logo-white.png";
+import { X, Mail, Lock, User, Phone, Eye, EyeOff, ArrowLeft } from "lucide-react";
+import logo from "../assets/logo-white.png";
 
-export default function AuthModal() {
+interface AuthModalProps {
+  onClose: () => void;
+}
+
+export default function AuthModal({ onClose }: AuthModalProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [showForgot, setShowForgot] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showOTP, setShowOTP] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [forgotEmail, setForgotEmail] = useState("");
+  const [role, setRole] = useState<"admin" | "organizer">("organizer");
+  const [otp, setOtp] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const navigate = useNavigate();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const closeModal = () => navigate(-1);
+  // ===== SIGN UP =====
+ const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  setMessage(null);
 
-  // Password strength indicator
-  const getPasswordStrength = (pass: string) => {
-    if (!pass) return { strength: 0, label: "", color: "" };
-    if (pass.length < 6) return { strength: 1, label: "Weak", color: "bg-red-500" };
-    if (pass.length < 8) return { strength: 2, label: "Fair", color: "bg-orange-500" };
-    if (/[A-Z]/.test(pass) && /[0-9]/.test(pass) && /[^A-Za-z0-9]/.test(pass))
-      return { strength: 4, label: "Very Strong", color: "bg-emerald-500" };
-    if (/[A-Z]/.test(pass) || /[0-9]/.test(pass))
-      return { strength: 3, label: "Strong", color: "bg-green-500" };
-    return { strength: 2, label: "Medium", color: "bg-yellow-500" };
+  if (password.length < 6) return setMessage("Password must be at least 6 characters");
+  if (password !== confirmPassword) return setMessage("Passwords do not match");
+
+  try {
+    setLoading(true);
+
+    // Sign up user
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { role } },
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error("Signup failed");
+
+    setUserId(data.user.id);
+
+    // Generate OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Save OTP in Supabase
+    await supabase.from("otp_codes").insert({ user_id: data.user.id, otp: generatedOtp });
+
+    // Get confirmation link from Supabase
+    const { data: linkData, error: linkError } = await supabase.auth.getOtpForEmail(email);
+    // Or use your Supabase API to generate confirmation link if using default magic link flow
+    const confirmationLink = `${window.location.origin}/auth?email=${email}&token=${linkData?.token || ""}`;
+
+    // Send email via Edge Function
+    const res = await fetch("/functions/v1/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        otp: generatedOtp,
+        confirmation_link: confirmationLink,
+      }),
+    });
+
+    if (!res.ok) throw new Error("Failed to send OTP email");
+
+    setShowOTP(true);
+    setMessage("OTP and confirmation link sent to your email");
+  } catch (err: any) {
+    setMessage(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // ===== VERIFY OTP =====
+  const handleVerifyOTP = async () => {
+    if (!userId) return;
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const { data, error } = await supabase
+        .from("otp_codes")
+        .select("otp")
+        .eq("user_id", userId)
+        .eq("otp", otp)
+        .single();
+
+      if (error || !data) throw new Error("Invalid OTP");
+
+      await supabase.from("otp_codes").delete().eq("user_id", userId);
+
+      setShowOTP(false);
+      setIsLogin(true);
+      setMessage("OTP verified! Logging in...");
+
+      // Auto-login after OTP
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (loginError) throw loginError;
+      if (!loginData.user) throw new Error("Login failed");
+
+      const userRole = loginData.user.user_metadata?.role || "organizer";
+      window.location.href = userRole === "admin" ? "/admin" : "/organizer";
+    } catch (err: any) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const strength = getPasswordStrength(password);
-  const passwordsMatch = !confirmPassword || password === confirmPassword;
-  const isStrongEnough = strength.strength >= 2;
-
-  const handleSubmit = (e: React.FormEvent) => {
+  // ===== LOGIN =====
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLogin && (!isStrongEnough || !passwordsMatch)) return;
+    setLoading(true);
+    setMessage(null);
 
-    // Replace with real auth later
-    alert(isLogin ? "Logged in successfully!" : "Account created!");
-    navigate("/dashboard");
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      if (!data.user) throw new Error("Login failed");
+
+      const userRole = data.user.user_metadata?.role || "organizer";
+      window.location.href = userRole === "admin" ? "/admin" : "/organizer";
+    } catch (err: any) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleForgotPassword = (e: React.FormEvent) => {
+  // ===== FORGOT PASSWORD =====
+  const handleForgotPassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!forgotEmail.includes("@")) return alert("Please enter a valid email");
+    setLoading(true);
+    setMessage(null);
 
-    setEmailSent(true);
-    setTimeout(() => {}, 2000);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: window.location.origin + "/auth",
+      });
+      if (error) throw error;
+
+      setMessage("Check your email for password reset link");
+      setShowForgot(false);
+    } catch (err: any) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <AnimatePresence>
-      {/* Main Auth Modal */}
-      {!showForgot ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/80 backdrop-blur-2xl z-50 flex items-center justify-center p-4"
-          onClick={closeModal}
-        >
+      {!showOTP ? (
+        !showForgot ? (
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            transition={{ type: "spring", damping: 30, stiffness: 400 }}
-            className="bg-gradient-to-br from-purple-900/95 via-pink-900/95 to-rose-900/95 backdrop-blur-3xl border border-white/20 rounded-3xl w-full max-w-md shadow-3xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-xl z-50 flex items-center justify-center p-4"
           >
-            {/* Close Button */}
-            <button
-              onClick={closeModal}
-              className="absolute top-4 right-4 text-white/70 hover:text-white transition z-10"
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", damping: 30, stiffness: 400 }}
+              className="bg-gradient-to-br from-purple-900/95 via-pink-900/95 to-rose-900/95 backdrop-blur-3xl border border-white/20 rounded-3xl w-full max-w-[360px] shadow-3xl overflow-hidden mx-2"
             >
-              <X size={28} />
-            </button>
+              {/* X button closes modal */}
+              <button onClick={onClose} className="absolute top-3 right-3 text-white/70 hover:text-white z-20">
+                <X size={24} />
+              </button>
 
-            {/* Header */}
-            <div className="text-center pt-10 pb-6 px-6">
-              <img src={LogoWhite} alt="SahmTicketHub" className="h-16 mx-auto mb-4" />
-              <h2 className="text-3xl font-black text-white">
-                {isLogin ? "Welcome Back" : "Join the Vibe"}
-              </h2>
-              <p className="text-pink-200 text-sm mt-2">
-                {isLogin ? "Log in to your account" : "Create your organizer account"}
-              </p>
-            </div>
-
-            {/* Toggle */}
-            <div className="flex bg-white/10 backdrop-blur mx-6 rounded-2xl p-1.5 mb-6">
-              {["Log In", "Sign Up"].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setIsLogin(tab === "Log In")}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${
-                    (isLogin && tab === "Log In") || (!isLogin && tab === "Sign Up")
-                      ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg"
-                      : "text-white/60"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="px-6 pb-10 space-y-5">
-              {!isLogin && (
-                <>
-                  <div className="relative">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-5 h-5" />
-                    <input
-                      type="text"
-                      required
-                      placeholder="Full Name"
-                      className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-pink-300 focus:outline-none focus:border-purple-400 transition"
-                    />
-                  </div>
-
-                  <div className="relative">
-                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-5 h-5" />
-                    <input
-                      type="tel"
-                      required
-                      placeholder="+234 801 234 5678"
-                      className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-pink-300 focus:outline-none focus:border-purple-400 transition"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-5 h-5" />
-                <input
-                  type="email"
-                  required
-                  placeholder="Email Address"
-                  className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-pink-300 focus:outline-none focus:border-purple-400 transition"
-                />
+              {/* Logo + Heading */}
+              <div className="text-center pt-4 pb-2 px-4 flex flex-col items-center gap-1 z-10">
+                <img src={logo} alt="TicketHub" className="w-28 h-auto" />
+                <h2 className="text-2xl font-black text-white -mt-1">
+                  {isLogin ? "Welcome Back" : "Join the Vibe"}
+                </h2>
               </div>
 
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-5 h-5" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
-                  className="w-full pl-12 pr-12 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-pink-300 focus:outline-none focus:border-purple-400 transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/60 hover:text-white"
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-
-              {/* Password Strength */}
-              {!isLogin && password && (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4].map((level) => (
-                      <div
-                        key={level}
-                        className={`h-2 flex-1 rounded-full transition-all ${
-                          level <= strength.strength ? strength.color : "bg-white/20"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <p className="text-xs text-pink-200 text-right font-medium">
-                    {strength.label}
-                  </p>
-                </div>
-              )}
-
-              {/* Confirm Password */}
-              {!isLogin && (
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-5 h-5" />
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm Password"
-                    className={`w-full pl-12 pr-12 py-4 bg-white/10 border rounded-2xl text-white placeholder-pink-300 focus:outline-none transition ${
-                      confirmPassword && !passwordsMatch
-                        ? "border-red-500"
-                        : "border-white/20 focus:border-purple-400"
+              {/* Tabs */}
+              <div className="flex bg-white/10 backdrop-blur mx-4 rounded-xl p-1 mb-4">
+                {["Log In", "Sign Up"].map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setIsLogin(tab === "Log In")}
+                    className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all ${
+                      (isLogin && tab === "Log In") || (!isLogin && tab === "Sign Up")
+                        ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow"
+                        : "text-white/60"
                     }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-white/60 hover:text-white"
                   >
-                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    {tab}
                   </button>
-                  {confirmPassword && passwordsMatch && (
-                    <Check className="absolute right-12 top-1/2 -translate-y-1/2 text-green-400 w-5 h-5" />
-                  )}
-                  {confirmPassword && !passwordsMatch && (
-                    <AlertCircle className="absolute right-12 top-1/2 -translate-y-1/2 text-red-400 w-5 h-5" />
-                  )}
+                ))}
+              </div>
+
+              {message && <p className="text-center text-sm text-yellow-300 mb-2">{message}</p>}
+
+              <form onSubmit={isLogin ? handleLogin : handleSignUp} className="px-4 md:px-5 pb-8 space-y-4">
+                {!isLogin && (
+                  <>
+                    <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-4 h-4" />
+                      <input type="text" required placeholder="Full Name" className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-pink-300 focus:outline-none" />
+                    </div>
+                    <div className="relative">
+                      <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-4 h-4" />
+                      <input type="tel" required placeholder="+234 801 234 5678" className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-pink-300 focus:outline-none" />
+                    </div>
+                  </>
+                )}
+
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-4 h-4" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="Email Address" className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-pink-300 focus:outline-none" />
                 </div>
-              )}
 
-              {isLogin && (
-                <button
-                  type="button"
-                  onClick={() => setShowForgot(true)}
-                  className="text-pink-300 text-sm hover:underline block text-right w-full font-medium"
-                >
-                  Forgot password?
-                </button>
-              )}
-
-              <button
-                type="submit"
-                disabled={!isLogin && (!isStrongEnough || !passwordsMatch)}
-                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-lg py-5 rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLogin ? "Log In" : "Create Account"}
-              </button>
-
-              {isLogin && (
-                <p className="text-center text-pink-200 text-sm">
-                  New here?{" "}
-                  <button
-                    type="button"
-                    onClick={() => setIsLogin(false)}
-                    className="text-white font-bold underline hover:no-underline"
-                  >
-                    Sign up
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-4 h-4" />
+                  <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Password" className="w-full pl-10 pr-10 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-pink-300 focus:outline-none" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 hover:text-white">
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
-                </p>
-              )}
-            </form>
-          </motion.div>
-        </motion.div>
-      ) : (
-        /* Forgot Password Flow */
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="fixed inset-0 bg-black/80 backdrop-blur-2xl z-50 flex items-center justify-center p-4"
-          onClick={() => setShowForgot(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-gradient-to-br from-purple-900/95 to-pink-900/95 backdrop-blur-3xl border border-white/20 rounded-3xl w-full max-w-md p-10 shadow-3xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowForgot(false)}
-              className="absolute top-4 left-4 text-white/70 hover:text-white"
-            >
-              <ArrowLeft size={28} />
-            </button>
+                </div>
 
-            <div className="text-center">
-              <img src={LogoWhite} alt="SahmTicketHub" className="h-14 mx-auto mb-6" />
-              <h2 className="text-3xl font-black text-white mb-3">Reset Password</h2>
-              <p className="text-pink-200 text-sm mb-8">
-                {emailSent
-                  ? "Check your email for the reset link"
-                  : "Enter your email and we’ll send you a reset link"}
-              </p>
-
-              {!emailSent ? (
-                <form onSubmit={handleForgotPassword} className="space-y-6">
+                {!isLogin && (
                   <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-6 h-6" />
-                    <input
-                      type="email"
-                      value={forgotEmail}
-                      onChange={(e) => setForgotEmail(e.target.value)}
-                      required
-                      placeholder="your@email.com"
-                      className="w-full pl-14 pr-4 py-5 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-pink-300 focus:outline-none focus:border-purple-400 text-base"
-                    />
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-4 h-4" />
+                    <input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required placeholder="Confirm Password" className="w-full pl-10 pr-10 py-3 bg-white/10 border rounded-xl text-white placeholder-pink-300 focus:outline-none" />
+                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 hover:text-white">
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
-                  <button
-                    type="submit"
-                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black py-5 rounded-2xl hover:scale-105 transition-all shadow-2xl"
-                  >
-                    Send Reset Link
-                  </button>
-                </form>
-              ) : (
-                <div className="py-10">
-                  <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Check className="w-12 h-12 text-green-400" />
-                  </div>
-                  <p className="text-white font-bold text-xl">Email Sent!</p>
-                  <p className="text-pink-200 text-sm mt-3">Check your inbox (and spam folder)</p>
-                </div>
-              )}
+                )}
 
-              <button
-                onClick={() => setShowForgot(false)}
-                className="mt-8 text-pink-300 hover:underline font-medium"
-              >
-                Back to Login
+                {isLogin && (
+                  <button type="button" onClick={() => setShowForgot(true)} className="text-pink-300 text-xs hover:underline block text-right w-full font-medium">Forgot password?</button>
+                )}
+
+                <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-base py-3.5 rounded-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                  {loading ? "Please wait..." : isLogin ? "Log In" : "Create Account"}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        ) : (
+          /* Forgot Password Modal */
+          <motion.div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+            <motion.div className="bg-purple-900/95 p-6 rounded-3xl w-full max-w-[360px] mx-2 relative">
+              <button onClick={() => setShowForgot(false)} className="absolute top-3 left-3 text-white/70 hover:text-white">
+                <ArrowLeft size={24} />
               </button>
-            </div>
+              <h2 className="text-white font-bold text-xl mb-4">Reset Password</h2>
+              {message && <p className="text-yellow-300 mb-2">{message}</p>}
+              <form onSubmit={handleForgotPassword}>
+                <div className="relative mb-4">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400 w-4 h-4" />
+                  <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Email" className="w-full pl-10 pr-3 py-3 rounded-xl text-white bg-white/10 border border-white/20 focus:outline-none" />
+                </div>
+                <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-xl font-bold">
+                  {loading ? "Sending..." : "Send Reset Link"}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )
+      ) : (
+        /* OTP Modal */
+        <motion.div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <motion.div className="bg-purple-900/90 p-6 rounded-3xl w-full max-w-[360px] mx-2">
+            <h2 className="text-white font-bold text-xl mb-4">Enter OTP</h2>
+            {message && <p className="text-yellow-300 mb-2">{message}</p>}
+            <input value={otp} onChange={(e) => setOtp(e.target.value)} type="text" placeholder="Enter OTP" className="w-full p-3 rounded-xl mb-4" />
+            <button onClick={handleVerifyOTP} disabled={loading} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-xl font-bold">
+              {loading ? "Verifying..." : "Verify OTP"}
+            </button>
           </motion.div>
         </motion.div>
       )}

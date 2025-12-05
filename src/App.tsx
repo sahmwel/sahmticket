@@ -22,6 +22,7 @@ import FAQ from './pages/FAQ';
 import AuthModal from './pages/AuthModal';
 import OrganizerDashboard from './pages/OrganizerDashboard';
 import CreateEvent from './pages/CreateEvent'; // Usually full-screen for organizers
+import AuthPage from './pages/auth/AuthPage';
 
 function App() {
   return (
@@ -46,7 +47,7 @@ function App() {
         </Route>
 
         {/* === FULL-SCREEN PAGES (No Navbar/Footer) === */}
-        <Route path="/auth" element={<AuthModal />} />
+        <Route path="/auth" element={<AuthPage />} />
         <Route path="/dashboard" element={<OrganizerDashboard />} />
         <Route path="/create-event" element={<CreateEvent />} />
         <Route path="/create-event-form" element={<CreateEvent />} /> {/* In case you use this route */}

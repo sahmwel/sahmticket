@@ -1,7 +1,8 @@
-// src/env.d.ts
+/// <reference types="vite/client" />
+
 interface ImportMetaEnv {
-  readonly VITE_PAYSTACK_PUBLIC_KEY: string;
-  // Add more env vars here later if needed
+  readonly VITE_PAYSTACK_KEY: string;
+  // add other env variables here
 }
 
 interface ImportMeta {
