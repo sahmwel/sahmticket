@@ -1,7 +1,5 @@
-// Responsive Bag Component with Working PDF Download & Share
-// NOTE: Replace placeholder functions with actual backend/pdf generation if needed.
-
 'use client';
+
 import { useParams, Link } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -33,29 +31,27 @@ interface Order {
 export default function Bag() {
   const { orderId } = useParams<{ orderId: string }>();
   const [searchParams] = useSearchParams();
-
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
 
   // PDF download
   const handleDownloadPDF = () => {
-  const element = document.getElementById("ticket-section");
-  if (!element) return;
+    const element = document.getElementById("ticket-section");
+    if (!element) return;
 
-  import("html2canvas").then((html2canvas) => {
-    import("jspdf").then((jsPDF) => {
-      (html2canvas.default as any)(element, { scale: 2 }).then((canvas: HTMLCanvasElement) => {
-        const imgData = canvas.toDataURL("image/png");
-        const pdf = new jsPDF.jsPDF("p", "mm", "a4");
-        const width = pdf.internal.pageSize.getWidth();
-        const height = (canvas.height * width) / canvas.width;
-        pdf.addImage(imgData, "PNG", 0, 0, width, height);
-        pdf.save(`ticket-${order?.id}.pdf`);
+    import("html2canvas").then((html2canvas) => {
+      import("jspdf").then((jsPDF) => {
+        (html2canvas.default as any)(element, { scale: 2 }).then((canvas: HTMLCanvasElement) => {
+          const imgData = canvas.toDataURL("image/png");
+          const pdf = new jsPDF.jsPDF("p", "mm", "a4");
+          const width = pdf.internal.pageSize.getWidth();
+          const height = (canvas.height * width) / canvas.width;
+          pdf.addImage(imgData, "PNG", 0, 0, width, height);
+          pdf.save(`ticket-${order?.id}.pdf`);
+        });
       });
     });
-  });
-};
-
+  };
 
   // Web share API
   const handleShare = async () => {

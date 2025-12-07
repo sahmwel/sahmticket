@@ -14,16 +14,16 @@ import {
   Car,
   Loader2,
   X,
-  CreditCard,
-  Mail,
-  User,
-  Smartphone,
-  CheckCircle,
   Clock,
-  Lock,
+  CreditCard,
+  Smartphone,
+  Building2,
+  CheckCircle,
 } from "lucide-react";
 import EventMap from "../components/EventMap";
 import { supabase } from "../lib/supabaseClient";
+import QRCode from "qrcode";
+
 
 interface TicketTier {
   name: string;
@@ -64,47 +64,68 @@ export default function EventDetails() {
   const [formData, setFormData] = useState({ fullName: "", email: "", phone: "" });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
+  // Fetch Event
   useEffect(() => {
     const fetchEvent = async () => {
-      if (!id) {
+      if (!id) return setLoading(false);
+
+      try {
+        const { data, error } = await supabase
+          .from("events")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (error || !data) {
+          console.error("Error fetching event:", error);
+          setEvent(null);
+          setLoading(false);
+          return;
+        }
+
+        let ticketTiers: TicketTier[] = [];
+        if (Array.isArray(data.ticketTiers)) {
+          ticketTiers = data.ticketTiers.map((tier: any) => ({
+            name: tier.name || "Standard",
+            price: tier.price || "₦0",
+            description: tier.description || "",
+          }));
+        } else if (typeof data.ticketTiers === "string") {
+          try {
+            const parsed = JSON.parse(data.ticketTiers);
+            if (Array.isArray(parsed)) {
+              ticketTiers = parsed.map((tier: any) => ({
+                name: tier.name || "Standard",
+                price: tier.price || "₦0",
+                description: tier.description || "",
+              }));
+            }
+          } catch (e) {
+            console.warn("Failed to parse ticketTiers JSON:", e);
+          }
+        }
+
+        setEvent({ ...data, ticketTiers });
+      } catch (err) {
+        console.error("Unexpected error fetching event:", err);
+        setEvent(null);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const { data, error } = await supabase
-        .from("events")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      if (error || !data) {
-        console.error(error);
-        setLoading(false);
-        return;
-      }
-
-      const parsedEvent = {
-        ...data,
-        ticketTiers: typeof data.ticketTiers === "string"
-          ? JSON.parse(data.ticketTiers)
-          : data.ticketTiers || [],
-      };
-
-      setEvent(parsedEvent);
-      setLoading(false);
     };
 
     fetchEvent();
   }, [id]);
 
+  // Initialize quantities for each tier
   useEffect(() => {
-    if (event?.ticketTiers) {
-      const init: { [key: string]: number } = {};
-      event.ticketTiers.forEach((tier) => (init[tier.name] = 1));
-      setQuantities(init);
-    }
+    if (!event?.ticketTiers) return;
+    const initQuantities: { [key: string]: number } = {};
+    event.ticketTiers.forEach((tier) => (initQuantities[tier.name] = 1));
+    setQuantities(initQuantities);
   }, [event]);
 
+  // Load Paystack script dynamically
   useEffect(() => {
     if (!showCheckout) return;
     const script = document.createElement("script");
@@ -114,16 +135,38 @@ export default function EventDetails() {
     return () => script.remove();
   }, [showCheckout]);
 
-  if (loading) return <div className="min-h-screen flex-center"><Loader2 className="w-12 h-12 animate-spin text-purple-600" /></div>;
-  if (!event) return <div className="min-h-screen flex-center text-2xl text-purple-700">Event not found</div>;
+  if (loading)
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-purple-600" />
+      </div>
+    );
 
-  const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long" });
-  const formatTime = (d: string) => new Date(d).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
+  if (!event)
+    return (
+      <div className="min-h-screen flex items-center justify-center text-2xl text-purple-700">
+        Event not found
+      </div>
+    );
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+    });
+
+  const formatTime = (d: string) =>
+    new Date(d).toLocaleTimeString("en-GB", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
 
   const handleQuantityChange = (tierName: string, increment: boolean) => {
-    setQuantities(prev => ({
+    setQuantities((prev) => ({
       ...prev,
-      [tierName]: Math.max(1, (prev[tierName] || 1) + (increment ? 1 : -1))
+      [tierName]: Math.max(1, (prev[tierName] || 1) + (increment ? 1 : -1)),
     }));
   };
 
@@ -152,6 +195,7 @@ export default function EventDetails() {
   const cleanPrice = checkoutData?.tier.price
     ? parseInt(checkoutData.tier.price.replace(/[^0-9]/g, ""), 10) || 0
     : 0;
+
   const totalAmount = cleanPrice * (checkoutData?.quantity || 1);
   const formattedTotal = new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -159,15 +203,60 @@ export default function EventDetails() {
     minimumFractionDigits: 0,
   }).format(totalAmount);
 
-  const initializePaystack = () => {
-    if (!window.PaystackPop) {
-      alert("Payment gateway loading...");
+  const initializePaystack = async () => {
+    if (!formData.fullName.trim() || !formData.email.trim() || !formData.phone.trim()) {
+      alert("Please fill in all fields");
       setCheckoutLoading(false);
       return;
     }
 
-    if (!formData.fullName.trim() || !formData.email.trim() || !formData.phone.trim()) {
-      alert("Please fill in all fields");
+    // Clean price per ticket
+    const cleanPrice = checkoutData?.tier.price
+      ? parseInt(checkoutData.tier.price.replace(/[^0-9]/g, ""), 10) || 0
+      : 0;
+
+    const totalAmount = cleanPrice * (checkoutData?.quantity || 1);
+    const formattedTotal = new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      minimumFractionDigits: 0,
+    }).format(totalAmount);
+
+    // Handle free tickets
+    if (totalAmount <= 0) {
+      setCheckoutLoading(true);
+
+      try {
+        const freeRef = `FREE-${checkoutData.orderId}-${Date.now()}`;
+
+        for (let i = 0; i < (checkoutData.quantity || 1); i++) {
+          const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}`;
+          const qr_code_url = await QRCode.toDataURL(qrData);
+
+          await supabase.from("tickets").insert({
+            event_id: event.id,
+            buyer_id: null,  // no login
+            qr_code_url,     // use the correct variable
+            ticket_type: checkoutData.tier.name,
+            price: 0
+          });
+        }
+
+        closeCheckout();
+        navigate(`/bag/${checkoutData.orderId}?ref=${freeRef}`);
+        return;
+
+      } catch (err) {
+        console.error("Error saving free ticket:", err);
+        alert("Could not issue free ticket. Please try again.");
+        setCheckoutLoading(false);
+        return;
+      }
+    }
+
+    // Handle paid tickets
+    if (!window.PaystackPop) {
+      alert("Payment gateway loading...");
       setCheckoutLoading(false);
       return;
     }
@@ -186,15 +275,35 @@ export default function EventDetails() {
         full_name: formData.fullName.trim(),
         phone: formData.phone.trim(),
       },
-      callback: (response: { reference: string }) => {
-        closeCheckout();
-        navigate(`/bag/${checkoutData.orderId}?ref=${response.reference}`);
+      callback: async (response: { reference: string }) => {
+        try {
+          // Insert one row per ticket after payment
+          for (let i = 0; i < (checkoutData.quantity || 1); i++) {
+            const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}`;
+            const qr_code_url = await QRCode.toDataURL(qrData);
+
+            await supabase.from("tickets").insert({
+              event_id: event.id,
+              ticket_type: checkoutData.tier.name,
+              price: cleanPrice,
+              qr_code_url,
+              reference: response.reference,
+            });
+          }
+
+          closeCheckout();
+          navigate(`/bag/${checkoutData.orderId}?ref=${response.reference}`);
+        } catch (err) {
+          console.error("Error saving tickets after payment:", err);
+          alert("Payment succeeded but ticket issuance failed. Contact support.");
+        }
       },
       onClose: () => setCheckoutLoading(false),
     });
 
     handler.openIframe ? handler.openIframe() : handler();
   };
+
 
   const handleCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,15 +314,17 @@ export default function EventDetails() {
   return (
     <>
       {/* Breadcrumb */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <Link to="/events" className="flex items-center gap-2 text-purple-600 hover:underline font-medium">
-            <ArrowLeft className="w-5 h-5" /> Back to Events
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-2 text-sm text-gray-600">
+          <Link to="/events" className="text-purple-600 hover:underline flex items-center gap-1">
+            <ArrowLeft className="w-4 h-4" /> Events
           </Link>
+          <span className="mx-2">/</span>
+          <span className="font-semibold text-gray-800 truncate">{event.title}</span>
         </div>
       </div>
 
-      {/* Hero + Info on Top */}
+      {/* Hero */}
       <div className="relative">
         <div className="h-96 md:h-[500px] relative overflow-hidden">
           <img src={event.image} alt={event.title} className="w-full h-full object-cover" />
@@ -267,75 +378,56 @@ export default function EventDetails() {
                 className="bg-white rounded-3xl p-8 shadow-xl"
               >
                 <h2 className="text-3xl font-black mb-6">About This Event</h2>
-                <p className="text-lg text-gray-700">
-                  {event.description || "An amazing night of music and vibes!"}
-                </p>
+                <p className="text-lg text-gray-700">{event.description || "An amazing night of music and vibes!"}</p>
               </motion.div>
 
               {/* Ticket Tiers */}
-              {event.ticketTiers && Array.isArray(event.ticketTiers) && event.ticketTiers.length > 0 && (
+              {event.ticketTiers && event.ticketTiers.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 50 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-3xl shadow-xl overflow-hidden"
+                  className="bg-white rounded-3xl shadow-xl overflow-visible"
                 >
                   <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-8 text-white">
                     <h2 className="text-3xl font-black">Get Your Ticket</h2>
                   </div>
                   <div className="p-8 space-y-6">
-                    {event.ticketTiers.map((tier: TicketTier) => (
-                      <div key={tier.name} className="border-2 border-purple-200 rounded-3xl p-6 hover:border-purple-500 transition">
-                        <div className="flex justify-between items-center mb-4">
-                          <h3 className="text-2xl font-black">{tier.name}</h3>
-                          <span className="text-3xl font-black text-purple-600">{tier.price}</span>
+                    {event.ticketTiers.map((tier, idx) => (
+                      <div key={tier.name || idx} className="border-2 border-purple-200 rounded-3xl p-6 hover:border-purple-500 transition flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                        <div className="flex flex-col md:flex-row md:items-center md:gap-6">
+                          <div>
+                            <h3 className="text-2xl font-black">{tier.name}</h3>
+                            {tier.description && <p className="text-gray-600">{tier.description}</p>}
+                          </div>
+                          <span className="text-3xl font-black text-purple-600 mt-2 md:mt-0">{tier.price}</span>
                         </div>
-                        {tier.description && <p className="text-gray-600 mb-4">{tier.description}</p>}
-                        <div className="flex items-center gap-4 mb-6">
-                          <button
-                            onClick={() => handleQuantityChange(tier.name, false)}
-                            className="w-12 h-12 rounded-full border-2 hover:bg-gray-100"
-                          >−</button>
-                          <span className="text-xl font-bold w-16 text-center">
-                            {quantities[tier.name] || 1}
-                          </span>
-                          <button
-                            onClick={() => handleQuantityChange(tier.name, true)}
-                            className="w-12 h-12 rounded-full border-2 hover:bg-gray-100"
-                          >+</button>
+
+                        <div className="flex items-center gap-4 mt-4 md:mt-0">
+                          <button onClick={() => handleQuantityChange(tier.name, false)} className="w-12 h-12 rounded-full border-2 hover:bg-gray-100">−</button>
+                          <span className="text-xl font-bold w-16 text-center">{quantities[tier.name] || 1}</span>
+                          <button onClick={() => handleQuantityChange(tier.name, true)} className="w-12 h-12 rounded-full border-2 hover:bg-gray-100">+</button>
                         </div>
+
                         <button
                           onClick={() => handleBuyTicket(tier)}
                           disabled={buyingTier === tier.name}
-                          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-3 disabled:opacity-70"
+                          className="w-full md:w-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 disabled:opacity-70 mt-4 md:mt-0"
                         >
-                          {buyingTier === tier.name ? (
-                            <>
-                              <Loader2 className="w-6 h-6 animate-spin" />
-                              Processing...
-                            </>
-                          ) : (
-                            <>
-                              <Ticket className="w-6 h-6" />
-                              Get {tier.name} • {tier.price}
-                            </>
-                          )}
+                          {buyingTier === tier.name ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Ticket className="w-6 h-6" /> Buy</>}
                         </button>
                       </div>
                     ))}
                   </div>
                 </motion.div>
               )}
+
             </div>
 
             {/* Right Column */}
             <div className="space-y-10">
               {/* Venue & Map */}
               {(event.venue || event.lat) && (
-                <motion.div
-                  initial={{ opacity: 0, x: 40 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  className="bg-white rounded-3xl shadow-xl overflow-hidden"
-                >
+                <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} className="bg-white rounded-3xl shadow-xl overflow-hidden">
                   <div className="bg-gradient-to-r from-indigo-600 to-purple-700 p-6 text-white">
                     <h3 className="text-2xl font-black flex items-center gap-3">
                       <MapPin className="w-8 h-8" /> Venue
@@ -354,12 +446,7 @@ export default function EventDetails() {
 
                   <div className="p-6 space-y-4">
                     {event.lat && event.lng && (
-                      <a
-                        href={`https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${event.lat}&dropoff[longitude]=${event.lng}&dropoff[nickname]=${encodeURIComponent(event.venue || "Event")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block w-full bg-black text-white text-center font-bold py-4 rounded-2xl hover:bg-gray-900 transition"
-                      >
+                      <a href={`https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${event.lat}&dropoff[longitude]=${event.lng}&dropoff[nickname]=${encodeURIComponent(event.venue || "Event")}`} target="_blank" rel="noopener noreferrer" className="block w-full bg-black text-white text-center font-bold py-4 rounded-2xl hover:bg-gray-900 transition">
                         <Car className="inline mr-2" /> Ride with Uber
                       </a>
                     )}
@@ -383,72 +470,71 @@ export default function EventDetails() {
 
       {/* Checkout Modal */}
       {showCheckout && checkoutData && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
-          onClick={closeCheckout}
-        >
-          <motion.div
-            initial={{ scale: 0.9 }}
-            animate={{ scale: 1 }}
-            className="bg-white rounded-3xl max-w-2xl w-full max-h-[95vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={closeCheckout}>
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white rounded-3xl max-w-2xl w-full max-h-[95vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
             <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 flex justify-between items-center">
               <div>
                 <h2 className="text-3xl font-black">Checkout</h2>
-                <p className="text-xl opacity-90">
-                  {checkoutData.tier.name} × {checkoutData.quantity}
-                </p>
+                <p className="text-xl opacity-90">{checkoutData.tier.name} × {checkoutData.quantity}</p>
               </div>
-              <button onClick={closeCheckout} className="p-2 hover:bg-white/20 rounded-xl">
-                <X className="w-8 h-8" />
-              </button>
+              <button onClick={closeCheckout} className="p-2 hover:bg-white/20 rounded-xl"><X className="w-8 h-8" /></button>
             </div>
 
+            {/* Form + Order Summary */}
             <div className="p-8">
-              <form onSubmit={(e) => { e.preventDefault(); setCheckoutLoading(true); }}>
+              <form onSubmit={handleCheckoutSubmit}>
                 <div className="space-y-6">
-                  <input
-                    type="text"
-                    placeholder="Full Name"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className="w-full px-5 py-4 border rounded-2xl"
-                    required
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-5 py-4 border rounded-2xl"
-                    required
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Phone Number"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-5 py-4 border rounded-2xl"
-                    required
-                  />
+                  <input type="text" placeholder="Full Name" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} className="w-full px-5 py-4 border rounded-2xl" required />
+                  <input type="email" placeholder="Email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-5 py-4 border rounded-2xl" required />
+                  <input type="tel" placeholder="Phone Number" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} className="w-full px-5 py-4 border rounded-2xl" required />
                 </div>
 
-                <div className="mt-8 p-6 bg-gray-50 rounded-2xl text-center">
-                  <p className="text-3xl font-black text-purple-600">
-                    {formattedTotal}
-                  </p>
+                {/* Order Summary */}
+                <div className="mt-8 p-6 bg-gray-50 rounded-2xl space-y-4">
+                  <h3 className="text-2xl font-bold text-gray-800">Order Summary</h3>
+                  <div className="flex justify-between">
+                    <span>{checkoutData.tier.name} × {checkoutData.quantity}</span>
+                    <span>{formattedTotal}</span>
+                  </div>
+
+                  <div className="flex flex-col gap-2 text-gray-600">
+                    <span>Payment Methods:</span>
+                    <div className="flex gap-4 mt-1">
+                      <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                        <CreditCard className="w-5 h-5 text-purple-600" />
+                        <span className="text-xs">Card</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                        <Smartphone className="w-5 h-5 text-purple-600" />
+                        <span className="text-xs">USSD</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                        <Building2 className="w-5 h-5 text-purple-600" />
+                        <span className="text-xs">Bank</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                        <CheckCircle className="w-5 h-5 text-purple-600" />
+                        <span className="text-xs">OPAY</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr className="my-2" />
+                  <div className="flex justify-between text-xl font-bold text-purple-600">
+                    <span>Total</span>
+                    <span>{formattedTotal}</span>
+                  </div>
                 </div>
 
                 <button
                   type="submit"
                   disabled={checkoutLoading}
-                  className="mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-xl py-5 rounded-3xl"
+                  className="mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-xl py-5 rounded-3xl flex justify-center items-center gap-2"
                 >
-                  {checkoutLoading ? "Processing..." : `Pay ${formattedTotal}`}
+                  {checkoutLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : `Pay ${formattedTotal} securely`}
                 </button>
+
               </form>
             </div>
           </motion.div>
