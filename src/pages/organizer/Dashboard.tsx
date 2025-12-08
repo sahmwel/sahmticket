@@ -14,20 +14,39 @@ interface Event {
 
 export default function OrganizerDashboard() {
   const [events, setEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchEvents() {
-      const organizer_id = supabase.auth.user()?.id;
-      if (!organizer_id) return;
+      setLoading(true);
+      setError(null);
 
-      const { data, error } = await supabase
-        .from("events")
-        .select("*")
-        .eq("organizer_id", organizer_id)
-        .order("date", { ascending: true });
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-      if (error) console.error(error);
-      else setEvents(data || []);
+        if (userError) throw userError;
+        if (!user) throw new Error("User not logged in");
+
+        const organizer_id = user.id;
+
+        const { data, error } = await supabase
+          .from("events")
+          .select("*")
+          .eq("organizer_id", organizer_id)
+          .order("date", { ascending: true });
+
+        if (error) throw error;
+        setEvents(data || []);
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     }
 
     fetchEvents();
@@ -40,6 +59,13 @@ export default function OrganizerDashboard() {
         <Navbar role="organizer" />
         <main className="p-6">
           <h1 className="text-3xl font-bold text-white mb-4">Organizer Dashboard</h1>
+
+          {loading && <p className="text-white">Loading events...</p>}
+          {error && <p className="text-red-400">{error}</p>}
+
+          {!loading && !error && events.length === 0 && (
+            <p className="text-white">No events found. Create your first event!</p>
+          )}
 
           <ul className="space-y-2">
             {events.map((event) => (

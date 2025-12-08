@@ -15,8 +15,6 @@ import {
   Plus,
 } from "lucide-react";
 
-import LogoWhite from "/src/assets/logo-white.png";
-
 const features = [
   { icon: Zap, title: "5-Minute Setup", desc: "Launch your event instantly" },
   { icon: Wallet, title: "Paid in 24hrs", desc: "Money hits your account fast" },
@@ -37,7 +35,7 @@ export default function OrganizerTeaser() {
           {/* Logo */}
           <div className="relative group">
             <img
-              src={LogoWhite}
+              src="/logo-white.png"
               alt="SahmTicketHub"
               className="h-24 md:h-28 w-auto object-contain drop-shadow-2xl transition-transform duration-500 group-hover:scale-110"
             />

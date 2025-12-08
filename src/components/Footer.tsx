@@ -4,7 +4,6 @@
 import { Link } from "react-router-dom";
 import { Mail, Phone, Send } from "lucide-react";
 import { SiInstagram, SiX, SiWhatsapp } from "@icons-pack/react-simple-icons";
-import LogoWhite from '/src/assets/logo-white.png';
 import { useState } from "react";
 
 export default function Footer() {
@@ -31,7 +30,11 @@ export default function Footer() {
         {/* Logo + Tagline */}
         <div className="text-center mb-16 md:mb-20">
           <div className="relative inline-block group">
-            <img src={LogoWhite} alt="SahmTicketHub" className="h-32 md:h-44 lg:h-52 w-auto mx-auto drop-shadow-2xl transition-all duration-700 group-hover:scale-110" />
+            <img
+              src="/logo-white.png"
+              alt="SahmTicketHub"
+              className="h-32 md:h-44 lg:h-52 w-auto mx-auto drop-shadow-2xl transition-all duration-700 group-hover:scale-110"
+            />
             <div className="absolute -inset-12 bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 rounded-full blur-3xl opacity-50 group-hover:opacity-90 scale-75 group-hover:scale-125 transition-all duration-1000 -z-10" />
           </div>
           <p className="mt-8 text-pink-100 text-lg md:text-2xl font-medium">

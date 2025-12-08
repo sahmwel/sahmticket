@@ -4,12 +4,42 @@ import Navbar from "../../components/AdminNavbar";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
+interface UserProfile {
+  id: string;
+  email: string;
+  role?: string;
+}
+
 export default function Profile() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const sessionUser = supabase.auth.user();
-    setUser(sessionUser);
+    const fetchUser = async () => {
+      setLoading(true);
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) throw error;
+
+        if (!user) {
+          // Redirect to login if not logged in
+          window.location.href = "/auth";
+          return;
+        }
+
+        setUser({
+          id: user.id,
+          email: user.email ?? "",
+          role: user.user_metadata?.role ?? "organizer",
+        });
+      } catch (err: any) {
+        console.error(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUser();
   }, []);
 
   return (
@@ -19,11 +49,16 @@ export default function Profile() {
         <Navbar role="organizer" />
         <main className="p-6">
           <h1 className="text-3xl font-bold text-white mb-4">Profile</h1>
-          {user && (
+
+          {loading ? (
+            <p className="text-white">Loading profile...</p>
+          ) : user ? (
             <div className="p-4 bg-white/10 rounded-xl">
-              <p>Email: {user.email}</p>
-              <p>Role: {user.user_metadata?.role}</p>
+              <p><strong>Email:</strong> {user.email}</p>
+              <p><strong>Role:</strong> {user.role}</p>
             </div>
+          ) : (
+            <p className="text-white">User not found.</p>
           )}
         </main>
       </div>

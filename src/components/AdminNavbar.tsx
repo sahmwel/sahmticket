@@ -1,7 +1,6 @@
 // src/components/AdminNavbar.tsx
 import { useState } from "react";
 import { X, Menu } from "lucide-react";
-import logo from "../assets/logo-white.png";
 
 interface NavbarProps {
   role: "admin" | "organizer";
@@ -22,8 +21,10 @@ export default function Navbar({ role, onSidebarToggle }: NavbarProps) {
         <button className="md:hidden" onClick={toggleSidebar}>
           {mobileOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-        <img src={logo} alt="TicketHub" className="w-24 h-auto md:w-32" />
-        <span className="font-bold text-lg">{role === "admin" ? "Admin Panel" : "Organizer Panel"}</span>
+        <img src="/logo-white.png" alt="TicketHub" className="w-24 h-auto md:w-32" />
+        <span className="font-bold text-lg">
+          {role === "admin" ? "Admin Panel" : "Organizer Panel"}
+        </span>
       </div>
     </header>
   );

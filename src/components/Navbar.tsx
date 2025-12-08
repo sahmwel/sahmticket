@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import { Menu, X, Plus } from "lucide-react";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import LogoWhite from '/src/assets/logo-white.png';
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -47,7 +46,7 @@ export default function Navbar() {
           <Link to="/" className="group -my-10 md:-my-12 lg:-my-14">
             <div className="relative">
               <img
-                src={LogoWhite}
+                src="/logo-white.png"
                 alt="SahmTicketHub"
                 className="h-28 md:h-36 lg:h-44 w-auto object-contain 
                            drop-shadow-2xl 
@@ -94,7 +93,7 @@ export default function Navbar() {
           </button>
         </div>
 
-                {/* MOBILE MENU – Slide-down, NO BLACK FLASH EVER */}
+        {/* MOBILE MENU – Slide-down */}
         <motion.div
           initial={false}
           animate={{
@@ -108,23 +107,15 @@ export default function Navbar() {
           }}
           className="lg:hidden fixed inset-x-0 top-16 bg-black/95 backdrop-blur-3xl border-t border-white/10"
           style={{
-            height: 'calc(100dvh - 64px)',  // Always full height
-            transform: 'translateY(-20px)', // Starting position (hidden above)
+            height: 'calc(100dvh - 64px)',
+            transform: 'translateY(-20px)',
           }}
         >
           <div className="flex flex-col items-center justify-center h-full space-y-14 px-8">
-            <NavLink to="/events" onClick={() => setIsOpen(false)}>
-              Events
-            </NavLink>
-            <NavLink to="/about" onClick={() => setIsOpen(false)}>
-              About
-            </NavLink>
-            <NavLink to="/contact" onClick={() => setIsOpen(false)}>
-              Contact
-            </NavLink>
-            <NavLink to="/privacy" onClick={() => setIsOpen(false)}>
-              Privacy
-            </NavLink>
+            <NavLink to="/events" onClick={() => setIsOpen(false)}>Events</NavLink>
+            <NavLink to="/about" onClick={() => setIsOpen(false)}>About</NavLink>
+            <NavLink to="/contact" onClick={() => setIsOpen(false)}>Contact</NavLink>
+            <NavLink to="/privacy" onClick={() => setIsOpen(false)}>Privacy</NavLink>
 
             <Link
               to="/create-event"

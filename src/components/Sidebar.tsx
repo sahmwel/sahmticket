@@ -1,6 +1,5 @@
 // src/components/Sidebar.tsx
 import { NavLink } from "react-router-dom";
-import logo from "../assets/logo-white.png";
 import { Home, Users, Calendar, Ticket, Settings, User } from "lucide-react";
 
 interface SidebarProps {
@@ -29,8 +28,10 @@ export default function Sidebar({ role }: SidebarProps) {
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-purple-900 to-pink-900 text-white p-6 flex flex-col">
       <div className="mb-8 flex flex-col items-center">
-        <img src={logo} alt="SahmTicketHub" className="w-32 mb-2" />
-        <span className="font-bold text-xl">{role === "admin" ? "Admin Panel" : "Organizer Panel"}</span>
+        <img src="/logo-white.png" alt="SahmTicketHub" className="w-32 mb-2" />
+        <span className="font-bold text-xl">
+          {role === "admin" ? "Admin Panel" : "Organizer Panel"}
+        </span>
       </div>
       <nav className="flex-1 flex flex-col gap-3">
         {links.map(link => (

@@ -19,49 +19,55 @@ export default function OrganizerTickets() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchTickets() {
-      const organizer_id = supabase.auth.user()?.id;
-      if (!organizer_id) return;
+    const fetchTickets = async () => {
+      setLoading(true);
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) {
+          window.location.href = "/auth";
+          return;
+        }
 
-      const { data, error } = await supabase
-        .from("tickets")
-        .select(`
-          id,
-          ticket_type,
-          price,
-          purchased_at,
-          qr_code_url,
-          event:event_id (
+        const { data, error } = await supabase
+          .from("tickets")
+          .select(`
             id,
-            title,
-            organizer_id
-          ),
-          buyer:buyer_id (
-            email
-          )
-        `)
-        .eq("event.organizer_id", organizer_id)
-        .order("purchased_at", { ascending: false });
+            ticket_type,
+            price,
+            purchased_at,
+            qr_code_url,
+            event:event_id (
+              id,
+              title,
+              organizer_id
+            ),
+            buyer:buyer_id (
+              email
+            )
+          `)
+          .eq("event.organizer_id", user.id)
+          .order("purchased_at", { ascending: false });
 
-      if (error) {
-        console.error(error);
+        if (error) throw error;
+
+        const formatted = (data || []).map((t: any) => ({
+          id: t.id,
+          ticket_type: t.ticket_type,
+          price: t.price,
+          purchased_at: t.purchased_at,
+          qr_code_url: t.qr_code_url,
+          event_title: t.event?.title ?? "Unknown Event",
+          buyer_email: t.buyer?.email ?? "Unknown Buyer",
+        }));
+
+        setTickets(formatted);
+      } catch (err: any) {
+        console.error(err.message);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const formatted = (data || []).map((t: any) => ({
-        id: t.id,
-        ticket_type: t.ticket_type,
-        price: t.price,
-        purchased_at: t.purchased_at,
-        qr_code_url: t.qr_code_url,
-        event_title: t.event?.title ?? "Unknown Event",
-        buyer_email: t.buyer?.email ?? "Unknown Buyer",
-      }));
-
-      setTickets(formatted);
-      setLoading(false);
-    }
+    };
 
     fetchTickets();
   }, []);

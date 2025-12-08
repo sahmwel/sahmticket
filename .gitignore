@@ -1,4 +1,6 @@
+# =========================
 # Logs
+# =========================
 logs
 *.log
 npm-debug.log*
@@ -7,28 +9,54 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# =========================
 # Dependencies
-node_modules
+# =========================
+node_modules/
 
+# =========================
 # Production builds
-dist
-dist-ssr
+# =========================
+dist/
+dist-ssr/
+.build/               # optional if you have other build folders
 
+# =========================
 # Environment variables
+# =========================
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
+# =========================
+# Supabase local config
+# =========================
+.supabase/            # Supabase CLI local project files and credentials
+supabase/migrations/  # If using local migrations you want to ignore
+
+# =========================
+# Tailwind
+# =========================
+node_modules/.cache/tailwindcss/
+
+# =========================
+# TypeScript
+# =========================
+*.tsbuildinfo
+
+# =========================
 # Local config
+# =========================
 *.local
 
+# =========================
 # Editor directories and files
-.vscode/*
+# =========================
+.vscode/
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
@@ -36,10 +64,14 @@ dist-ssr
 *.swp
 *.swo
 
+# =========================
 # Vercel
-.vercel
+# =========================
+.vercel/
 
+# =========================
 # OS generated files
+# =========================
 .DS_Store
 .DS_Store?
 ._*
@@ -47,3 +79,15 @@ dist-ssr
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# =========================
+# Optional: package manager lockfiles
+# =========================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# =========================
+# Optional: Storybook
+# =========================
+.storybook/build/

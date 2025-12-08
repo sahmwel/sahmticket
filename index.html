@@ -2,14 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sahmtickethub</title>
+    <title>SahmTicketHub</title>
+
+    <!-- Browser favicons -->
+    <link rel="icon" href="/favicon.ico?v=3" />
+    <link rel="icon" type="image/png" href="/icon1.png?v=3" />
+    <link rel="icon" type="image/svg+xml" href="/icon0.svg?v=3" />
+
+    <!-- Main logo for Apple/iOS home screen -->
+    <link rel="apple-touch-icon" href="/logo-white.png?v=3" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.json?v=3" />
+
+    <!-- Theme color -->
+    <meta name="theme-color" content="#ffffff" />
   </head>
   <body>
+    <!-- Header with main logo -->
+    <header class="flex items-center justify-start p-4 bg-purple-600">
+      <img src="/logo-white.png" alt="SahmTicketHub Logo" class="h-12 w-auto" />
+      <span class="ml-2 text-white font-bold text-xl">SahmTicketHub</span>
+    </header>
+
+    <!-- Root container for React/Vite -->
     <div id="root"></div>
+
+    <!-- Scripts -->
     <script type="module" src="/src/main.tsx"></script>
     <script src="https://js.paystack.co/v1/inline.js"></script>
-
+    <div id="modal-root"></div>
   </body>
 </html>

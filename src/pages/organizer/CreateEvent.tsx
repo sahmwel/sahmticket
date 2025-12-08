@@ -13,6 +13,7 @@ interface TicketTier {
   name: string;
   price: string;
   description: string;
+  quantity: string;
 }
 
 export default function CreateEvent() {
@@ -23,24 +24,36 @@ export default function CreateEvent() {
   const [address, setAddress] = useState("");
   const [description, setDescription] = useState("");
   const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([
-    { name: "", price: "", description: "" },
-  ]);
+  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([{ name: "", price: "", description: "", quantity: "" }]);
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
-  // Fetch categories dynamically
   useEffect(() => {
     const fetchCategories = async () => {
       const { data, error } = await supabase.from("categories").select("*");
-      if (!error && data) setCategories(data);
+      if (error) console.error(error);
+      else if (data) setCategories(data);
     };
     fetchCategories();
   }, []);
 
+  // Update preview when banner changes
+  useEffect(() => {
+    if (!bannerFile) {
+      setBannerPreview(null);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(bannerFile);
+    setBannerPreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [bannerFile]);
+
   const handleAddTicketTier = () => {
-    setTicketTiers([...ticketTiers, { name: "", price: "", description: "" }]);
+    setTicketTiers([...ticketTiers, { name: "", price: "", description: "", quantity: "" }]);
   };
 
   const handleTicketChange = (index: number, field: keyof TicketTier, value: string) => {
@@ -49,66 +62,101 @@ export default function CreateEvent() {
     setTicketTiers(updated);
   };
 
+  const handleBannerChange = (file: File) => {
+    if (file && file.type.startsWith("image/")) {
+      setBannerFile(file);
+    } else {
+      setMessage("Please upload a valid image file");
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = () => setDragActive(false);
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleBannerChange(e.dataTransfer.files[0]);
+    }
+  };
+
   const handleCreate = async () => {
     setMessage("");
-    const organizer_id = supabase.auth.user()?.id;
-    if (!organizer_id) return setMessage("You must be logged in!");
-    if (!title || !date || !time || !venue || !categoryId)
-      return setMessage("Please fill in all required fields");
+    setLoading(true);
 
-    let banner_url = null;
-    if (bannerFile) {
-      const fileExt = bannerFile.name.split(".").pop();
-      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from("event-banners")
-        .upload(fileName, bannerFile);
-      if (uploadError) return setMessage("Image upload failed: " + uploadError.message);
-      const { publicUrl } = supabase.storage.from("event-banners").getPublicUrl(fileName);
-      banner_url = publicUrl;
-    }
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("You must be logged in!");
 
-    // Insert event
-    const { data: eventData, error } = await supabase.from("events").insert([
-      {
-        title,
-        date,
-        time,
-        venue,
-        description,
-        banner_url,
-        category_id: categoryId,
-        organizer_id,
-        address,
-      },
-    ]).select().single();
+      if (!title || !date || !time || !venue || !categoryId) {
+        setMessage("Please fill in all required fields");
+        setLoading(false);
+        return;
+      }
 
-    if (error) return setMessage(error.message);
+      let banner_url: string | null = null;
+      if (bannerFile) {
+        const fileExt = bannerFile.name.split(".").pop();
+        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from("event-banners").upload(fileName, bannerFile);
+        if (uploadError) throw new Error("Image upload failed: " + uploadError.message);
+        const { data: { publicUrl } } = supabase.storage.from("event-banners").getPublicUrl(fileName);
+        banner_url = publicUrl;
+      }
 
-    // Insert tickets for this event
-    for (const tier of ticketTiers) {
-      if (tier.name && tier.price) {
-        await supabase.from("tickets").insert([
-          {
+      const { data: eventData, error: eventError } = await supabase.from("events")
+        .insert([{
+          title,
+          date,
+          time,
+          venue,
+          address,
+          description,
+          banner_url,
+          category_id: categoryId,
+          organizer_id: user.id,
+        }])
+        .select()
+        .single();
+
+      if (eventError) throw eventError;
+
+      for (const tier of ticketTiers) {
+        if (tier.name && tier.price && tier.quantity) {
+          await supabase.from("tickets").insert([{
             event_id: eventData.id,
             ticket_type: tier.name,
             price: parseFloat(tier.price.replace(/[^0-9.-]+/g,"")),
-            qr_code_url: null, // generate later
-          },
-        ]);
+            description: tier.description,
+            quantity: parseInt(tier.quantity, 10),
+            qr_code_url: null,
+          }]);
+        }
       }
-    }
 
-    setMessage("Event created successfully!");
-    setTitle("");
-    setDate("");
-    setTime("");
-    setVenue("");
-    setAddress("");
-    setDescription("");
-    setBannerFile(null);
-    setCategoryId(null);
-    setTicketTiers([{ name: "", price: "", description: "" }]);
+      setTitle("");
+      setDate("");
+      setTime("");
+      setVenue("");
+      setAddress("");
+      setDescription("");
+      setBannerFile(null);
+      setBannerPreview(null);
+      setCategoryId(null);
+      setTicketTiers([{ name: "", price: "", description: "", quantity: "" }]);
+      setMessage("Event created successfully!");
+    } catch (err: any) {
+      console.error(err);
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -137,47 +185,31 @@ export default function CreateEvent() {
             ))}
           </select>
 
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            className="w-full mb-2 p-3 rounded-xl"
-          />
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full mb-2 p-3 rounded-xl" />
+          <input type="time" value={time} onChange={e => setTime(e.target.value)} className="w-full mb-2 p-3 rounded-xl" />
+          <input value={venue} onChange={e => setVenue(e.target.value)} placeholder="Venue" className="w-full mb-2 p-3 rounded-xl" />
+          <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Address" className="w-full mb-2 p-3 rounded-xl" />
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Event Description" className="w-full mb-2 p-3 rounded-xl" />
 
-          <input
-            type="time"
-            value={time}
-            onChange={e => setTime(e.target.value)}
-            className="w-full mb-2 p-3 rounded-xl"
-          />
-
-          <input
-            value={venue}
-            onChange={e => setVenue(e.target.value)}
-            placeholder="Venue"
-            className="w-full mb-2 p-3 rounded-xl"
-          />
-
-          <input
-            value={address}
-            onChange={e => setAddress(e.target.value)}
-            placeholder="Address"
-            className="w-full mb-2 p-3 rounded-xl"
-          />
-
-          <textarea
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder="Event Description"
-            className="w-full mb-2 p-3 rounded-xl"
-          />
-
-          <input
-            type="file"
-            accept="image/*"
-            onChange={e => setBannerFile(e.target.files?.[0] || null)}
-            className="w-full mb-2 p-3 rounded-xl text-white bg-white/10"
-          />
+          <label className="block mb-2 text-white font-medium">Event Banner</label>
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`w-full mb-2 p-6 rounded-xl border-2 border-dashed ${dragActive ? "border-blue-400" : "border-white/30"} text-center cursor-pointer`}
+          >
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => e.target.files && handleBannerChange(e.target.files[0])}
+              className="hidden"
+              id="bannerInput"
+            />
+            <label htmlFor="bannerInput" className="cursor-pointer text-white">
+              {bannerFile ? "Change Banner" : "Drag & Drop Banner or Click to Upload"}
+            </label>
+          </div>
+          {bannerPreview && <img src={bannerPreview} alt="Banner Preview" className="w-full mb-4 rounded-xl" />}
 
           <h2 className="text-xl font-semibold text-white mt-4 mb-2">Ticket Tiers</h2>
           {ticketTiers.map((tier, index) => (
@@ -195,6 +227,12 @@ export default function CreateEvent() {
                 className="w-full mb-1 p-2 rounded-xl"
               />
               <input
+                value={tier.quantity}
+                onChange={e => handleTicketChange(index, "quantity", e.target.value)}
+                placeholder="Number of Tickets"
+                className="w-full mb-1 p-2 rounded-xl"
+              />
+              <input
                 value={tier.description}
                 onChange={e => handleTicketChange(index, "description", e.target.value)}
                 placeholder="Description"
@@ -202,18 +240,12 @@ export default function CreateEvent() {
               />
             </div>
           ))}
-          <button
-            onClick={handleAddTicketTier}
-            className="mb-4 bg-blue-600 text-white px-3 py-1 rounded-xl"
-          >
+          <button onClick={handleAddTicketTier} className="mb-4 bg-blue-600 text-white px-3 py-1 rounded-xl">
             + Add Ticket Tier
           </button>
 
-          <button
-            onClick={handleCreate}
-            className="bg-purple-600 text-white px-4 py-2 rounded-xl"
-          >
-            Create Event
+          <button onClick={handleCreate} disabled={loading} className="bg-purple-600 text-white px-4 py-2 rounded-xl disabled:opacity-50">
+            {loading ? "Creating..." : "Create Event"}
           </button>
 
           {message && <p className="text-yellow-300 mt-2">{message}</p>}

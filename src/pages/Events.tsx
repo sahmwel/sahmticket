@@ -42,12 +42,13 @@ interface Event {
   venue: string;
   location: string;
   image: string;
-  ticketTiers: { price: string }[];
+  ticketTiers: { price: string }[]; // Always array of objects with price
   featured?: boolean;
   trending?: boolean;
   isNew?: boolean;
   sponsored?: boolean;
 }
+
 
 interface Category {
   id: number;
@@ -125,10 +126,11 @@ const EventCard: React.FC<EventCardProps> = ({ event, goToEvent }) => {
           </div>
         </div>
 
-        <button className="mt-auto w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-lg">
-          <Ticket size={24} />
-          Get Ticket • {event.ticketTiers?.[0]?.price ?? "Free"}
-        </button>
+       <button className="mt-auto w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-lg">
+  <Ticket size={24} />
+  Get Ticket • {event.ticketTiers?.[0]?.price ?? "Free"}
+</button>
+
       </div>
     </div>
   );
@@ -144,14 +146,45 @@ export default function EventsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchEvents = async () => {
-      const { data, error } = await supabase.from("events").select("*").order("date", { ascending: true });
-      if (!error && data) setEvents(data);
-    };
-    fetchEvents();
-  }, []);
+  // ---------------- Fetch Events ----------------
+ useEffect(() => {
+  const fetchEvents = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .order("date", { ascending: true });
 
+      if (error) return console.error(error);
+      if (!data) return setEvents([]);
+
+      const parsedEvents: Event[] = data.map((event: any) => ({
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        category_id: event.category_id,
+        date: event.date,
+        time: event.time,
+        venue: event.venue,
+        location: event.location,
+        image: event.image || "https://via.placeholder.com/400x300?text=No+Image",
+        ticketTiers: Array.isArray(event.ticketTiers) ? event.ticketTiers : [],
+        featured: event.featured ?? false,
+        trending: event.trending ?? false,
+        isNew: event.isnew ?? false, // Map to camelCase
+        sponsored: event.sponsored ?? false,
+      }));
+
+      setEvents(parsedEvents);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  fetchEvents();
+}, []);
+
+  // ---------------- Fetch Categories ----------------
   useEffect(() => {
     const fetchCategories = async () => {
       const { data, error } = await supabase.from("categories").select("id, name, gradient");
@@ -162,7 +195,6 @@ export default function EventsPage() {
 
   const featuredEvents = events.filter((e) => e.featured);
   const filteredEvents = selectedCategory === "All" ? events : events.filter((e) => e.category_id === selectedCategory);
-
   const goToEvent = (id: string) => navigate(`/event/${id}`);
 
   return (

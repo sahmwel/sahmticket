@@ -29,53 +29,71 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<User[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
-      // Fetch users from profiles + auth.users
-      const { data: usersData } = await supabase
-        .from("profiles")
-        .select("id, role, auth_users:users!inner(email)")
-        .order("created_at", { ascending: true });
-      const formattedUsers = usersData?.map((u: any) => ({
-        id: u.id,
-        email: u.auth_users.email,
-        role: u.role,
-      })) || [];
-      setUsers(formattedUsers);
+      try {
+        setLoading(true);
+        setError(null);
 
-      // Fetch events
-      const { data: eventsData } = await supabase
-        .from("events")
-        .select("id, title, date, venue")
-        .order("date", { ascending: true });
-      setEvents(eventsData || []);
+        // ✅ Get current logged-in user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error("You must be logged in as admin");
 
-      // Fetch tickets + join buyer email & event title
-      const { data: ticketsData } = await supabase
-        .from("tickets")
-        .select(`
-          id,
-          ticket_type,
-          price,
-          buyer:buyer_id ( email ),
-          event:event_id ( title )
-        `)
-        .order("purchased_at", { ascending: false });
+        // 1️⃣ Fetch users
+        const { data: usersData, error: usersError } = await supabase
+          .from("profiles")
+          .select("id, email, role")
+          .order("created_at", { ascending: true });
+        if (usersError) throw usersError;
+        setUsers(usersData || []);
 
-      const formattedTickets = ticketsData?.map((t: any) => ({
-        id: t.id,
-        ticket_type: t.ticket_type,
-        price: t.price,
-        buyer_email: t.buyer?.email || "N/A",
-        event_title: t.event?.title || "N/A",
-      })) || [];
+        // 2️⃣ Fetch events
+        const { data: eventsData, error: eventsError } = await supabase
+          .from("events")
+          .select("id, title, date, venue")
+          .order("date", { ascending: true });
+        if (eventsError) throw eventsError;
+        setEvents(eventsData || []);
 
-      setTickets(formattedTickets);
+        // 3️⃣ Fetch tickets with event and buyer info
+        const { data: ticketsData, error: ticketsError } = await supabase
+          .from("tickets")
+          .select(`
+            id,
+            ticket_type,
+            price,
+            buyer:buyer_id ( email ),
+            event:event_id ( title )
+          `)
+          .order("purchased_at", { ascending: false });
+        if (ticketsError) throw ticketsError;
+
+        const formattedTickets = ticketsData?.map((t: any) => ({
+          id: t.id,
+          ticket_type: t.ticket_type,
+          price: t.price,
+          buyer_email: t.buyer?.email || "N/A",
+          event_title: t.event?.title || "N/A",
+        })) || [];
+        setTickets(formattedTickets);
+
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     }
 
     fetchData();
   }, []);
+
+  if (loading) return <p className="text-white p-6">Loading dashboard...</p>;
+  if (error) return <p className="text-red-400 p-6">Error: {error}</p>;
 
   return (
     <div className="flex">
@@ -85,6 +103,7 @@ export default function AdminDashboard() {
         <main className="p-6">
           <h1 className="text-3xl font-bold text-white mb-6">Admin Dashboard</h1>
 
+          {/* Users */}
           <section className="mb-6">
             <h2 className="text-xl font-semibold text-white mb-2">Users</h2>
             <ul className="space-y-2">
@@ -96,6 +115,7 @@ export default function AdminDashboard() {
             </ul>
           </section>
 
+          {/* Events */}
           <section className="mb-6">
             <h2 className="text-xl font-semibold text-white mb-2">Events</h2>
             <ul className="space-y-2">
@@ -107,6 +127,7 @@ export default function AdminDashboard() {
             </ul>
           </section>
 
+          {/* Tickets */}
           <section>
             <h2 className="text-xl font-semibold text-white mb-2">Tickets</h2>
             <ul className="space-y-2">
