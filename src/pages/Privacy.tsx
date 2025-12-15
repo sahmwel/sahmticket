@@ -110,7 +110,7 @@ export default function Privacy() {
               href="mailto:hello@sahmtickethub.online"
               className="underline hover:no-underline font-bold"
             >
-              hello@sahmtickethub.online
+              info@sahmtickethub.online
             </a>
           </p>
         </motion.div>

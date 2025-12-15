@@ -25,16 +25,13 @@ import { supabase } from "../lib/supabaseClient";
 import QRCode from "qrcode";
 import Modal from "../components/Modal"; 
 
-
-
 interface TicketTier {
   name: string;
   price: string;
   description?: string;
-  available: number; // total tickets available
-  sold: number;      // tickets already sold
+  available: number;
+  sold: number;
 }
-
 
 interface EventType {
   id: string;
@@ -68,67 +65,68 @@ export default function EventDetails() {
   const [checkoutData, setCheckoutData] = useState<any>(null);
   const [formData, setFormData] = useState({ fullName: "", email: "", phone: "" });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-// Fetch Event
-useEffect(() => {
-  const fetchEvent = async () => {
-    if (!id) return setLoading(false);
 
-    try {
-      const { data, error } = await supabase
-        .from("events")
-        .select("*")
-        .eq("id", id)
-        .single();
+  // 🚀 Backend API URL
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-      if (error || !data) {
-        console.error("Error fetching event:", error);
-        setEvent(null);
-        setLoading(false);
-        return;
-      }
+  // Fetch Event
+  useEffect(() => {
+    const fetchEvent = async () => {
+      if (!id) return setLoading(false);
 
-      let ticketTiers: TicketTier[] = [];
+      try {
+        const { data, error } = await supabase
+          .from("events")
+          .select("*")
+          .eq("id", id)
+          .single();
 
-      const rawTiers = data["ticketTiers"]; // 👈 FIXED
-
-      if (Array.isArray(rawTiers)) {
-        ticketTiers = rawTiers.map((tier: any) => ({
-          name: tier.name || "Standard",
-          price: tier.price || "₦0",
-          description: tier.description || "",
-          available: tier.available || 0,
-  sold: tier.sold || 0,
-        }));
-      } else if (typeof rawTiers === "string") {
-        try {
-          const parsed = JSON.parse(rawTiers);
-          if (Array.isArray(parsed)) {
-            ticketTiers = parsed.map((tier: any) => ({
-              name: tier.name || "Standard",
-              price: tier.price || "₦0",
-              description: tier.description || "",
-               available: tier.available || 0,
-  sold: tier.sold || 0,
-            }));
-          }
-        } catch (e) {
-          console.warn("Failed to parse ticketTiers JSON:", e);
+        if (error || !data) {
+          console.error("Error fetching event:", error);
+          setEvent(null);
+          setLoading(false);
+          return;
         }
+
+        let ticketTiers: TicketTier[] = [];
+        const rawTiers = data["ticketTiers"];
+
+        if (Array.isArray(rawTiers)) {
+          ticketTiers = rawTiers.map((tier: any) => ({
+            name: tier.name || "Standard",
+            price: tier.price || "₦0",
+            description: tier.description || "",
+            available: tier.available || 0,
+            sold: tier.sold || 0,
+          }));
+        } else if (typeof rawTiers === "string") {
+          try {
+            const parsed = JSON.parse(rawTiers);
+            if (Array.isArray(parsed)) {
+              ticketTiers = parsed.map((tier: any) => ({
+                name: tier.name || "Standard",
+                price: tier.price || "₦0",
+                description: tier.description || "",
+                available: tier.available || 0,
+                sold: tier.sold || 0,
+              }));
+            }
+          } catch (e) {
+            console.warn("Failed to parse ticketTiers JSON:", e);
+          }
+        }
+
+        setEvent({ ...data, ticketTiers });
+      } catch (err) {
+        console.error("Unexpected error fetching event:", err);
+        setEvent(null);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      setEvent({ ...data, ticketTiers });
-    } catch (err) {
-      console.error("Unexpected error fetching event:", err);
-      setEvent(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  fetchEvent();
-}, [id]);
-
-  
+    fetchEvent();
+  }, [id]);
 
   // Initialize quantities for each tier
   useEffect(() => {
@@ -145,7 +143,11 @@ useEffect(() => {
     script.src = "https://js.paystack.co/v2/inline.js";
     script.async = true;
     document.body.appendChild(script);
-    return () => script.remove();
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    };
   }, [showCheckout]);
 
   if (loading)
@@ -216,31 +218,22 @@ useEffect(() => {
     minimumFractionDigits: 0,
   }).format(totalAmount);
 
-   const initializePaystack = async () => {
+  // 🚀 COMPLETE Paystack + Backend Integration
+  const initializePaystack = async () => {
     if (!formData.fullName.trim() || !formData.email.trim() || !formData.phone.trim()) {
       alert("Please fill in all fields");
       setCheckoutLoading(false);
       return;
     }
 
-    const cleanPrice = checkoutData?.tier.price
-      ? parseInt(checkoutData.tier.price.replace(/[^0-9]/g, ""), 10) || 0
-      : 0;
+    setCheckoutLoading(true);
 
-    const totalAmount = cleanPrice * (checkoutData?.quantity || 1);
-    const formattedTotal = new Intl.NumberFormat("en-NG", {
-      style: "currency",
-      currency: "NGN",
-      minimumFractionDigits: 0,
-    }).format(totalAmount);
-
-    // Handle free tickets
+    // Handle FREE tickets
     if (totalAmount <= 0) {
-      setCheckoutLoading(true);
-
       try {
         const freeRef = `FREE-${checkoutData.orderId}-${Date.now()}`;
 
+        // 1. Save to Supabase
         for (let i = 0; i < (checkoutData.quantity || 1); i++) {
           const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}`;
           const qr_code_url = await QRCode.toDataURL(qrData);
@@ -255,6 +248,27 @@ useEffect(() => {
           });
         }
 
+        // 2. Send Email + PDF
+        await fetch(`${API_URL}/api/tickets/send-with-pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: formData.email.trim(),
+            name: formData.fullName.trim(),
+            eventTitle: event.title,
+            eventDate: event.date,
+            eventTime: event.time || formatTime(event.date),
+            eventVenue: event.venue || event.location,
+            tickets: [{
+              ticketType: checkoutData.tier.name,
+              quantity: checkoutData.quantity,
+              amount: formattedTotal,
+              codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${freeRef}-${i+1}`)
+            }],
+            orderId: freeRef
+          })
+        });
+
         closeCheckout();
         navigate(
           `/bag/${checkoutData.orderId}` +
@@ -268,19 +282,18 @@ useEffect(() => {
           `&type=${encodeURIComponent(checkoutData.tier.name)}` +
           `&qty=${checkoutData.quantity}` +
           `&price=${formattedTotal}` +
-          `&ref=${freeRef}` // ✅ fixed here
+          `&ref=${freeRef}`
         );
-
-        return;
       } catch (err) {
-        console.error("Error saving free ticket:", err);
+        console.error("Free ticket error:", err);
         alert("Could not issue free ticket. Please try again.");
+      } finally {
         setCheckoutLoading(false);
-        return;
       }
+      return;
     }
 
-    // Handle paid tickets
+    // Handle PAID tickets (Paystack)
     if (!window.PaystackPop) {
       alert("Payment gateway loading...");
       setCheckoutLoading(false);
@@ -307,6 +320,7 @@ useEffect(() => {
       },
       callback: async (response: PaystackResponse) => {
         try {
+          // 1. Save tickets to Supabase
           for (let i = 0; i < (checkoutData.quantity || 1); i++) {
             const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}`;
             const qr_code_url = await QRCode.toDataURL(qrData);
@@ -320,25 +334,47 @@ useEffect(() => {
             });
           }
 
-          closeCheckout();
-           navigate(
-      `/bag/${checkoutData.orderId}` +
-      `?title=${encodeURIComponent(event.title)}` +
-      `&location=${encodeURIComponent(event.location)}` +
-      `&venue=${encodeURIComponent(event.venue || event.location)}` +
-      `&date=${encodeURIComponent(event.date)}` +
-      `&time=${encodeURIComponent(event.time || "")}` +
-      `&lat=${event.lat || 0}` +
-      `&lng=${event.lng || 0}` +
-      `&type=${encodeURIComponent(checkoutData.tier.name)}` +
-      `&qty=${checkoutData.quantity}` +
-      `&price=${formattedTotal}` +
-      `&ref=${response.reference}`
-    );
+          // 🚀 2. Send Email + PDF via Backend
+          await fetch(`${API_URL}/api/tickets/send-with-pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: formData.email.trim(),
+              name: formData.fullName.trim(),
+              eventTitle: event.title,
+              eventDate: event.date,
+              eventTime: event.time || formatTime(event.date),
+              eventVenue: event.venue || event.location,
+              tickets: [{
+                ticketType: checkoutData.tier.name,
+                quantity: checkoutData.quantity,
+                amount: formattedTotal,
+                codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${response.reference}-${i+1}`)
+              }],
+              orderId: response.reference
+            })
+          });
 
+          closeCheckout();
+          navigate(
+            `/bag/${checkoutData.orderId}` +
+            `?title=${encodeURIComponent(event.title)}` +
+            `&location=${encodeURIComponent(event.location)}` +
+            `&venue=${encodeURIComponent(event.venue || event.location)}` +
+            `&date=${encodeURIComponent(event.date)}` +
+            `&time=${encodeURIComponent(event.time || "")}` +
+            `&lat=${event.lat || 0}` +
+            `&lng=${event.lng || 0}` +
+            `&type=${encodeURIComponent(checkoutData.tier.name)}` +
+            `&qty=${checkoutData.quantity}` +
+            `&price=${formattedTotal}` +
+            `&ref=${response.reference}`
+          );
         } catch (err) {
-          console.error("Error saving tickets after payment:", err);
-          alert("Payment succeeded but ticket issuance failed. Contact support.");
+          console.error("Post-payment error:", err);
+          alert("Payment succeeded but email failed. Check your inbox or contact support.");
+        } finally {
+          setCheckoutLoading(false);
         }
       },
       onClose: () => setCheckoutLoading(false),
@@ -349,10 +385,8 @@ useEffect(() => {
 
   const handleCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setCheckoutLoading(true);
     initializePaystack();
   };
-
   return (
     <>
       {/* Breadcrumb */}

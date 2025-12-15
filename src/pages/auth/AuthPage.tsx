@@ -1,6 +1,6 @@
 // src/pages/auth/AuthPage.tsx
 import { useState } from "react";
-import AuthModal from "../AuthModal.tsx";
+import AuthModal from "../AuthModal";
 
 export default function AuthPage() {
   const [showAuth, setShowAuth] = useState(true);

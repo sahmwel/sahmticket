@@ -1,6 +1,4 @@
-'use client';
-
-import { Link } from "react-router-dom";
+import React from "react";
 import { motion } from "framer-motion";
 import {
   TrendingUp,
@@ -32,36 +30,34 @@ export default function OrganizerTeaser() {
       {/* Sticky Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/70 via-black/20 to-transparent backdrop-blur-xl border-b border-white/10">
         <div className="px-6 py-5 flex items-center justify-between">
-          {/* Logo */}
           <div className="relative group">
-            <img
-              src="/logo-white.png"
-              alt="SahmTicketHub"
-              className="h-24 md:h-28 w-auto object-contain drop-shadow-2xl transition-transform duration-500 group-hover:scale-110"
-            />
+            <a href="/">
+              <img
+                src="/logo-white.png"
+                alt="SahmTicketHub"
+                className="h-28 md:h-36 lg:h-44 w-auto object-contain drop-shadow-2xl transition-all duration-500 group-hover:scale-110"
+              />
+            </a>
             <div className="absolute -inset-10 bg-gradient-to-r from-purple-600/60 via-pink-600/60 to-rose-600/60 rounded-full blur-3xl opacity-70 group-hover:opacity-100 transition-opacity duration-700 -z-10" />
           </div>
 
-          {/* Create Event CTA */}
-          <Link
-            to="/auth"
+          <a
+            href="/auth?redirect=/create-event"
             className="flex items-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold px-7 py-3.5 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 text-sm md:text-base"
           >
             <Plus className="w-5 h-5" />
             Create Event
-          </Link>
+          </a>
         </div>
       </header>
 
-      {/* Main Hero Section */}
+      {/* Main Content */}
       <main className="pt-32 md:pt-36 min-h-screen bg-gradient-to-br from-purple-900 via-pink-900 to-rose-900 text-white overflow-hidden relative">
-        {/* Background Glows */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-10 -right-40 w-96 h-96 bg-purple-600/40 rounded-full blur-3xl" />
           <div className="absolute bottom-10 -left-40 w-80 h-80 bg-pink-600/40 rounded-full blur-3xl" />
         </div>
 
-        {/* Hero Content */}
         <section className="relative z-10 text-center px-6 max-w-6xl mx-auto">
           <motion.div
             initial={{ y: 60, opacity: 0 }}
@@ -104,7 +100,7 @@ export default function OrganizerTeaser() {
           </div>
         </section>
 
-        {/* Final CTA Section */}
+        {/* Final CTA */}
         <section className="relative z-10 bg-black/50 backdrop-blur-2xl py-24">
           <div className="text-center px-6 max-w-4xl mx-auto">
             <h2 className="text-4xl sm:text-6xl font-black mb-6">
@@ -114,15 +110,15 @@ export default function OrganizerTeaser() {
               Join thousands of organizers already making money with SahmTicketHub
             </p>
 
-            <Link
-              to="/auth"
+            <a
+              href="/auth?redirect=/create-event"
               className="inline-flex items-center justify-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300
                 px-9 py-6 text-lg min-h-14
                 sm:text-2xl sm:px-16 sm:py-8 sm:min-h-20 sm:gap-4"
             >
               Create Your First Event Free
               <ArrowRight className="w-6 h-6 sm:w-9 sm:h-9" />
-            </Link>
+            </a>
           </div>
         </section>
       </main>

@@ -1,8 +1,9 @@
 // src/pages/organizer/Tickets.tsx
 import Sidebar from "../../components/Sidebar";
-import Navbar from "../../components/AdminNavbar";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { Search, Download, Calendar, Ticket, DollarSign, Users, Menu } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface Ticket {
   id: string;
@@ -12,24 +13,28 @@ interface Ticket {
   event_title: string;
   buyer_email: string;
   qr_code_url: string | null;
+  event_id: string;
 }
 
 export default function OrganizerTickets() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedQR, setSelectedQR] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchTickets = async () => {
-      setLoading(true);
-      try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (userError) throw userError;
-        if (!user) {
-          window.location.href = "/auth";
-          return;
-        }
+    const loadTickets = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        navigate("/auth");
+        return;
+      }
 
-        const { data, error } = await supabase
+      try {
+        const { data: ticketData, error } = await supabase
           .from("tickets")
           .select(`
             id,
@@ -37,101 +42,215 @@ export default function OrganizerTickets() {
             price,
             purchased_at,
             qr_code_url,
-            event:event_id (
-              id,
-              title,
-              organizer_id
-            ),
-            buyer:buyer_id (
-              email
-            )
+            event_id,
+            event:event_id (title),
+            buyer_email
           `)
-          .eq("event.organizer_id", user.id)
+          .eq("event.organizer_id", session.user.id)
           .order("purchased_at", { ascending: false });
 
         if (error) throw error;
 
-        const formatted = (data || []).map((t: any) => ({
+        const formatted: Ticket[] = (ticketData || []).map((t: any) => ({
           id: t.id,
           ticket_type: t.ticket_type,
           price: t.price,
           purchased_at: t.purchased_at,
           qr_code_url: t.qr_code_url,
-          event_title: t.event?.title ?? "Unknown Event",
-          buyer_email: t.buyer?.email ?? "Unknown Buyer",
+          event_title: t.event?.title || "Unknown Event",
+          buyer_email: t.buyer_email || "guest@ticketapp.com",
+          event_id: t.event_id,
         }));
 
         setTickets(formatted);
+        setFilteredTickets(formatted);
       } catch (err: any) {
-        console.error(err.message);
+        console.error("Error:", err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchTickets();
-  }, []);
+    loadTickets();
+  }, [navigate]);
 
-  const downloadQR = (url: string | null, name: string) => {
-    if (!url) return;
+  // Search
+  useEffect(() => {
+    const filtered = tickets.filter(t =>
+      t.event_title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.buyer_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.ticket_type.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setFilteredTickets(filtered);
+  }, [searchTerm, tickets]);
+
+  const totalRevenue = tickets.reduce((sum, t) => sum + t.price, 0);
+
+  const downloadQR = (url: string, name: string) => {
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${name}-ticket.png`;
-    document.body.appendChild(link);
+    link.download = `${name.replace(/\s+/g, "_")}_QR_${Date.now()}.png`;
     link.click();
-    document.body.removeChild(link);
   };
 
-  if (loading) return <p className="text-white p-6">Loading tickets...</p>;
-
   return (
-    <div className="flex">
-      <Sidebar role="organizer" />
-      <div className="flex-1 min-h-screen ml-0 md:ml-64">
-        <Navbar role="organizer" />
-        <main className="p-6">
-          <h1 className="text-3xl font-bold text-white mb-6">Tickets</h1>
+    <div className="flex min-h-screen bg-gray-950">
+      {/* Sidebar - Mobile Slide In */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ease-in-out ${
+        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+      } md:translate-x-0 md:static md:z-auto`}>
+        <Sidebar role="organizer" />
+      </div>
 
-          {tickets.length === 0 ? (
-            <p className="text-white/70">No tickets sold yet.</p>
-          ) : (
-            <ul className="space-y-6">
-              {tickets.map((ticket) => (
-                <li
-                  key={ticket.id}
-                  className="p-4 bg-white/10 rounded-xl flex flex-col md:flex-row md:items-center md:justify-between"
-                >
+      {/* Overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Mobile Header */}
+        <div className="md:hidden flex items-center justify-between p-4 bg-gray-900/90 backdrop-blur-xl border-b border-white/10">
+          <button onClick={() => setSidebarOpen(true)} className="text-white p-2 rounded-lg hover:bg-white/10">
+            <Menu size={24} />
+          </button>
+          <h1 className="text-xl font-bold text-white">Ticket Sales</h1>
+          <div className="w-10" />
+        </div>
+
+        <div className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-900 via-purple-900/10 to-gray-900">
+          <main className="p-6 lg:p-10 max-w-7xl mx-auto">
+            <div className="mb-10">
+              <h1 className="text-4xl font-bold text-white mb-3">Ticket Sales</h1>
+              <p className="text-gray-400">View all tickets purchased for your events</p>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10">
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+                <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-semibold text-lg text-white">{ticket.event_title}</p>
-                    <p className="text-white/80">Ticket: {ticket.ticket_type}</p>
-                    <p className="text-white/80">Price: ₦{ticket.price.toLocaleString()}</p>
-                    <p className="text-white/80">Buyer: {ticket.buyer_email}</p>
-                    <p className="text-sm text-gray-400">
-                      Purchased: {new Date(ticket.purchased_at).toLocaleString()}
+                    <p className="text-gray-400 text-sm">Total Revenue</p>
+                    <p className="text-3xl font-bold text-white mt-2">₦{totalRevenue.toLocaleString()}</p>
+                  </div>
+                  <DollarSign className="text-green-400" size={36} />
+                </div>
+              </div>
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Tickets Sold</p>
+                    <p className="text-3xl font-bold text-white mt-2">{tickets.length}</p>
+                  </div>
+                  <Ticket className="text-purple-400" size={36} />
+                </div>
+              </div>
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Unique Buyers</p>
+                    <p className="text-3xl font-bold text-white mt-2">
+                      {new Set(tickets.map(t => t.buyer_email)).size}
                     </p>
                   </div>
+                  <Users className="text-blue-400" size={36} />
+                </div>
+              </div>
+            </div>
 
-                  {ticket.qr_code_url && (
-                    <div className="mt-4 md:mt-0 flex flex-col items-center">
-                      <img
-                        src={ticket.qr_code_url}
-                        alt="Ticket QR Code"
-                        className="w-32 h-32 object-contain mb-2"
-                      />
-                      <button
-                        onClick={() => downloadQR(ticket.qr_code_url, ticket.event_title)}
-                        className="bg-purple-600 text-white px-3 py-1 rounded-xl text-sm"
-                      >
-                        Download QR
-                      </button>
+            {/* Search */}
+            <div className="relative mb-8">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
+              <input
+                type="text"
+                placeholder="Search tickets..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 py-4 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/60"
+              />
+            </div>
+
+            {/* Content */}
+            {loading ? (
+              <div className="flex justify-center py-32">
+                <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-500" />
+              </div>
+            ) : filteredTickets.length === 0 ? (
+              <div className="text-center py-20">
+                <Ticket size={64} className="mx-auto text-gray-600 mb-6" />
+                <h3 className="text-2xl font-bold text-white mb-3">
+                  {searchTerm ? "No matching tickets" : "No tickets sold yet"}
+                </h3>
+                <p className="text-gray-400">Tickets will appear here when purchased</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                {filteredTickets.map((ticket) => (
+                  <div key={ticket.id} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden hover:border-purple-500/50 transition-all group">
+                    <div className="p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition">
+                            {ticket.event_title}
+                          </h3>
+                          <p className="text-purple-400 text-sm font-medium">{ticket.ticket_type}</p>
+                        </div>
+                        <span className="bg-green-500/20 text-green-300 px-3 py-1 rounded-full text-xs border border-green-500/50">Paid</span>
+                      </div>
+                      <div className="space-y-2 text-sm text-gray-400">
+                        <p><span className="text-gray-500">Buyer:</span> {ticket.buyer_email}</p>
+                        <p><span className="text-gray-500">Price:</span> ₦{ticket.price.toLocaleString()}</p>
+                        <p className="flex items-center gap-2">
+                          <Calendar size={14} />
+                          {new Date(ticket.purchased_at).toLocaleString("en-US", {
+                            dateStyle: "medium",
+                            timeStyle: "short"
+                          })}
+                        </p>
+                      </div>
                     </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </main>
+
+                    {ticket.qr_code_url && (
+                      <div className="bg-white/5 border-t border-white/10 p-6 text-center">
+                        <img
+                          src={ticket.qr_code_url}
+                          alt="QR"
+                          className="w-40 h-40 mx-auto mb-4 rounded-lg cursor-pointer hover:scale-105 transition"
+                          onClick={() => setSelectedQR(ticket.qr_code_url)}
+                        />
+                        <button
+                          onClick={() => downloadQR(ticket.qr_code_url!, ticket.event_title)}
+                          className="flex items-center gap-2 mx-auto bg-purple-600 hover:bg-purple-700 px-5 py-2.5 rounded-xl text-white text-sm font-medium"
+                        >
+                          <Download size={16} /> Download QR
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </main>
+        </div>
       </div>
+
+      {/* QR Modal */}
+      {selectedQR && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedQR(null)}>
+          <div className="bg-gray-900 border border-white/20 rounded-2xl p-8 max-w-sm w-full text-center">
+            <img src={selectedQR} alt="QR" className="w-64 h-64 mx-auto mb-6 rounded-xl" />
+            <button
+              onClick={() => { downloadQR(selectedQR, "ticket"); setSelectedQR(null); }}
+              className="bg-purple-600 hover:bg-purple-700 px-8 py-3 rounded-xl text-white font-medium"
+            >
+              Download Full Size
+            </button>
+            <button onClick={() => setSelectedQR(null)} className="mt-4 text-gray-400 hover:text-white">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

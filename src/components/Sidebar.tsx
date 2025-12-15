@@ -9,18 +9,18 @@ interface SidebarProps {
 export default function Sidebar({ role }: SidebarProps) {
   const adminLinks = [
     { name: "Dashboard", path: "/admin/dashboard", icon: <Home size={18} /> },
-    { name: "Users", path: "/admin/users", icon: <Users size={18} /> },
-    { name: "Events", path: "/admin/events", icon: <Calendar size={18} /> },
-    { name: "Tickets", path: "/admin/tickets", icon: <Ticket size={18} /> },
-    { name: "Settings", path: "/admin/settings", icon: <Settings size={18} /> },
+    { name: "Users",     path: "/admin/users",     icon: <Users size={18} /> },
+    { name: "Events",    path: "/admin/events",    icon: <Calendar size={18} /> },
+    { name: "Tickets",   path: "/admin/tickets",   icon: <Ticket size={18} /> },
+    { name: "Settings",  path: "/admin/settings",  icon: <Settings size={18} /> },
   ];
 
   const organizerLinks = [
-    { name: "Dashboard", path: "/organizer/dashboard", icon: <Home size={18} /> },
-    { name: "My Events", path: "/organizer/myevents", icon: <Calendar size={18} /> },
-    { name: "Create Event", path: "/organizer/createevent", icon: <Calendar size={18} /> },
-    { name: "Tickets", path: "/organizer/tickets", icon: <Ticket size={18} /> },
-    { name: "Profile", path: "/organizer/profile", icon: <User size={18} /> },
+    { name: "Dashboard",    path: "/organizer/dashboard",   icon: <Home size={18} /> },
+    { name: "My Events",    path: "/organizer/events",      icon: <Calendar size={18} /> },      // FIXED
+    { name: "Create Event", path: "/organizer/create-event", icon: <Calendar size={18} /> },      // FIXED
+    { name: "Tickets",      path: "/organizer/tickets",     icon: <Ticket size={18} /> },
+    { name: "Profile",      path: "/organizer/profile",     icon: <User size={18} /> },
   ];
 
   const links = role === "admin" ? adminLinks : organizerLinks;
@@ -39,13 +39,13 @@ export default function Sidebar({ role }: SidebarProps) {
             key={link.name}
             to={link.path}
             className={({ isActive }) =>
-              `flex items-center gap-2 p-2 rounded-md hover:bg-white/10 transition ${
-                isActive ? "bg-white/20 font-bold" : ""
+              `flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-all ${
+                isActive ? "bg-white/20 font-bold shadow-lg" : ""
               }`
             }
           >
             {link.icon}
-            {link.name}
+            <span>{link.name}</span>
           </NavLink>
         ))}
       </nav>

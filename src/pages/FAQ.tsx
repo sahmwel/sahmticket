@@ -62,7 +62,7 @@ const faqs: FAQItem[] = [
   {
     question: "I have a problem with my ticket — help!",
     answer:
-      "We’re here 24/7. Chat with us instantly on WhatsApp (+234 703 565 1109) or email hello@sahmtickethub.online — we reply in minutes, not days.",
+      "We’re here 24/7. Chat with us instantly on WhatsApp (+234 703 565 1109) or email info@sahmtickethub.online — we reply in minutes, not days.",
     icon: MessageCircle,
   },
 ];
@@ -172,7 +172,7 @@ export default function FAQ() {
               Chat on WhatsApp
             </a>
             <a
-              href="mailto:hello@sahmtickethub.online"
+              href="mailto:info@sahmtickethub.online"
               className="bg-black/30 backdrop-blur-lg font-bold text-lg py-5 px-10 rounded-2xl hover:bg-black/50 transition-all border border-white/20"
             >
               Email Us

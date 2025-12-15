@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import AdsenseAd from "../components/AdsenseAd";
 import {
   Search,
   Calendar,
@@ -202,6 +203,8 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
   );
 };
 
+
+
 // --- EventCard & EventSection ---
 const containerVariants = { hidden: { opacity: 1 }, visible: { transition: { staggerChildren: 0.08 } } };
 const itemVariants = { hidden: { y: 30, opacity: 0 }, visible: { y: 0, opacity: 1 } }; // ← THIS WAS MISSING
@@ -321,12 +324,22 @@ export default function Home() {
         console.error("Error fetching events:", eventsError);
         return;
       }
+const parsedEvents = (eventsData || []).map((event: any) => ({
+  id: event.id,
+  title: event.title,
+  description: event.description,
+  date: event.date,
+  time: event.time,
+  venue: event.venue,
+  location: event.location,
+  image: event.image,
+  ticketTiers: event.ticketTiers ?? [],
+  featured: event.featured ?? false,
+  trending: event.trending ?? false,
+  isNew: event.isnew ?? false,
+  sponsored: event.sponsored ?? false,
+}));
 
-      const parsedEvents = (eventsData || []).map((event: any) => ({
-        ...event,
-        isNew: event.isNew || event.isnew || false,
-        ticketTiers: event.ticketTiers || event.tickettier || event.ticket_tiers || [],
-      }));
 
       setEventsList(parsedEvents);
     };
@@ -427,6 +440,13 @@ export default function Home() {
       {/* Timeline */}
       <TimelineSchedule events={filteredEvents} />
 
+      <div className="max-w-7xl mx-auto px-5 my-12">
+        <AdsenseAd
+          slot="8934168348"
+          style={{ display: "block", minHeight: "120px" }}
+        />
+      </div>
+
       {/* Search */}
       <div className="max-w-2xl mx-auto px-5 my-16">
         <div className="relative">
@@ -441,9 +461,26 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Ad after search */}
+      <div className="max-w-7xl mx-auto px-5 my-12">
+        <AdsenseAd
+          slot="8934168348"
+          style={{ display: "block", minHeight: "120px" }}
+        />
+      </div>
+
       {/* Event Sections */}
       <div className="space-y-20 pb-28">
         <EventSection title="Trending Now" events={trendingEvents} />
+
+        {/* Ad after first event section */}
+        <div className="max-w-7xl mx-auto px-5 my-12">
+          <AdsenseAd
+            slot="8934168348"
+            style={{ display: "block", minHeight: "120px" }}
+          />
+        </div>
+
         <EventSection title="Featured Events" events={featuredEvents} />
         <EventSection title="Fresh Drops" events={newEvents} />
         <EventSection title="Sponsored Picks" events={sponsoredEvents} />

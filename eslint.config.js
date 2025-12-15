@@ -19,5 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    settings: {
+      react: {
+        version: 'detect',
+        jsxRuntime: 'automatic', // <- this fixes the 'React' unused warning
+      },
+    },
   },
 ])

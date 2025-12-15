@@ -1,5 +1,6 @@
 // src/components/AuthModal.tsx
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom"; // ✅ import useNavigate
 import { supabase } from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail, Lock, User, Phone, Eye, EyeOff, ArrowLeft } from "lucide-react";
@@ -9,6 +10,8 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ onClose }: AuthModalProps) {
+  const navigate = useNavigate(); // ✅ initialize navigate
+
   const [isLogin, setIsLogin] = useState(true);
   const [showForgot, setShowForgot] = useState(false);
   const [showOTP, setShowOTP] = useState(false);
@@ -47,11 +50,12 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
       await supabase.from("otp_codes").insert({ user_id: userId, otp: generatedOtp });
 
-      await fetch("/functions/v1/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp: generatedOtp }),
-      });
+      await fetch("http://localhost:5000/send-otp", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email, otp: generatedOtp, name }),
+});
+
 
       setMessage("OTP resent. Check your email.");
       setOtpTimer(60);
@@ -139,7 +143,8 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       if (!loginData.user) throw new Error("Login failed");
 
       const userRole = loginData.user?.user_metadata?.role || "organizer";
-      window.location.href = userRole === "admin" ? "/admin" : "/organizer";
+      // ✅ SPA-friendly redirect
+      navigate(userRole === "admin" ? "/admin/dashboard" : "/organizer/dashboard");
     } catch (err: any) {
       setMessage(err.message);
     } finally {
@@ -165,7 +170,8 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       if (!data.user) throw new Error("Login failed");
 
       const userRole = data.user.user_metadata?.role || "organizer";
-      window.location.href = userRole === "admin" ? "/admin" : "/organizer";
+      // ✅ SPA-friendly redirect
+      navigate(userRole === "admin" ? "/admin/dashboard" : "/organizer/dashboard");
     } catch (err: any) {
       setMessage(err.message);
     } finally {

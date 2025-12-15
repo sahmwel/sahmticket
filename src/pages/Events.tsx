@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import AdsenseAd from "../components/AdsenseAd";
 import {
   Calendar,
   MapPin,
@@ -126,10 +127,10 @@ const EventCard: React.FC<EventCardProps> = ({ event, goToEvent }) => {
           </div>
         </div>
 
-       <button className="mt-auto w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-lg">
-  <Ticket size={24} />
-  Get Ticket • {event.ticketTiers?.[0]?.price ?? "Free"}
-</button>
+        <button className="mt-auto w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-lg">
+          <Ticket size={24} />
+          Get Ticket • {event.ticketTiers?.[0]?.price ?? "Free"}
+        </button>
 
       </div>
     </div>
@@ -147,42 +148,42 @@ export default function EventsPage() {
   const navigate = useNavigate();
 
   // ---------------- Fetch Events ----------------
- useEffect(() => {
-  const fetchEvents = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("events")
-        .select("*")
-        .order("date", { ascending: true });
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("events")
+          .select("*")
+          .order("date", { ascending: true });
 
-      if (error) return console.error(error);
-      if (!data) return setEvents([]);
+        if (error) return console.error(error);
+        if (!data) return setEvents([]);
 
-      const parsedEvents: Event[] = data.map((event: any) => ({
-        id: event.id,
-        title: event.title,
-        description: event.description,
-        category_id: event.category_id,
-        date: event.date,
-        time: event.time,
-        venue: event.venue,
-        location: event.location,
-        image: event.image || "https://via.placeholder.com/400x300?text=No+Image",
-        ticketTiers: Array.isArray(event.ticketTiers) ? event.ticketTiers : [],
-        featured: event.featured ?? false,
-        trending: event.trending ?? false,
-        isNew: event.isnew ?? false, // Map to camelCase
-        sponsored: event.sponsored ?? false,
-      }));
+        const parsedEvents: Event[] = data.map((event: any) => ({
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          category_id: event.category_id,
+          date: event.date,
+          time: event.time,
+          venue: event.venue,
+          location: event.location,
+          image: event.image || "https://via.placeholder.com/400x300?text=No+Image",
+          ticketTiers: Array.isArray(event.ticketTiers) ? event.ticketTiers : [],
+          featured: event.featured ?? false,
+          trending: event.trending ?? false,
+          isNew: event.isnew ?? false, // Map to camelCase
+          sponsored: event.sponsored ?? false,
+        }));
 
-      setEvents(parsedEvents);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+        setEvents(parsedEvents);
+      } catch (err) {
+        console.error(err);
+      }
+    };
 
-  fetchEvents();
-}, []);
+    fetchEvents();
+  }, []);
 
   // ---------------- Fetch Categories ----------------
   useEffect(() => {
@@ -246,6 +247,11 @@ export default function EventsPage() {
           </motion.div>
         )}
 
+        {/* AD: After Featured Carousel */}
+        <div className="max-w-7xl mx-auto px-5 my-12">
+          <AdsenseAd slot="1111111111" style={{ minHeight: "120px" }} />
+        </div>
+
         {/* Near You */}
         {events.length > 0 && (
           <div className="mb-16">
@@ -258,6 +264,13 @@ export default function EventsPage() {
             </motion.div>
           </div>
         )}
+
+        {/* AD: After Near You Section */}
+        <div className="max-w-7xl mx-auto px-5 my-12">
+          <AdsenseAd slot="2222222222" style={{ minHeight: "120px" }} />
+        </div>
+
+
 
         {/* View Mode Toggle */}
         <div className="flex justify-center gap-6 mb-10">
@@ -307,6 +320,7 @@ export default function EventsPage() {
 
             <motion.div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
               {filteredEvents.length === 0 ? (
+
                 <p className="col-span-full text-center text-gray-500 text-xl py-20">No events found</p>
               ) : (
                 filteredEvents.map((event) => <EventCard key={event.id} event={event} goToEvent={goToEvent} />)
