@@ -1,0 +1,29 @@
+{
+  "name": "sahmtickethub-backend",
+  "version": "1.0.0",
+  "description": "SahmTicketHub Node.js backend for PDF generation, email sending, and API endpoints",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node -r dotenv/config dist/server.js",
+    "dev": "nodemon --watch . --ext ts,js --exec \"ts-node -r dotenv/config server.ts\"",
+    "build": "tsc --build tsconfig.backend.json"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^14.4.2",
+    "@supabase/supabase-js": "^2.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "nodemailer": "^6.9.4",
+    "pdfkit": "^0.13.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

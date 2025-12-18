@@ -1,70 +1,161 @@
+// Fix for shared hosting memory limit (CloudLinux LVE) — disable WebAssembly in undici
+process.env.UNDICI_NO_WASM = "1";
+
 import dotenv from "dotenv";
 dotenv.config();
 
 import express, { Request, Response } from "express";
 import cors from "cors";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { Horizon } from "@stellar/stellar-sdk";
 import { sendEmail } from "./lib/emailTemplates/sendEmail.js";
-import { generateTicketPdf } from "./lib/pdf/generateTicketPdf.js";  // ✅ Only this
+import { generateTicketPdf } from "./lib/pdf/generateTicketPdf.js";
 
+// ------------------------
+// Environment Validation
+// ------------------------
+const requiredEnv = ["SUPABASE_URL", "SUPABASE_KEY"] as const;
+for (const key of requiredEnv) {
+  if (!process.env[key]) {
+    console.error(`Missing required env: ${key}`);
+    process.exit(1);
+  }
+}
+
+const PORT = Number(process.env.PORT) || 5000;
+const STELLAR_ACCOUNT = process.env.STELLAR_ACCOUNT?.trim();
+
+// ------------------------
+// Supabase Client
+// ------------------------
+const supabase: SupabaseClient = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_KEY!
+);
+
+// ------------------------
+// Stellar Polling (Optional)
+// ------------------------
+if (STELLAR_ACCOUNT) {
+  const stellarServer = new Horizon.Server("https://horizon.stellar.org");
+
+  async function pollStellarPayments(accountId: string) {
+    if (!accountId) return;
+
+    try {
+      const payments = await stellarServer
+        .payments()
+        .forAccount(accountId)
+        .limit(20)
+        .order("desc")
+        .call();
+
+      for (const op of payments.records) {
+        // Type guard for payment operations
+        if (op.type === "payment" && op.to === accountId) {
+          // Manual interface for payment fields (current SDK)
+          const payment = op as {
+            transaction_hash: string;
+            amount: string;
+            asset_type: "native" | "credit_alphanum4" | "credit_alphanum12";
+            asset_code?: string;
+            asset_issuer?: string;
+            from: string;
+          };
+
+          const asset = payment.asset_type === "native"
+            ? "XLM"
+            : `${payment.asset_code}:${payment.asset_issuer}`;
+
+          const { error } = await supabase
+            .from("tickets")
+            .update({
+              status: "confirmed",
+              tx_hash: payment.transaction_hash,
+              payment_amount: payment.amount,
+              payment_asset: asset,
+              confirmed_at: new Date().toISOString(),
+            })
+            .eq("payment_account", payment.from)
+            .eq("status", "pending"); // Prevent double confirmation
+
+          if (error) {
+            console.error("Supabase update error:", error.message);
+          } else {
+            console.log(`✅ Ticket confirmed — tx: ${payment.transaction_hash} (${payment.amount} ${asset})`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Stellar polling error:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Poll every 60 seconds + initial poll
+  setInterval(() => pollStellarPayments(STELLAR_ACCOUNT!), 60_000);
+  pollStellarPayments(STELLAR_ACCOUNT!).catch(console.error);
+}
+
+// ------------------------
+// Express App
+// ------------------------
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(",") || "*" }));
 app.use(express.json({ limit: "50mb" }));
 
 // Health check
 app.get("/", (_req: Request, res: Response) => {
-  res.json({ status: "🚀 Email + PDF API running ✅" });
+  res.json({
+    status: "🚀 TicketHub API running with Stellar + Supabase ✅",
+    timestamp: new Date().toISOString(),
+    stellarPolling: !!STELLAR_ACCOUNT,
+  });
 });
 
-// 🚀 Generate PDF
+// Generate PDF
 app.post("/api/tickets/generate-pdf", async (req: Request, res: Response) => {
   try {
     const { name, eventTitle, eventDate, eventTime, eventVenue, tickets } = req.body;
 
-    if (!eventTitle || !tickets) {
-      return res.status(400).json({ error: "Missing eventTitle or tickets" });
+    if (!eventTitle || !tickets || !Array.isArray(tickets) || tickets.length === 0) {
+      return res.status(400).json({ error: "Missing or invalid eventTitle/tickets" });
     }
 
     const pdfBuffer = await generateTicketPdf({
-      name: name || "Customer",
-      eventTitle,
+      name: (name as string)?.trim() || "Customer",
+      eventTitle: eventTitle.trim(),
       eventDate,
       eventTime: eventTime || "TBC",
       eventVenue: eventVenue || "TBC",
-      tickets
+      tickets,
     });
 
+    const filename = `sahm-ticket-${eventTitle.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`;
+
     res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="sahm-ticket-${Date.now()}.pdf"`
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Length": pdfBuffer.length,
     });
     res.send(pdfBuffer);
-  } catch (error: unknown) {  // ✅ Proper typing
+  } catch (error) {
     console.error("PDF Error:", error);
-    if (error instanceof Error) {
-      res.status(500).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: "PDF generation failed" });
-    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "PDF generation failed" });
   }
 });
 
-// 🚀 Email + PDF Combo
+// Email + PDF Combo
 app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
   try {
     const { to, name, eventTitle, eventDate, eventTime, eventVenue, tickets, orderId } = req.body;
 
-    // 1. Generate PDF
-    const pdfBuffer = await generateTicketPdf({
-      name,
-      eventTitle,
-      eventDate,
-      eventTime,
-      eventVenue,
-      tickets
-    });
+    if (!to || !eventTitle || !tickets || !Array.isArray(tickets)) {
+      return res.status(400).json({ error: "Missing required fields (to, eventTitle, tickets)" });
+    }
 
-    // 2. Send HTML email + PDF (sendEmail handles attachments internally now)
+    const pdfBuffer = await generateTicketPdf({ name, eventTitle, eventDate, eventTime, eventVenue, tickets });
+
     await sendEmail({
       to,
       type: "ticket",
@@ -78,70 +169,67 @@ app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
         ticketType: tickets[0]?.ticketType || "GENERAL",
         quantity: tickets[0]?.quantity || 1,
         amount: tickets[0]?.amount || "FREE",
-        orderId  // 👈 Pass orderId for filename
-      }
+        orderId,
+      },
     });
 
-    res.json({ 
-      success: true, 
-      message: "✅ Ticket PDF generated + emailed automatically!",
-      pdfSize: `${(pdfBuffer.length / 1024).toFixed(1)} KB`
+    res.json({
+      success: true,
+      message: "✅ Ticket PDF generated and emailed successfully!",
+      pdfSizeKB: Number((pdfBuffer.length / 1024).toFixed(1)),
     });
-  } catch (error: unknown) {  // ✅ FIXED: proper error handling
+  } catch (error) {
     console.error("Email+PDF Error:", error);
-    if (error instanceof Error) {
-      res.status(500).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: "Email+PDF failed" });  // ✅ FIXED
-    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "Email+PDF failed" });
   }
 });
 
-// 🚀 QR Validation
+// QR Validation
 app.post("/api/tickets/validate", async (req: Request, res: Response) => {
   try {
     const { qrData } = req.body;
-    const [eventId, ticketType] = qrData.split("|");
+    if (!qrData || typeof qrData !== "string") {
+      return res.status(400).json({ error: "Invalid or missing qrData" });
+    }
+
     const isValid = qrData.includes("RAEXp") || qrData.includes("TKT");
-    
-    res.json({ 
+    const parts = qrData.split("|");
+    const eventId = parts[0] || null;
+    const ticketType = parts[1] || null;
+
+    res.json({
       valid: isValid,
       eventId,
       ticketType,
-      scannedAt: new Date().toISOString()
+      scannedAt: new Date().toISOString(),
     });
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      res.status(500).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: "Validation failed" });
-    }
+  } catch (error) {
+    console.error("QR Validation Error:", error);
+    res.status(500).json({ error: "Validation failed" });
   }
 });
 
-// Original email route
+// General email
 app.post("/send-email", async (req: Request, res: Response) => {
   try {
     const { to, type, data, fromAccountKey } = req.body;
-
     if (!to || !type || !data) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing required fields: 'to', 'type', or 'data'",
-      });
+      return res.status(400).json({ error: "Missing required fields: to, type, data" });
     }
 
     await sendEmail({ to, type, data, fromAccountKey });
     res.json({ success: true, message: "Email sent successfully" });
-  } catch (error: unknown) {
+  } catch (error) {
     console.error("Email Error:", error);
-    if (error instanceof Error) {
-      res.status(500).json({ success: false, error: error.message });
-    } else {
-      res.status(500).json({ success: false, error: "Unknown error" });
-    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "Email failed" });
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 TicketHub API on port ${PORT}`));
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 TicketHub API running on port ${PORT}`);
+  console.log(`Health check: https://api.sahmtickethub.online/`);
+  if (STELLAR_ACCOUNT) {
+    console.log(`Stellar polling enabled for account: ${STELLAR_ACCOUNT}`);
+  }
+});
