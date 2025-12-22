@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start-server": "tsc -p tsconfig.backend.json && node dist/server/server.js",
-    "test-email": "tsc -p tsconfig.backend.json && node dist/testEmail.js"
+    "test-email": "tsc -p tsconfig.backend.json && node dist/testEmail.js",
+    "start": "concurrently \"npm run dev\" \"npm run start-server\""
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "^13.8.0",
@@ -18,12 +19,16 @@
     "@supabase/supabase-js": "^2.87.1",
     "@vitejs/plugin-basic-ssl": "^2.1.0",
     "axios": "^1.13.2",
+    "concat-stream": "^2.0.0",
+    "concurrently": "^8.2.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "framer-motion": "^12.23.24",
+    "get-stream": "^9.0.1",
     "html2canvas": "^1.4.1",
+    "html5-qrcode": "^2.3.8",
     "jspdf": "^3.0.4",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.554.0",

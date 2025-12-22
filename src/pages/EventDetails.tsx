@@ -23,7 +23,8 @@ import {
 import EventMap from "../components/EventMap";
 import { supabase } from "../lib/supabaseClient";
 import QRCode from "qrcode";
-import Modal from "../components/Modal"; 
+import Modal from "../components/Modal";
+import QRScanner from "./QRScanner";
 
 interface TicketTier {
   name: string;
@@ -48,6 +49,17 @@ interface EventType {
   ticketTiers?: TicketTier[];
 }
 
+interface ScanResult {
+  message: string;
+  status: "success" | "error";
+  ticketInfo?: {
+    buyerName?: string | null;
+    ticketType: string;
+    price: number;
+  };
+}
+
+
 declare global {
   interface Window {
     PaystackPop?: any;
@@ -66,8 +78,45 @@ export default function EventDetails() {
   const [formData, setFormData] = useState({ fullName: "", email: "", phone: "" });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
+  // QR Scan validation
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+
   // 🚀 Backend API URL
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://api.sahmtickethub.online';
+
+  // ---------------- QR SCAN VALIDATION ----------------
+  const validateTicket = async (qrData: string) => {
+    if (!event?.id) return;
+
+    try {
+      const { data: ticket, error } = await supabase
+        .from("tickets")
+        .select("*")
+        .eq("event_id", event.id)
+        .eq("qr_code_url", qrData)
+        .single();
+
+      if (error || !ticket) {
+        setScanResult({ status: "error", message: "Ticket not found" });
+        return;
+      }
+
+      if (ticket.used) {
+        setScanResult({ status: "error", message: "Ticket already used" });
+        return;
+      }
+
+      await supabase
+        .from("tickets")
+        .update({ used: true })
+        .eq("id", ticket.id);
+
+      setScanResult({ status: "success", message: "Ticket validated successfully!" });
+    } catch (err) {
+      console.error("Ticket validation error:", err);
+      setScanResult({ status: "error", message: "Validation failed" });
+    }
+  };
 
   // Fetch Event
   useEffect(() => {
@@ -235,17 +284,20 @@ export default function EventDetails() {
 
         // 1. Save to Supabase
         for (let i = 0; i < (checkoutData.quantity || 1); i++) {
-          const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}`;
+          const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}|${Math.random().toString(36).substring(2, 6)}`;
           const qr_code_url = await QRCode.toDataURL(qrData);
 
           await supabase.from("tickets").insert({
             event_id: event.id,
-            buyer_id: null,
+            full_name: formData.fullName,
+            email: formData.email,
+            phone: formData.phone,
             qr_code_url,
             ticket_type: checkoutData.tier.name,
             price: 0,
             reference: freeRef
           });
+
         }
 
         // 2. Send Email + PDF
@@ -263,7 +315,7 @@ export default function EventDetails() {
               ticketType: checkoutData.tier.name,
               quantity: checkoutData.quantity,
               amount: formattedTotal,
-              codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${freeRef}-${i+1}`)
+              codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${freeRef}-${i + 1}`)
             }],
             orderId: freeRef
           })
@@ -327,6 +379,9 @@ export default function EventDetails() {
 
             await supabase.from("tickets").insert({
               event_id: event.id,
+              full_name: formData.fullName,
+              email: formData.email,
+              phone: formData.phone,
               ticket_type: checkoutData.tier.name,
               price: cleanPrice,
               qr_code_url,
@@ -349,7 +404,7 @@ export default function EventDetails() {
                 ticketType: checkoutData.tier.name,
                 quantity: checkoutData.quantity,
                 amount: formattedTotal,
-                codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${response.reference}-${i+1}`)
+                codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${response.reference}-${i + 1}`)
               }],
               orderId: response.reference
             })
@@ -387,6 +442,7 @@ export default function EventDetails() {
     e.preventDefault();
     initializePaystack();
   };
+
   return (
     <>
       {/* Breadcrumb */}
@@ -399,6 +455,28 @@ export default function EventDetails() {
           <span className="font-semibold text-gray-800 truncate">{event.title}</span>
         </div>
       </div>
+
+      {/* QR Scanner for validation */}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <h2 className="text-2xl font-bold mb-4">Scan Ticket QR Code</h2>
+        <QRScanner onScan={(result: ScanResult) => setScanResult(result)} />
+
+        {scanResult && (
+          <div className={`p-4 mt-4 rounded ${scanResult.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+            }`}>
+            {scanResult.message}
+            {scanResult.ticketInfo && scanResult.status === "success" && (
+              <div className="mt-2 text-sm text-gray-700">
+                <p><strong>Buyer:</strong> {scanResult.ticketInfo.buyerName}</p>
+                <p><strong>Ticket:</strong> {scanResult.ticketInfo.ticketType}</p>
+                <p><strong>Price:</strong> ₦{scanResult.ticketInfo.price}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+
 
       {/* Hero */}
       <div className="relative">
@@ -458,65 +536,65 @@ export default function EventDetails() {
               </motion.div>
 
               {/* Ticket Tiers */}
-{event.ticketTiers && event.ticketTiers.length > 0 && (
-  <motion.div
-    initial={{ opacity: 0, y: 50 }}
-    whileInView={{ opacity: 1, y: 0 }}
-    className="bg-white rounded-3xl shadow-xl overflow-visible"
-  >
-    <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-8 text-white">
-      <h2 className="text-3xl font-black">Get Your Ticket</h2>
-    </div>
-    <div className="p-8 space-y-6">
-      {event.ticketTiers.map((tier, idx) => {
-        const remaining = (tier.available || 0) - (tier.sold || 0);
-        return (
-          <div
-            key={tier.name || idx}
-            className="border-2 border-purple-200 rounded-3xl p-6 hover:border-purple-500 transition flex flex-col md:flex-row md:justify-between md:items-center gap-4"
-          >
-            <div className="flex flex-col md:flex-row md:items-center md:gap-6">
-              <div>
-                <h3 className="text-2xl font-black">{tier.name}</h3>
-                {tier.description && <p className="text-gray-600">{tier.description}</p>}
-                <p className="text-gray-500 mt-1">
-                  {remaining > 0 ? `${remaining} tickets left` : "Sold Out"}
-                </p>
-              </div>
-              <span className="text-3xl font-black text-purple-600 mt-2 md:mt-0">{tier.price}</span>
-            </div>
+              {event.ticketTiers && event.ticketTiers.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 50 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-3xl shadow-xl overflow-visible"
+                >
+                  <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-8 text-white">
+                    <h2 className="text-3xl font-black">Get Your Ticket</h2>
+                  </div>
+                  <div className="p-8 space-y-6">
+                    {event.ticketTiers.map((tier, idx) => {
+                      const remaining = (tier.available || 0) - (tier.sold || 0);
+                      return (
+                        <div
+                          key={tier.name || idx}
+                          className="border-2 border-purple-200 rounded-3xl p-6 hover:border-purple-500 transition flex flex-col md:flex-row md:justify-between md:items-center gap-4"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-center md:gap-6">
+                            <div>
+                              <h3 className="text-2xl font-black">{tier.name}</h3>
+                              {tier.description && <p className="text-gray-600">{tier.description}</p>}
+                              <p className="text-gray-500 mt-1">
+                                {remaining > 0 ? `${remaining} tickets left` : "Sold Out"}
+                              </p>
+                            </div>
+                            <span className="text-3xl font-black text-purple-600 mt-2 md:mt-0">{tier.price}</span>
+                          </div>
 
-            <div className="flex items-center gap-4 mt-4 md:mt-0">
-              <button
-                onClick={() => handleQuantityChange(tier.name, false)}
-                className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50"
-                disabled={(quantities[tier.name] || 1) <= 1 || remaining <= 0}
-              >
-                −
-              </button>
-              <span className="text-xl font-bold w-16 text-center">{quantities[tier.name] || 1}</span>
-              <button
-                onClick={() => handleQuantityChange(tier.name, true)}
-                className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50"
-                disabled={quantities[tier.name] >= remaining}
-              >
-                +
-              </button>
-            </div>
+                          <div className="flex items-center gap-4 mt-4 md:mt-0">
+                            <button
+                              onClick={() => handleQuantityChange(tier.name, false)}
+                              className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50"
+                              disabled={(quantities[tier.name] || 1) <= 1 || remaining <= 0}
+                            >
+                              −
+                            </button>
+                            <span className="text-xl font-bold w-16 text-center">{quantities[tier.name] || 1}</span>
+                            <button
+                              onClick={() => handleQuantityChange(tier.name, true)}
+                              className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50"
+                              disabled={quantities[tier.name] >= remaining}
+                            >
+                              +
+                            </button>
+                          </div>
 
-            <button
-              onClick={() => handleBuyTicket(tier)}
-              disabled={buyingTier === tier.name || remaining <= 0}
-              className="w-full md:w-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 disabled:opacity-70 mt-4 md:mt-0"
-            >
-              {buyingTier === tier.name ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Ticket className="w-6 h-6" /> Buy</>}
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  </motion.div>
-)}
+                          <button
+                            onClick={() => handleBuyTicket(tier)}
+                            disabled={buyingTier === tier.name || remaining <= 0}
+                            className="w-full md:w-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 disabled:opacity-70 mt-4 md:mt-0"
+                          >
+                            {buyingTier === tier.name ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Ticket className="w-6 h-6" /> Buy</>}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
 
             </div>
 
@@ -565,131 +643,131 @@ export default function EventDetails() {
         </div>
       </section>
 
-    {/* Checkout Modal */}
-{showCheckout && checkoutData && (
-  <Modal>
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4"
-      onClick={closeCheckout}
-    >
-      <motion.div
-        initial={{ scale: 0.9 }}
-        animate={{ scale: 1 }}
-        className="bg-white rounded-3xl max-w-2xl w-full max-h-[95vh] overflow-y-auto shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 flex justify-between items-center">
-          <div>
-            <h2 className="text-3xl font-black">Checkout</h2>
-            <p className="text-xl opacity-90">
-              {checkoutData.tier.name} × {checkoutData.quantity}
-            </p>
-          </div>
-          <button
+      {/* Checkout Modal */}
+      {showCheckout && checkoutData && (
+        <Modal>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4"
             onClick={closeCheckout}
-            className="p-2 hover:bg-white/20 rounded-xl"
           >
-            <X className="w-8 h-8" />
-          </button>
-        </div>
-
-        {/* Form + Order Summary */}
-        <div className="p-8">
-          <form onSubmit={handleCheckoutSubmit}>
-            <div className="space-y-6">
-              <input
-                type="text"
-                placeholder="Full Name"
-                value={formData.fullName}
-                onChange={(e) =>
-                  setFormData({ ...formData, fullName: e.target.value })
-                }
-                className="w-full px-5 py-4 border rounded-2xl"
-                required
-              />
-              <input
-                type="email"
-                placeholder="Email"
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-                className="w-full px-5 py-4 border rounded-2xl"
-                required
-              />
-              <input
-                type="tel"
-                placeholder="Phone Number"
-                value={formData.phone}
-                onChange={(e) =>
-                  setFormData({ ...formData, phone: e.target.value })
-                }
-                className="w-full px-5 py-4 border rounded-2xl"
-                required
-              />
-            </div>
-
-            {/* Order Summary */}
-            <div className="mt-8 p-6 bg-gray-50 rounded-2xl space-y-4">
-              <h3 className="text-2xl font-bold text-gray-800">
-                Order Summary
-              </h3>
-              <div className="flex justify-between">
-                <span>
-                  {checkoutData.tier.name} × {checkoutData.quantity}
-                </span>
-                <span>{formattedTotal}</span>
-              </div>
-
-              <div className="flex flex-col gap-2 text-gray-600">
-                <span>Payment Methods:</span>
-                <div className="flex gap-4 mt-1">
-                  <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
-                    <CreditCard className="w-5 h-5 text-purple-600" />
-                    <span className="text-xs">Card</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
-                    <Smartphone className="w-5 h-5 text-purple-600" />
-                    <span className="text-xs">USSD</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
-                    <Building2 className="w-5 h-5 text-purple-600" />
-                    <span className="text-xs">Bank</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
-                    <CheckCircle className="w-5 h-5 text-purple-600" />
-                    <span className="text-xs">OPAY</span>
-                  </div>
-                </div>
-              </div>
-
-              <hr className="my-2" />
-              <div className="flex justify-between text-xl font-bold text-purple-600">
-                <span>Total</span>
-                <span>{formattedTotal}</span>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={checkoutLoading}
-              className="mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-xl py-5 rounded-3xl flex justify-center items-center gap-2"
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="bg-white rounded-3xl max-w-2xl w-full max-h-[95vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
             >
-              {checkoutLoading ? (
-                <Loader2 className="w-6 h-6 animate-spin" />
-              ) : (
-                `Pay ${formattedTotal} securely`
-              )}
-            </button>
-          </form>
-        </div>
-      </motion.div>
-    </motion.div>
-  </Modal>
-)}
+              {/* Header */}
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-black">Checkout</h2>
+                  <p className="text-xl opacity-90">
+                    {checkoutData.tier.name} × {checkoutData.quantity}
+                  </p>
+                </div>
+                <button
+                  onClick={closeCheckout}
+                  className="p-2 hover:bg-white/20 rounded-xl"
+                >
+                  <X className="w-8 h-8" />
+                </button>
+              </div>
+
+              {/* Form + Order Summary */}
+              <div className="p-8">
+                <form onSubmit={handleCheckoutSubmit}>
+                  <div className="space-y-6">
+                    <input
+                      type="text"
+                      placeholder="Full Name"
+                      value={formData.fullName}
+                      onChange={(e) =>
+                        setFormData({ ...formData, fullName: e.target.value })
+                      }
+                      className="w-full px-5 py-4 border rounded-2xl"
+                      required
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      value={formData.email}
+                      onChange={(e) =>
+                        setFormData({ ...formData, email: e.target.value })
+                      }
+                      className="w-full px-5 py-4 border rounded-2xl"
+                      required
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Phone Number"
+                      value={formData.phone}
+                      onChange={(e) =>
+                        setFormData({ ...formData, phone: e.target.value })
+                      }
+                      className="w-full px-5 py-4 border rounded-2xl"
+                      required
+                    />
+                  </div>
+
+                  {/* Order Summary */}
+                  <div className="mt-8 p-6 bg-gray-50 rounded-2xl space-y-4">
+                    <h3 className="text-2xl font-bold text-gray-800">
+                      Order Summary
+                    </h3>
+                    <div className="flex justify-between">
+                      <span>
+                        {checkoutData.tier.name} × {checkoutData.quantity}
+                      </span>
+                      <span>{formattedTotal}</span>
+                    </div>
+
+                    <div className="flex flex-col gap-2 text-gray-600">
+                      <span>Payment Methods:</span>
+                      <div className="flex gap-4 mt-1">
+                        <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                          <CreditCard className="w-5 h-5 text-purple-600" />
+                          <span className="text-xs">Card</span>
+                        </div>
+                        <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                          <Smartphone className="w-5 h-5 text-purple-600" />
+                          <span className="text-xs">USSD</span>
+                        </div>
+                        <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                          <Building2 className="w-5 h-5 text-purple-600" />
+                          <span className="text-xs">Bank</span>
+                        </div>
+                        <div className="flex flex-col items-center justify-center bg-white p-2 rounded-xl shadow">
+                          <CheckCircle className="w-5 h-5 text-purple-600" />
+                          <span className="text-xs">OPAY</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <hr className="my-2" />
+                    <div className="flex justify-between text-xl font-bold text-purple-600">
+                      <span>Total</span>
+                      <span>{formattedTotal}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={checkoutLoading}
+                    className="mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-xl py-5 rounded-3xl flex justify-center items-center gap-2"
+                  >
+                    {checkoutLoading ? (
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    ) : (
+                      `Pay ${formattedTotal} securely`
+                    )}
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          </motion.div>
+        </Modal>
+      )}
 
     </>
   );

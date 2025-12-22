@@ -6,7 +6,7 @@ export default function AuthPage() {
   const [showAuth, setShowAuth] = useState(true);
   return (
     <div className="h-screen flex items-center justify-center bg-gray-100">
-      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+      {showAuth && <AuthModal onClose={() => setShowAuth(true)} />}
     </div>
   );
 }

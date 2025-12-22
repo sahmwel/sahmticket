@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import {
   TrendingUp,
@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Plus,
 } from "lucide-react";
+import AuthModal from "@/pages/AuthModal"; // Make sure path is correct
 
 const features = [
   { icon: Zap, title: "5-Minute Setup", desc: "Launch your event instantly" },
@@ -25,6 +26,8 @@ const features = [
 ] as const;
 
 export default function OrganizerTeaser() {
+  const [showAuth, setShowAuth] = useState(false);
+
   return (
     <>
       {/* Sticky Header */}
@@ -41,15 +44,19 @@ export default function OrganizerTeaser() {
             <div className="absolute -inset-10 bg-gradient-to-r from-purple-600/60 via-pink-600/60 to-rose-600/60 rounded-full blur-3xl opacity-70 group-hover:opacity-100 transition-opacity duration-700 -z-10" />
           </div>
 
-          <a
-            href="/auth?redirect=/create-event"
+          {/* Open AuthModal */}
+          <button
+            onClick={() => setShowAuth(true)}
             className="flex items-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold px-7 py-3.5 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 text-sm md:text-base"
           >
             <Plus className="w-5 h-5" />
             Create Event
-          </a>
+          </button>
         </div>
       </header>
+
+      {/* AuthModal */}
+      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
 
       {/* Main Content */}
       <main className="pt-32 md:pt-36 min-h-screen bg-gradient-to-br from-purple-900 via-pink-900 to-rose-900 text-white overflow-hidden relative">
@@ -58,6 +65,7 @@ export default function OrganizerTeaser() {
           <div className="absolute bottom-10 -left-40 w-80 h-80 bg-pink-600/40 rounded-full blur-3xl" />
         </div>
 
+        {/* Hero Section */}
         <section className="relative z-10 text-center px-6 max-w-6xl mx-auto">
           <motion.div
             initial={{ y: 60, opacity: 0 }}
@@ -110,15 +118,16 @@ export default function OrganizerTeaser() {
               Join thousands of organizers already making money with SahmTicketHub
             </p>
 
-            <a
-              href="/auth?redirect=/create-event"
+            {/* Open AuthModal from CTA */}
+            <button
+              onClick={() => setShowAuth(true)}
               className="inline-flex items-center justify-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300
                 px-9 py-6 text-lg min-h-14
                 sm:text-2xl sm:px-16 sm:py-8 sm:min-h-20 sm:gap-4"
             >
               Create Your First Event Free
               <ArrowRight className="w-6 h-6 sm:w-9 sm:h-9" />
-            </a>
+            </button>
           </div>
         </section>
       </main>

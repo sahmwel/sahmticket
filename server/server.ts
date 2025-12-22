@@ -11,6 +11,8 @@ import { Horizon } from "@stellar/stellar-sdk";
 import { sendEmail } from "./lib/emailTemplates/sendEmail.js";
 import { generateTicketPdf } from "./lib/pdf/generateTicketPdf.js";
 
+
+
 // ------------------------
 // Environment Validation
 // ------------------------
@@ -114,48 +116,37 @@ app.get("/", (_req: Request, res: Response) => {
 });
 
 // Generate PDF
-app.post("/api/tickets/generate-pdf", async (req: Request, res: Response) => {
-  try {
-    const { name, eventTitle, eventDate, eventTime, eventVenue, tickets } = req.body;
-
-    if (!eventTitle || !tickets || !Array.isArray(tickets) || tickets.length === 0) {
-      return res.status(400).json({ error: "Missing or invalid eventTitle/tickets" });
-    }
-
-    const pdfBuffer = await generateTicketPdf({
-      name: (name as string)?.trim() || "Customer",
-      eventTitle: eventTitle.trim(),
-      eventDate,
-      eventTime: eventTime || "TBC",
-      eventVenue: eventVenue || "TBC",
-      tickets,
-    });
-
-    const filename = `sahm-ticket-${eventTitle.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`;
-
-    res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Content-Length": pdfBuffer.length,
-    });
-    res.send(pdfBuffer);
-  } catch (error) {
-    console.error("PDF Error:", error);
-    res.status(500).json({ error: error instanceof Error ? error.message : "PDF generation failed" });
-  }
-});
-
-// Email + PDF Combo
+// ------------------------
+// Email + PDF Route
+// ------------------------
 app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
   try {
     const { to, name, eventTitle, eventDate, eventTime, eventVenue, tickets, orderId } = req.body;
 
-    if (!to || !eventTitle || !tickets || !Array.isArray(tickets)) {
-      return res.status(400).json({ error: "Missing required fields (to, eventTitle, tickets)" });
+    // Validate required fields
+    if (!to || !eventTitle || !Array.isArray(tickets) || tickets.length === 0) {
+      return res.status(400).json({ error: "Missing required fields or tickets is empty" });
     }
 
-    const pdfBuffer = await generateTicketPdf({ name, eventTitle, eventDate, eventTime, eventVenue, tickets });
+    // Prepare tickets safely
+    const safeTickets = tickets.map(t => ({
+      ticketType: t.ticketType || "GENERAL",
+      quantity: t.quantity || 1,
+      amount: t.amount || "FREE",
+      codes: Array.isArray(t.codes) ? t.codes : ["TKT123"]
+    }));
 
+    // Generate PDF using updated generateTicketPdf
+    const pdfBuffer = await generateTicketPdf({
+      name: name || "Customer",
+      eventTitle,
+      eventDate,
+      eventTime,
+      eventVenue,
+      tickets: safeTickets
+    });
+
+    // Send email with PDF attachment
     await sendEmail({
       to,
       type: "ticket",
@@ -165,12 +156,19 @@ app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
         eventDate,
         eventTime,
         eventVenue,
-        ticketCode: orderId || tickets[0]?.codes?.[0] || "TKT123",
-        ticketType: tickets[0]?.ticketType || "GENERAL",
-        quantity: tickets[0]?.quantity || 1,
-        amount: tickets[0]?.amount || "FREE",
+        ticketCode: orderId || safeTickets[0].codes[0],
+        ticketType: safeTickets[0].ticketType,
+        quantity: safeTickets[0].quantity,
+        amount: safeTickets[0].amount,
         orderId,
       },
+      attachments: [
+        {
+          filename: `SahmTicket_${orderId || Date.now()}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
     });
 
     res.json({
@@ -178,11 +176,18 @@ app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
       message: "✅ Ticket PDF generated and emailed successfully!",
       pdfSizeKB: Number((pdfBuffer.length / 1024).toFixed(1)),
     });
+
   } catch (error) {
     console.error("Email+PDF Error:", error);
-    res.status(500).json({ error: error instanceof Error ? error.message : "Email+PDF failed" });
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Email+PDF failed"
+    });
   }
 });
+
+
+
+
 
 // QR Validation
 app.post("/api/tickets/validate", async (req: Request, res: Response) => {
