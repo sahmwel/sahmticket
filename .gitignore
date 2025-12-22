@@ -91,3 +91,8 @@ pnpm-lock.yaml
 # Optional: Storybook
 # =========================
 .storybook/build/
+
+
+# Admin / private scripts
+scripts/
+script/
