@@ -84,7 +84,7 @@ if (STELLAR_ACCOUNT) {
           if (error) {
             console.error("Supabase update error:", error.message);
           } else {
-            console.log(`✅ Ticket confirmed — tx: ${payment.transaction_hash} (${payment.amount} ${asset})`);
+            console.log(`Ticket confirmed — tx: ${payment.transaction_hash} (${payment.amount} ${asset})`);
           }
         }
       }
@@ -109,7 +109,7 @@ app.use(express.json({ limit: "50mb" }));
 // Health check
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    status: "🚀 TicketHub API running with Stellar + Supabase ✅",
+    status: "SahmTicketHub API running with Stellar + Supabase ",
     timestamp: new Date().toISOString(),
     stellarPolling: !!STELLAR_ACCOUNT,
   });
@@ -173,7 +173,7 @@ app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: "✅ Ticket PDF generated and emailed successfully!",
+      message: "Ticket PDF generated and emailed successfully!",
       pdfSizeKB: Number((pdfBuffer.length / 1024).toFixed(1)),
     });
 
@@ -232,7 +232,7 @@ app.post("/send-email", async (req: Request, res: Response) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 TicketHub API running on port ${PORT}`);
+  console.log(` SahmTicketHub API running on port ${PORT}`);
   console.log(`Health check: https://api.sahmtickethub.online/`);
   if (STELLAR_ACCOUNT) {
     console.log(`Stellar polling enabled for account: ${STELLAR_ACCOUNT}`);
