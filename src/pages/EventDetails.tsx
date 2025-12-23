@@ -9,22 +9,21 @@ import {
   Calendar,
   MapPin,
   Ticket,
-  Navigation,
-  Share2,
-  Car,
+  Clock,
   Loader2,
   X,
-  Clock,
   CreditCard,
   Smartphone,
   Building2,
   CheckCircle,
+  Share2,
+  Car,
+  Navigation
 } from "lucide-react";
 import EventMap from "../components/EventMap";
 import { supabase } from "../lib/supabaseClient";
 import QRCode from "qrcode";
 import Modal from "../components/Modal";
-import QRScanner from "./QRScanner";
 
 interface TicketTier {
   name: string;
@@ -49,21 +48,8 @@ interface EventType {
   ticketTiers?: TicketTier[];
 }
 
-interface ScanResult {
-  message: string;
-  status: "success" | "error";
-  ticketInfo?: {
-    buyerName?: string | null;
-    ticketType: string;
-    price: number;
-  };
-}
-
-
 declare global {
-  interface Window {
-    PaystackPop?: any;
-  }
+  interface Window { PaystackPop?: any }
 }
 
 export default function EventDetails() {
@@ -78,45 +64,7 @@ export default function EventDetails() {
   const [formData, setFormData] = useState({ fullName: "", email: "", phone: "" });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  // QR Scan validation
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-
-  // 🚀 Backend API URL
   const API_URL = import.meta.env.VITE_API_URL || 'https://api.sahmtickethub.online';
-
-  // ---------------- QR SCAN VALIDATION ----------------
-  const validateTicket = async (qrData: string) => {
-    if (!event?.id) return;
-
-    try {
-      const { data: ticket, error } = await supabase
-        .from("tickets")
-        .select("*")
-        .eq("event_id", event.id)
-        .eq("qr_code_url", qrData)
-        .single();
-
-      if (error || !ticket) {
-        setScanResult({ status: "error", message: "Ticket not found" });
-        return;
-      }
-
-      if (ticket.used) {
-        setScanResult({ status: "error", message: "Ticket already used" });
-        return;
-      }
-
-      await supabase
-        .from("tickets")
-        .update({ used: true })
-        .eq("id", ticket.id);
-
-      setScanResult({ status: "success", message: "Ticket validated successfully!" });
-    } catch (err) {
-      console.error("Ticket validation error:", err);
-      setScanResult({ status: "error", message: "Validation failed" });
-    }
-  };
 
   // Fetch Event
   useEffect(() => {
@@ -130,44 +78,20 @@ export default function EventDetails() {
           .eq("id", id)
           .single();
 
-        if (error || !data) {
-          console.error("Error fetching event:", error);
-          setEvent(null);
-          setLoading(false);
-          return;
-        }
+        if (error || !data) throw error || new Error("Event not found");
 
         let ticketTiers: TicketTier[] = [];
-        const rawTiers = data["ticketTiers"];
+        const rawTiers = data.ticketTiers;
 
         if (Array.isArray(rawTiers)) {
-          ticketTiers = rawTiers.map((tier: any) => ({
-            name: tier.name || "Standard",
-            price: tier.price || "₦0",
-            description: tier.description || "",
-            available: tier.available || 0,
-            sold: tier.sold || 0,
-          }));
+          ticketTiers = rawTiers;
         } else if (typeof rawTiers === "string") {
-          try {
-            const parsed = JSON.parse(rawTiers);
-            if (Array.isArray(parsed)) {
-              ticketTiers = parsed.map((tier: any) => ({
-                name: tier.name || "Standard",
-                price: tier.price || "₦0",
-                description: tier.description || "",
-                available: tier.available || 0,
-                sold: tier.sold || 0,
-              }));
-            }
-          } catch (e) {
-            console.warn("Failed to parse ticketTiers JSON:", e);
-          }
+          ticketTiers = JSON.parse(rawTiers || "[]");
         }
 
         setEvent({ ...data, ticketTiers });
       } catch (err) {
-        console.error("Unexpected error fetching event:", err);
+        console.error(err);
         setEvent(null);
       } finally {
         setLoading(false);
@@ -177,15 +101,15 @@ export default function EventDetails() {
     fetchEvent();
   }, [id]);
 
-  // Initialize quantities for each tier
+  // Initialize quantities
   useEffect(() => {
     if (!event?.ticketTiers) return;
     const initQuantities: { [key: string]: number } = {};
-    event.ticketTiers.forEach((tier) => (initQuantities[tier.name] = 1));
+    event.ticketTiers.forEach(tier => (initQuantities[tier.name] = 1));
     setQuantities(initQuantities);
   }, [event]);
 
-  // Load Paystack script dynamically
+  // Load Paystack script
   useEffect(() => {
     if (!showCheckout) return;
     const script = document.createElement("script");
@@ -193,9 +117,7 @@ export default function EventDetails() {
     script.async = true;
     document.body.appendChild(script);
     return () => {
-      if (document.body.contains(script)) {
-        document.body.removeChild(script);
-      }
+      if (document.body.contains(script)) document.body.removeChild(script);
     };
   }, [showCheckout]);
 
@@ -213,40 +135,28 @@ export default function EventDetails() {
       </div>
     );
 
-  const formatDate = (d: string) =>
-    new Date(d).toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-    });
+  const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB", {
+    weekday: "long", day: "2-digit", month: "long",
+  });
 
-  const formatTime = (d: string) =>
-    new Date(d).toLocaleTimeString("en-GB", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
+  const formatTime = (d: string) => new Date(d).toLocaleTimeString("en-GB", {
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
 
   const handleQuantityChange = (tierName: string, increment: boolean) => {
-    setQuantities((prev) => ({
+    setQuantities(prev => ({
       ...prev,
       [tierName]: Math.max(1, (prev[tierName] || 1) + (increment ? 1 : -1)),
     }));
   };
 
   const handleBuyTicket = (tier: TicketTier) => {
-    const quantity = quantities[tier.name] || 1;
     setBuyingTier(tier.name);
-
     setTimeout(() => {
-      setCheckoutData({
-        orderId: `ORD-${Date.now()}`,
-        tier,
-        quantity,
-      });
+      setCheckoutData({ orderId: `ORD-${Date.now()}`, tier, quantity: quantities[tier.name] || 1 });
       setShowCheckout(true);
       setBuyingTier(null);
-    }, 600);
+    }, 300);
   };
 
   const closeCheckout = () => {
@@ -256,16 +166,9 @@ export default function EventDetails() {
     setCheckoutLoading(false);
   };
 
-  const cleanPrice = checkoutData?.tier.price
-    ? parseInt(checkoutData.tier.price.replace(/[^0-9]/g, ""), 10) || 0
-    : 0;
-
+  const cleanPrice = checkoutData?.tier.price ? parseInt(checkoutData.tier.price.replace(/[^0-9]/g, ""), 10) || 0 : 0;
   const totalAmount = cleanPrice * (checkoutData?.quantity || 1);
-  const formattedTotal = new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    minimumFractionDigits: 0,
-  }).format(totalAmount);
+  const formattedTotal = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 0 }).format(totalAmount);
 
   // 🚀 COMPLETE Paystack + Backend Integration
   const initializePaystack = async () => {
@@ -438,6 +341,7 @@ export default function EventDetails() {
     handler.openIframe ? handler.openIframe() : handler();
   };
 
+
   const handleCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     initializePaystack();
@@ -456,26 +360,7 @@ export default function EventDetails() {
         </div>
       </div>
 
-      {/* QR Scanner for validation */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <h2 className="text-2xl font-bold mb-4">Scan Ticket QR Code</h2>
-        <QRScanner onScan={(result: ScanResult) => setScanResult(result)} />
 
-        {scanResult && (
-          <div className={`p-4 mt-4 rounded ${scanResult.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-            }`}>
-            {scanResult.message}
-            {scanResult.ticketInfo && scanResult.status === "success" && (
-              <div className="mt-2 text-sm text-gray-700">
-                <p><strong>Buyer:</strong> {scanResult.ticketInfo.buyerName}</p>
-                <p><strong>Ticket:</strong> {scanResult.ticketInfo.ticketType}</p>
-                <p><strong>Price:</strong> ₦{scanResult.ticketInfo.price}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
 
 
       {/* Hero */}
