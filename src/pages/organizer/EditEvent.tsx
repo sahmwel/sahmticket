@@ -85,19 +85,20 @@ export default function EditEvent() {
           .eq("event_id", id);
 
         if (tiers && tiers.length > 0) {
-          setTicketTiers(
-            tiers.map(t => ({
-              id: t.id,
-              name: t.ticket_type,
-              price: t.price.toString(),
-              description: t.description || "",
-              quantity: t.quantity_available.toString(),
-              quantity_sold: t.quantity_sold || 0,
-            }))
-          );
-        } else {
-          setTicketTiers([{ id: "1", name: "", price: "", description: "", quantity: "" }]);
-        }
+  setTicketTiers(
+    tiers.map((t: any) => ({
+      id: t.id,
+      name: t.ticket_type,
+      price: t.price.toString(),
+      description: t.description || "",
+      quantity: t.quantity_available.toString(),
+      quantity_sold: t.quantity_sold || 0,
+    }))
+  );
+} else {
+  setTicketTiers([{ id: "1", name: "", price: "", description: "", quantity: "" }]);
+}
+
       } catch (err: any) {
         setError(err.message || "Failed to load event");
       } finally {

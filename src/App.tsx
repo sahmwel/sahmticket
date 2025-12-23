@@ -1,4 +1,3 @@
-// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 // Layouts
@@ -16,10 +15,6 @@ import Privacy from "./pages/Privacy";
 import Refunds from "./pages/Refunds";
 import Terms from "./pages/Terms";
 import Contact from "./pages/Contact";
-import TeaserPage from "./pages/organizer/Teaser";
-
-// Modal
-import Checkout from "./pages/Checkout";
 
 // Auth
 import AuthPage from "./pages/auth/AuthPage";
@@ -43,13 +38,12 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+
         {/* PUBLIC PAGES */}
         <Route element={<MainLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
-          <Route path="/event/:id" element={<EventDetails />}>
-            <Route path="checkout" element={<Checkout />} />
-          </Route>
+          <Route path="/event/:id" element={<EventDetails />} />
           <Route path="/bag/:orderId" element={<Bag />} />
           <Route path="/about" element={<About />} />
           <Route path="/faq" element={<FAQ />} />
@@ -62,19 +56,17 @@ function App() {
         {/* AUTH */}
         <Route path="/auth" element={<AuthPage />} />
 
-        {/* ORGANIZER – FULLY WORKING */}
+        {/* ORGANIZER */}
         <Route path="/organizer" element={<OrganizerLayout />}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<OrganizerDashboard />} />
-          <Route path="events" element={<OrganizerMyEvents />} />        {/* ← This is correct */}
+          <Route path="events" element={<OrganizerMyEvents />} />
           <Route path="create-event" element={<CreateEvent />} />
           <Route path="profile" element={<OrganizerProfile />} />
           <Route path="tickets" element={<OrganizerTickets />} />
-       <Route path="event/:id" element={<EventDetails />} />
-<Route path="event/:id/edit" element={<EditEvent />} />          {/* ← Single Event Page */}
+          <Route path="event/:id" element={<EventDetails />} />
+          <Route path="event/:id/edit" element={<EditEvent />} />
         </Route>
-
-        <Route path="/teaser" element={<TeaserPage />} />
 
         {/* ADMIN */}
         <Route path="/admin">
