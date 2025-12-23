@@ -11,8 +11,6 @@ import { Horizon } from "@stellar/stellar-sdk";
 import { sendEmail } from "./lib/emailTemplates/sendEmail.js";
 import { generateTicketPdf } from "./lib/pdf/generateTicketPdf.js";
 
-
-
 // ------------------------
 // Environment Validation
 // ------------------------
@@ -109,72 +107,47 @@ app.use(express.json({ limit: "50mb" }));
 // Health check
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    status: "SahmTicketHub API running with Stellar + Supabase ",
+    status: "SahmTicketHub API running with Stellar + Supabase",
     timestamp: new Date().toISOString(),
     stellarPolling: !!STELLAR_ACCOUNT,
   });
 });
 
-// Generate PDF
-// ------------------------
 // Email + PDF Route
-// ------------------------
-app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
+app.post("/api/tickets/send-with-pdf", async (req, res) => {
   try {
     const { to, name, eventTitle, eventDate, eventTime, eventVenue, tickets, orderId } = req.body;
 
-    // Validate required fields
-    if (!to || !eventTitle || !Array.isArray(tickets) || tickets.length === 0) {
-      return res.status(400).json({ error: "Missing required fields or tickets is empty" });
-    }
-
-    // Prepare tickets safely
-    const safeTickets = tickets.map(t => ({
-      ticketType: t.ticketType || "GENERAL",
-      quantity: t.quantity || 1,
-      amount: t.amount || "FREE",
-      codes: Array.isArray(t.codes) ? t.codes : ["TKT123"]
-    }));
-
-    // Generate PDF using updated generateTicketPdf
+    // Generate the PDF buffer
     const pdfBuffer = await generateTicketPdf({
-      name: name || "Customer",
+      name,
       eventTitle,
       eventDate,
       eventTime,
       eventVenue,
-      tickets: safeTickets
+      tickets
     });
 
     // Send email with PDF attachment
-    await sendEmail({
+    const result = await sendEmail({
       to,
       type: "ticket",
-      data: {
-        name,
-        eventTitle,
-        eventDate,
-        eventTime,
-        eventVenue,
-        ticketCode: orderId || safeTickets[0].codes[0],
-        ticketType: safeTickets[0].ticketType,
-        quantity: safeTickets[0].quantity,
-        amount: safeTickets[0].amount,
-        orderId,
-      },
+      data: { name, eventTitle, eventDate, eventTime, eventVenue, tickets, orderId },
       attachments: [
         {
           filename: `SahmTicket_${orderId || Date.now()}.pdf`,
           content: pdfBuffer,
-          contentType: "application/pdf",
-        },
-      ],
+          contentType: "application/pdf"
+        }
+      ]
     });
+
 
     res.json({
       success: true,
       message: "Ticket PDF generated and emailed successfully!",
       pdfSizeKB: Number((pdfBuffer.length / 1024).toFixed(1)),
+      emailInfo: result, 
     });
 
   } catch (error) {
@@ -184,10 +157,6 @@ app.post("/api/tickets/send-with-pdf", async (req: Request, res: Response) => {
     });
   }
 });
-
-
-
-
 
 // QR Validation
 app.post("/api/tickets/validate", async (req: Request, res: Response) => {
@@ -215,25 +184,35 @@ app.post("/api/tickets/validate", async (req: Request, res: Response) => {
 });
 
 // General email
-app.post("/send-email", async (req: Request, res: Response) => {
+app.post("/api/send-email", async (req, res) => {
   try {
     const { to, type, data, fromAccountKey } = req.body;
+
     if (!to || !type || !data) {
-      return res.status(400).json({ error: "Missing required fields: to, type, data" });
+      return res.status(400).json({
+        error: "Missing required fields: to, type, data",
+      });
     }
 
     await sendEmail({ to, type, data, fromAccountKey });
-    res.json({ success: true, message: "Email sent successfully" });
+
+    res.json({
+      success: true,
+      message: "Email sent successfully",
+    });
   } catch (error) {
     console.error("Email Error:", error);
-    res.status(500).json({ error: error instanceof Error ? error.message : "Email failed" });
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Email failed",
+    });
   }
 });
 
+
 // Start server
 app.listen(PORT, () => {
-  console.log(` SahmTicketHub API running on port ${PORT}`);
-  console.log(`Health check: https://api.sahmtickethub.online/`);
+  console.log(`SahmTicketHub API running on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/`);
   if (STELLAR_ACCOUNT) {
     console.log(`Stellar polling enabled for account: ${STELLAR_ACCOUNT}`);
   }

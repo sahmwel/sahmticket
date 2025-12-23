@@ -1,20 +1,32 @@
 // src/lib/emailTemplates/TicketTemplate.js
 export function TicketTemplate({
-  name,
-  eventTitle,
-  eventDate,
-  eventTime,
-  eventVenue,
-  eventPosterUrl,          // URL to the event poster/flyer
-  tickets,                 // Array of ticket types: [{ ticketType, quantity, amount, codes: [...] }]
+  name = "Customer",
+  eventTitle = "Your Event",
+  eventDate = "TBD",
+  eventTime = "TBD",
+  eventVenue = "TBD",
+  eventPosterUrl,
+  tickets = [], // Ensure tickets is always an array
 }) {
+  // Sanitize tickets and provide defaults
+  const safeTickets = Array.isArray(tickets)
+    ? tickets.map(t => ({
+        ticketType: t.ticketType || "GENERAL",
+        quantity: Number(t.quantity) || 1,
+        amount: t.amount || "FREE",
+        codes: Array.isArray(t.codes) && t.codes.length > 0
+          ? t.codes
+          : Array.from({ length: t.quantity || 1 }, (_, i) => `TKT-${Date.now()}-${i + 1}`)
+      }))
+    : [];
+
   // Calculate total quantity for plural text
-  const totalTickets = tickets.reduce((sum, t) => sum + t.quantity, 0);
+  const totalTickets = safeTickets.reduce((sum, t) => sum + t.quantity, 0);
 
   // Grand total calculation (handles "FREE")
-  const grandTotal = tickets.reduce((sum, t) => {
+  const grandTotal = safeTickets.reduce((sum, t) => {
     if (t.amount === "FREE" || t.amount === "0") return sum;
-    const num = parseFloat(t.amount.replace(/[^0-9.-]/g, ""));
+    const num = parseFloat(String(t.amount).replace(/[^0-9.-]/g, ""));
     return isNaN(num) ? sum : sum + (num * t.quantity);
   }, 0);
   const formattedGrandTotal = grandTotal === 0 ? "FREE" : `$${grandTotal.toFixed(2)}`;
@@ -51,7 +63,6 @@ export function TicketTemplate({
           <!-- Body -->
           <tr>
             <td style="padding:40px 32px;">
-
               <p style="font-size:16px;color:#475569;margin:0 0 20px;line-height:1.6;text-align:center;">
                 Hi <strong style="color:#1e293b;">${name}</strong>,
               </p>
@@ -87,7 +98,7 @@ export function TicketTemplate({
                         <th align="center" style="color:#1e293b;font-weight:600;">Qty</th>
                         <th align="right" style="color:#1e293b;font-weight:600;">Amount</th>
                       </tr>
-                      ${tickets.map(t => `
+                      ${safeTickets.map(t => `
                       <tr>
                         <td style="color:#334155;">${t.ticketType}</td>
                         <td align="center" style="color:#334155;">${t.quantity}</td>
@@ -103,58 +114,47 @@ export function TicketTemplate({
                 </tr>
               </table>
 
-              <!-- PDF Attachment Notice -->
-              <div style="background:#e0f2fe;border-radius:12px;padding:20px;margin-bottom:40px;text-align:center;">
-                <p style="margin:0;font-size:16px;color:#0369a1;">
-                  <strong>Your printable ticket${totalTickets > 1 ? 's' : ''} (with QR code${totalTickets > 1 ? 's' : ''}) are attached to this email as a PDF.</strong><br>
-                  Open the attachment for high-quality printing or to add to your wallet.
-                </p>
-              </div>
-
-              <!-- Inline Individual Tickets (for quick mobile view) -->
+              <!-- Quick View Tickets -->
               <div style="margin-top:40px;">
                 <h3 style="text-align:center;font-size:18px;color:#1e293b;margin:0 0 32px;">
                   Quick View: Your Ticket${totalTickets > 1 ? 's' : ''}
                 </h3>
 
-                ${tickets.flatMap(ticketType => 
-                  ticketType.codes.map((code, idx) => {
-                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(code)}`;
-                    return `
-                    <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:32px;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
-                      <div style="text-align:center;">
-                        <p style="margin:0 0 16px;font-size:14px;color:#64748b;">
-                          <strong>${ticketType.ticketType}</strong> — Ticket ${idx + 1} of ${ticketType.quantity}
-                        </p>
-                        <div style="
-                          display:inline-block;
-                          background:linear-gradient(135deg,#7c3aed 0%,#ec4899 100%);
-                          color:#ffffff;
-                          font-size:26px;
-                          font-weight:700;
-                          letter-spacing:5px;
-                          padding:16px 32px;
-                          border-radius:12px;
-                          margin-bottom:24px;
-                          box-shadow:0 8px 20px rgba(124,58,237,0.3);
-                        ">
-                          ${code}
-                        </div>
-                        <br>
-                        <img src="${qrUrl}" alt="QR Code for ${code}" style="width:200px;height:200px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
-                        <p style="margin:20px 0 0;font-size:14px;color:#64748b;">
-                          Scan this QR code or show the ticket code at the entrance
-                        </p>
+                ${(safeTickets.flatMap(ticket => (ticket.codes || []).map((code, idx) => {
+                  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(code)}`;
+                  return `
+                  <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:32px;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+                    <div style="text-align:center;">
+                      <p style="margin:0 0 16px;font-size:14px;color:#64748b;">
+                        <strong>${ticket.ticketType}</strong> — Ticket ${idx + 1} of ${ticket.quantity}
+                      </p>
+                      <div style="
+                        display:inline-block;
+                        background:linear-gradient(135deg,#7c3aed 0%,#ec4899 100%);
+                        color:#ffffff;
+                        font-size:26px;
+                        font-weight:700;
+                        letter-spacing:5px;
+                        padding:16px 32px;
+                        border-radius:12px;
+                        margin-bottom:24px;
+                        box-shadow:0 8px 20px rgba(124,58,237,0.3);
+                      ">
+                        ${code}
                       </div>
-                    </div>`;
-                  })
-                ).join('')}
+                      <br>
+                      <img src="${qrUrl}" alt="QR Code for ${code}" style="width:200px;height:200px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                      <p style="margin:20px 0 0;font-size:14px;color:#64748b;">
+                        Scan this QR code or show the ticket code at the entrance
+                      </p>
+                    </div>
+                  </div>`;
+                }))).join('')}
               </div>
 
               <p style="font-size:15px;color:#64748b;margin:40px 0 0;line-height:1.6;text-align:center;">
                 Tickets are non-transferable ∙ Please arrive on time ∙ Bring valid ID if required
               </p>
-
             </td>
           </tr>
 
