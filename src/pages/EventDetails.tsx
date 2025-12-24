@@ -46,6 +46,7 @@ interface EventType {
   lat?: number;
   lng?: number;
   ticketTiers?: TicketTier[];
+  slug?: string;
 }
 
 declare global {
@@ -54,7 +55,7 @@ declare global {
 
 export default function EventDetails() {
   const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const [event, setEvent] = useState<EventType | null>(null);
   const [loading, setLoading] = useState(true);
   const [buyingTier, setBuyingTier] = useState<string | null>(null);
@@ -63,43 +64,146 @@ export default function EventDetails() {
   const [checkoutData, setCheckoutData] = useState<any>(null);
   const [formData, setFormData] = useState({ fullName: "", email: "", phone: "" });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   const API_URL = import.meta.env.VITE_API_URL || 'https://api.sahmtickethub.online';
 
-  // Fetch Event
+  // Fetch Event - FIXED VERSION
   useEffect(() => {
     const fetchEvent = async () => {
-      if (!id) return setLoading(false);
+      if (!slug) {
+        setLoading(false);
+        return;
+      }
 
       try {
-        const { data, error } = await supabase
+        console.log("Fetching event for slug:", slug);
+        
+        // FIRST: Try to fetch by slug directly
+        const { data: slugData, error: slugError } = await supabase
           .from("events")
           .select("*")
-          .eq("id", id)
+          .eq("slug", slug)
           .single();
 
-        if (error || !data) throw error || new Error("Event not found");
-
-        let ticketTiers: TicketTier[] = [];
-        const rawTiers = data.ticketTiers;
-
-        if (Array.isArray(rawTiers)) {
-          ticketTiers = rawTiers;
-        } else if (typeof rawTiers === "string") {
-          ticketTiers = JSON.parse(rawTiers || "[]");
+        if (!slugError && slugData) {
+          console.log("Found by slug:", slugData);
+          const eventData = parseEventData(slugData);
+          setEvent(eventData);
+          setNotFound(false);
+          return;
         }
 
-        setEvent({ ...data, ticketTiers });
+        // SECOND: If not found by slug, check if it's a UUID format
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+        
+        if (isUuid) {
+          console.log("Parameter is UUID, trying by ID:", slug);
+          const { data: idData, error: idError } = await supabase
+            .from("events")
+            .select("*")
+            .eq("id", slug)
+            .single();
+
+          if (!idError && idData) {
+            console.log("Found by ID:", idData);
+            const eventData = parseEventData(idData);
+            setEvent(eventData);
+            setNotFound(false);
+            
+            // If found by ID and has a slug, redirect to slug URL for better UX
+            if (eventData.slug && eventData.slug !== slug) {
+              navigate(`/event/${eventData.slug}`, { replace: true });
+            }
+            return;
+          }
+        }
+
+        // THIRD: Try the OR query as a last resort (but be careful with it)
+        console.log("Trying OR query as fallback");
+        const { data: orData, error: orError } = await supabase
+          .from("events")
+          .select("*")
+          .or(`slug.eq.${slug},id.eq.${slug}`)
+          .single();
+
+        if (!orError && orData) {
+          console.log("Found by OR query:", orData);
+          const eventData = parseEventData(orData);
+          setEvent(eventData);
+          setNotFound(false);
+          
+          // Redirect to slug URL if found by ID in OR query
+          if (eventData.slug && eventData.slug !== slug) {
+            navigate(`/event/${eventData.slug}`, { replace: true });
+          }
+          return;
+        }
+
+        // If nothing worked
+        console.error("Event not found with any method");
+        setNotFound(true);
+        throw new Error("Event not found");
+        
       } catch (err) {
-        console.error(err);
+        console.error("Error fetching event:", err);
         setEvent(null);
+        setNotFound(true);
       } finally {
         setLoading(false);
       }
     };
 
     fetchEvent();
-  }, [id]);
+  }, [slug, navigate]);
+
+  // Helper function to parse event data
+  const parseEventData = (data: any): EventType => {
+    // Parse ticket tiers
+    let ticketTiers: TicketTier[] = [];
+    const rawTiers = data.ticketTiers;
+
+    if (Array.isArray(rawTiers)) {
+      ticketTiers = rawTiers;
+    } else if (typeof rawTiers === "string") {
+      try {
+        ticketTiers = JSON.parse(rawTiers || "[]");
+      } catch (err) {
+        console.warn("Failed to parse ticket tiers", err);
+        ticketTiers = [];
+      }
+    }
+
+    return {
+      id: data.id,
+      title: data.title,
+      date: data.date,
+      time: data.time,
+      location: data.location,
+      address: data.address,
+      venue: data.venue,
+      image: data.image || "https://via.placeholder.com/800x600?text=Event+Image",
+      description: data.description,
+      lat: data.lat,
+      lng: data.lng,
+      ticketTiers,
+      slug: data.slug || null,
+    };
+  };
+
+  // Set document title when event is loaded
+  useEffect(() => {
+    if (event) {
+      document.title = `${event.title} | SahmTicketHub`;
+    } else if (!loading) {
+      document.title = "Event Not Found | SahmTicketHub";
+    }
+    
+    // Reset title when component unmounts
+    return () => {
+      document.title = "SahmTicketHub - Discover Events";
+    };
+  }, [event, loading]);
 
   // Initialize quantities
   useEffect(() => {
@@ -128,10 +232,30 @@ export default function EventDetails() {
       </div>
     );
 
-  if (!event)
+  if (notFound || !event)
     return (
-      <div className="min-h-screen flex items-center justify-center text-2xl text-purple-700">
-        Event not found
+      <div className="min-h-screen flex flex-col items-center justify-center p-8">
+        <div className="text-center space-y-6 max-w-md">
+          <div className="w-24 h-24 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto">
+            <Calendar className="w-12 h-12 text-purple-400" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800">Event Not Found</h1>
+          <p className="text-gray-600">The event you're looking for doesn't exist or has been removed.</p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              to="/events"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-2xl hover:shadow-xl transition-all"
+            >
+              Browse All Events
+            </Link>
+            <button
+              onClick={() => navigate(-1)}
+              className="bg-white border-2 border-purple-600 text-purple-600 font-bold py-3 px-6 rounded-2xl hover:bg-purple-50 transition-all"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
       </div>
     );
 
@@ -139,9 +263,17 @@ export default function EventDetails() {
     weekday: "long", day: "2-digit", month: "long",
   });
 
-  const formatTime = (d: string) => new Date(d).toLocaleTimeString("en-GB", {
-    hour: "numeric", minute: "2-digit", hour12: true,
-  });
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return "Time TBD";
+    if (timeStr.includes(" ") || timeStr.toLowerCase().includes("am") || timeStr.toLowerCase().includes("pm")) {
+      return timeStr.trim();
+    }
+    const [hour, minute] = timeStr.split(":").map(Number);
+    if (isNaN(hour)) return timeStr;
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${(minute || 0).toString().padStart(2, "0")} ${period}`;
+  };
 
   const handleQuantityChange = (tierName: string, increment: boolean) => {
     setQuantities(prev => ({
@@ -200,7 +332,6 @@ export default function EventDetails() {
             price: 0,
             reference: freeRef
           });
-
         }
 
         // 2. Send Email + PDF
@@ -212,7 +343,7 @@ export default function EventDetails() {
             name: formData.fullName.trim(),
             eventTitle: event.title,
             eventDate: event.date,
-            eventTime: event.time || formatTime(event.date),
+            eventTime: formatTime(event.time || ""),
             eventVenue: event.venue || event.location,
             tickets: [{
               ticketType: checkoutData.tier.name,
@@ -301,7 +432,7 @@ export default function EventDetails() {
               name: formData.fullName.trim(),
               eventTitle: event.title,
               eventDate: event.date,
-              eventTime: event.time || formatTime(event.date),
+              eventTime: formatTime(event.time || ""),
               eventVenue: event.venue || event.location,
               tickets: [{
                 ticketType: checkoutData.tier.name,
@@ -341,7 +472,6 @@ export default function EventDetails() {
     handler.openIframe ? handler.openIframe() : handler();
   };
 
-
   const handleCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     initializePaystack();
@@ -359,9 +489,6 @@ export default function EventDetails() {
           <span className="font-semibold text-gray-800 truncate">{event.title}</span>
         </div>
       </div>
-
-
-
 
       {/* Hero */}
       <div className="relative">
@@ -389,7 +516,7 @@ export default function EventDetails() {
                 <Clock className="w-10 h-10 text-pink-600" />
                 <div>
                   <p className="text-gray-600">Time</p>
-                  <p className="text-xl font-bold">{formatTime(event.date)}</p>
+                  <p className="text-xl font-bold">{formatTime(event.time || "")}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4 bg-indigo-50 rounded-2xl p-6">
@@ -480,7 +607,6 @@ export default function EventDetails() {
                   </div>
                 </motion.div>
               )}
-
             </div>
 
             {/* Right Column */}
@@ -506,13 +632,25 @@ export default function EventDetails() {
 
                   <div className="p-6 space-y-4">
                     {event.lat && event.lng && (
-                      <a href={`https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${event.lat}&dropoff[longitude]=${event.lng}&dropoff[nickname]=${encodeURIComponent(event.venue || "Event")}`} target="_blank" rel="noopener noreferrer" className="block w-full bg-black text-white text-center font-bold py-4 rounded-2xl hover:bg-gray-900 transition">
-                        <Car className="inline mr-2" /> Ride with Uber
+                      <a 
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${event.lat},${event.lng}`}
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="block w-full bg-blue-600 text-white text-center font-bold py-4 rounded-2xl hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                      >
+                        <Navigation className="w-5 h-5" /> Get Directions
                       </a>
                     )}
-                    <button className="w-full border-2 border-purple-600 text-purple-600 font-bold py-4 rounded-2xl hover:bg-purple-50 transition">
-                      <Navigation className="inline mr-2" /> Get Directions
-                    </button>
+                    {event.lat && event.lng && (
+                      <a 
+                        href={`https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${event.lat}&dropoff[longitude]=${event.lng}&dropoff[nickname]=${encodeURIComponent(event.venue || "Event")}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="block w-full bg-black text-white text-center font-bold py-4 rounded-2xl hover:bg-gray-900 transition flex items-center justify-center gap-2"
+                      >
+                        <Car className="w-5 h-5" /> Ride with Uber
+                      </a>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -521,7 +659,25 @@ export default function EventDetails() {
               <div className="bg-white rounded-3xl shadow-xl p-10 text-center">
                 <Share2 className="w-16 h-16 mx-auto text-purple-600 mb-4" />
                 <p className="text-2xl font-black">Share This Event</p>
-                <p className="text-gray-600">Let your friends know!</p>
+                <p className="text-gray-600 mb-4">Let your friends know!</p>
+                <div className="flex justify-center gap-4">
+                  <button
+                    onClick={() => {
+                      const shareUrl = `${window.location.origin}/event/${event.slug || event.id}`;
+                      navigator.share?.({
+                        title: event.title,
+                        text: `Check out ${event.title} on SahmTicketHub!`,
+                        url: shareUrl,
+                      }).catch(() => {
+                        navigator.clipboard.writeText(shareUrl);
+                        alert("Link copied to clipboard!");
+                      });
+                    }}
+                    className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-2xl hover:shadow-lg transition"
+                  >
+                    Share Now
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -565,32 +721,32 @@ export default function EventDetails() {
                   <div className="space-y-6">
                     <input
                       type="text"
-                      placeholder="Full Name"
+                      placeholder="Full Name *"
                       value={formData.fullName}
                       onChange={(e) =>
                         setFormData({ ...formData, fullName: e.target.value })
                       }
-                      className="w-full px-5 py-4 border rounded-2xl"
+                      className="w-full px-5 py-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                       required
                     />
                     <input
                       type="email"
-                      placeholder="Email"
+                      placeholder="Email Address *"
                       value={formData.email}
                       onChange={(e) =>
                         setFormData({ ...formData, email: e.target.value })
                       }
-                      className="w-full px-5 py-4 border rounded-2xl"
+                      className="w-full px-5 py-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                       required
                     />
                     <input
                       type="tel"
-                      placeholder="Phone Number"
+                      placeholder="Phone Number *"
                       value={formData.phone}
                       onChange={(e) =>
                         setFormData({ ...formData, phone: e.target.value })
                       }
-                      className="w-full px-5 py-4 border rounded-2xl"
+                      className="w-full px-5 py-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                       required
                     />
                   </div>
@@ -639,7 +795,7 @@ export default function EventDetails() {
                   <button
                     type="submit"
                     disabled={checkoutLoading}
-                    className="mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-xl py-5 rounded-3xl flex justify-center items-center gap-2"
+                    className="mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-xl py-5 rounded-3xl flex justify-center items-center gap-2 hover:shadow-xl transition disabled:opacity-70 disabled:cursor-not-allowed"
                   >
                     {checkoutLoading ? (
                       <Loader2 className="w-6 h-6 animate-spin" />
@@ -653,7 +809,6 @@ export default function EventDetails() {
           </motion.div>
         </Modal>
       )}
-
     </>
   );
 }

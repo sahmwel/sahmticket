@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import AdsenseAd from "../components/AdsenseAd";
 import {
@@ -33,6 +33,7 @@ export interface Event {
   isNew?: boolean;
   sponsored?: boolean;
   ticketTiers: { name: string; price: string }[];
+  slug?: string; // Added slug field
 }
 
 // FIXED: Only show "Free" if ALL tiers are ₦0
@@ -95,6 +96,7 @@ const Badge = ({ variant }: { variant: BadgeVariant }) => {
 
 // --- TimelineSchedule ---
 const TimelineSchedule = ({ events }: { events: Event[] }) => {
+  const navigate = useNavigate();
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
@@ -112,6 +114,14 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
   const eventsNext = events.filter(
     (e) => e.date && e.date.split("T")[0] === formatDate(nextDay)
   );
+
+  const handleEventClick = (event: Event) => {
+    // Use slug if available, otherwise fallback to ID
+    const path = event.slug 
+      ? `/event/${event.slug}` 
+      : `/event/${event.id}`;
+    navigate(path);
+  };
 
   const renderEvents = (eventList: Event[], label: string) => {
     if (!eventList || eventList.length === 0) return null;
@@ -156,35 +166,38 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                   whileInView={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.15, duration: 0.6 }}
                   whileHover={{ scale: 1.03 }}
-                  className="group relative bg-white/12 backdrop-blur-xl rounded-3xl p-6 border border-white/10 overflow-hidden"
+                  className="group relative bg-white/12 backdrop-blur-xl rounded-3xl p-6 border border-white/10 overflow-hidden cursor-pointer"
+                  onClick={() => handleEventClick(event)}
                 >
-                  <Link to={`/event/${event.id}`} className="block">
-                    <motion.div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <motion.div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                    <h3 className="text-xl md:text-2xl font-bold text-white line-clamp-2 mb-3 group-hover:text-pink-300 transition">
-                      {event.title || "Untitled Event"}
-                    </h3>
+                  <h3 className="text-xl md:text-2xl font-bold text-white line-clamp-2 mb-3 group-hover:text-pink-300 transition">
+                    {event.title || "Untitled Event"}
+                  </h3>
 
-                    <div className="flex flex-col gap-2 text-pink-100 text-sm mb-6">
-                      {event.time && (
-                        <span className="flex items-center gap-2">
-                          <Clock className="w-4 h-4" /> {event.time}
-                        </span>
-                      )}
+                  <div className="flex flex-col gap-2 text-pink-100 text-sm mb-6">
+                    {event.time && (
                       <span className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4" /> {event.location || "Location TBD"}
+                        <Clock className="w-4 h-4" /> {event.time}
                       </span>
-                    </div>
+                    )}
+                    <span className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" /> {event.location || "Location TBD"}
+                    </span>
+                  </div>
 
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-purple-500/50 transition-all duration-300 flex items-center justify-center gap-2"
-                    >
-                      <Ticket className="w-4 h-4" />
-                      Get Ticket • {isFree ? "Free Entry" : `From ₦${price.toLocaleString()}`}
-                    </motion.button>
-                  </Link>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-purple-500/50 transition-all duration-300 flex items-center justify-center gap-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEventClick(event);
+                    }}
+                  >
+                    <Ticket className="w-4 h-4" />
+                    Get Ticket • {isFree ? "Free Entry" : `From ₦${price.toLocaleString()}`}
+                  </motion.button>
                 </motion.div>
               );
             })}
@@ -207,10 +220,19 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
 
 // --- EventCard & EventSection ---
 const containerVariants = { hidden: { opacity: 1 }, visible: { transition: { staggerChildren: 0.08 } } };
-const itemVariants = { hidden: { y: 30, opacity: 0 }, visible: { y: 0, opacity: 1 } }; // ← THIS WAS MISSING
+const itemVariants = { hidden: { y: 30, opacity: 0 }, visible: { y: 0, opacity: 1 } };
 
 const EventCard = ({ event }: { event: Event }) => {
+  const navigate = useNavigate();
   const { price, isFree } = getLowestPriceFromTiers(event);
+
+  const handleEventClick = () => {
+    // Use slug if available, otherwise fallback to ID
+    const path = event.slug 
+      ? `/event/${event.slug}` 
+      : `/event/${event.id}`;
+    navigate(path);
+  };
 
   return (
     <motion.article
@@ -220,7 +242,8 @@ const EventCard = ({ event }: { event: Event }) => {
       whileHover={{ y: -16, scale: 1.04 }}
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-500 border border-gray-100"
+      className="group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-500 border border-gray-100 cursor-pointer"
+      onClick={handleEventClick}
     >
       <motion.div
         className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100"
@@ -228,49 +251,51 @@ const EventCard = ({ event }: { event: Event }) => {
         whileHover={{ scale: 1.3 }}
         transition={{ duration: 0.6 }}
       />
-      <Link to={`/event/${event.id}`} className="block">
-        <div className="relative aspect-[3/2] bg-gray-50 overflow-hidden">
-          <img
-            src={event.image}
-            alt={event.title}
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-          />
-          <div className="absolute top-3 left-3 flex flex-col gap-2">
-            {event.trending && <Badge variant="trending" />}
-            {event.featured && <Badge variant="featured" />}
-            {event.isNew && <Badge variant="new" />}
-            {event.sponsored && <Badge variant="sponsored" />}
-          </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      <div className="relative aspect-[3/2] bg-gray-50 overflow-hidden">
+        <img
+          src={event.image}
+          alt={event.title}
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+        />
+        <div className="absolute top-3 left-3 flex flex-col gap-2">
+          {event.trending && <Badge variant="trending" />}
+          {event.featured && <Badge variant="featured" />}
+          {event.isNew && <Badge variant="new" />}
+          {event.sponsored && <Badge variant="sponsored" />}
         </div>
-        <div className="p-4 pb-6">
-          <h3 className="font-bold text-sm line-clamp-2 text-gray-900 group-hover:text-purple-600 transition-colors duration-300">
-            {event.title}
-          </h3>
-          <div className="mt-3 space-y-2 text-xs text-gray-600">
-            <div className="flex items-center gap-2">
-              <Calendar size={13} className="text-purple-600" />
-              <span>{formatEventDateShort(event.date)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock size={13} className="text-purple-600" />
-              <span className="font-semibold">{formatEventTime(event.date || event.time)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <MapPin size={13} className="text-purple-600" />
-              <span className="truncate">{event.location}</span>
-            </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      </div>
+      <div className="p-4 pb-6">
+        <h3 className="font-bold text-sm line-clamp-2 text-gray-900 group-hover:text-purple-600 transition-colors duration-300">
+          {event.title}
+        </h3>
+        <div className="mt-3 space-y-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2">
+            <Calendar size={13} className="text-purple-600" />
+            <span>{formatEventDateShort(event.date)}</span>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg hover:shadow-purple-500/50 transition-transform mt-4"
-          >
-            <Ticket size={24} />
-            Get Ticket • {isFree ? "Free Entry" : `From ₦${price.toLocaleString()}`}
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <Clock size={13} className="text-purple-600" />
+            <span className="font-semibold">{formatEventTime(event.date || event.time)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <MapPin size={13} className="text-purple-600" />
+            <span className="truncate">{event.location}</span>
+          </div>
         </div>
-      </Link>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg hover:shadow-purple-500/50 transition-transform mt-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleEventClick();
+          }}
+        >
+          <Ticket size={24} />
+          Get Ticket • {isFree ? "Free Entry" : `From ₦${price.toLocaleString()}`}
+        </motion.button>
+      </div>
     </motion.article>
   );
 };
@@ -324,22 +349,23 @@ export default function Home() {
         console.error("Error fetching events:", eventsError);
         return;
       }
-const parsedEvents = (eventsData || []).map((event: any) => ({
-  id: event.id,
-  title: event.title,
-  description: event.description,
-  date: event.date,
-  time: event.time,
-  venue: event.venue,
-  location: event.location,
-  image: event.image,
-  ticketTiers: event.ticketTiers ?? [],
-  featured: event.featured ?? false,
-  trending: event.trending ?? false,
-  isNew: event.isnew ?? false,
-  sponsored: event.sponsored ?? false,
-}));
-
+      
+      const parsedEvents = (eventsData || []).map((event: any) => ({
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        date: event.date,
+        time: event.time,
+        venue: event.venue,
+        location: event.location,
+        image: event.image,
+        ticketTiers: event.ticketTiers ?? [],
+        featured: event.featured ?? false,
+        trending: event.trending ?? false,
+        isNew: event.isnew ?? false,
+        sponsored: event.sponsored ?? false,
+        slug: event.slug || null, // Include slug
+      }));
 
       setEventsList(parsedEvents);
     };
@@ -360,6 +386,7 @@ const parsedEvents = (eventsData || []).map((event: any) => ({
             ...record,
             isNew: record.isNew || record.isnew || false,
             ticketTiers: record.ticketTiers || record.tickettier || record.ticket_tiers || [],
+            slug: record.slug || null,
           };
 
           if (payload.eventType === "INSERT") {
@@ -405,7 +432,13 @@ const parsedEvents = (eventsData || []).map((event: any) => ({
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-5 right-5 z-50 bg-purple-700 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3"
+            className="fixed top-5 right-5 z-50 bg-purple-700 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3 cursor-pointer"
+            onClick={() => {
+              const path = newEventNotification.slug 
+                ? `/event/${newEventNotification.slug}` 
+                : `/event/${newEventNotification.id}`;
+              window.location.href = path;
+            }}
           >
             <Sparkles className="w-5 h-5" />
             New Event: {newEventNotification.title}

@@ -34,6 +34,9 @@ import AdminEvents from "./pages/admin/Events";
 import AdminTickets from "./pages/admin/Tickets";
 import AdminSettings from "./pages/admin/Settings";
 
+// Redirect for old URLs
+import RedirectFromId from "./pages/RedirectFromId";
+
 function App() {
   return (
     <BrowserRouter>
@@ -43,7 +46,10 @@ function App() {
         <Route element={<MainLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
-          <Route path="/event/:id" element={<EventDetails />} />
+          {/* Changed from :id to :slug */}
+          <Route path="/event/:slug" element={<EventDetails />} />
+          {/* Keep for backwards compatibility */}
+          <Route path="/e/:id" element={<RedirectFromId />} />
           <Route path="/bag/:orderId" element={<Bag />} />
           <Route path="/about" element={<About />} />
           <Route path="/faq" element={<FAQ />} />
@@ -64,6 +70,7 @@ function App() {
           <Route path="create-event" element={<CreateEvent />} />
           <Route path="profile" element={<OrganizerProfile />} />
           <Route path="tickets" element={<OrganizerTickets />} />
+          {/* Organizer should still use ID for editing */}
           <Route path="event/:id" element={<EventDetails />} />
           <Route path="event/:id/edit" element={<EditEvent />} />
         </Route>
