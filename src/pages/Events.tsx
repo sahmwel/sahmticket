@@ -49,13 +49,20 @@ interface Event {
   venue: string;
   location: string;
   image: string;
-  ticketTiers: { price: string }[];
+  ticketTiers: {
+    name: string;
+    price: string | number;
+    sold?: number;
+    available?: number;
+    quantity_sold?: number;
+    quantity_available?: number;
+  }[];
   featured?: boolean;
   trending?: boolean;
   isNew?: boolean;
   sponsored?: boolean;
   coordinates?: { lat: number; lng: number };
-  slug?: string; // Added slug field
+  slug?: string;
 }
 
 interface Category {
@@ -64,7 +71,132 @@ interface Category {
   gradient: string;
 }
 
-// ---------------- Helpers ----------------
+// ---------------- Helper Functions ----------------
+
+// Parse price helper
+const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
+  if (typeof price === 'number') {
+    return { amount: price, isFree: price === 0 };
+  }
+  
+  if (typeof price === 'string') {
+    const lowerPrice = price.toLowerCase().trim();
+    
+    // Check for free indicators
+    if (lowerPrice.includes('free') || 
+        lowerPrice === '0' || 
+        lowerPrice === '₦0' ||
+        lowerPrice === 'ngn0' ||
+        lowerPrice === 'n0' ||
+        lowerPrice === '0.00' ||
+        lowerPrice === '0.0') {
+      return { amount: 0, isFree: true };
+    }
+    
+    // Extract numeric value
+    const cleaned = price.replace(/[^\d.-]/g, '');
+    const amount = parseFloat(cleaned) || 0;
+    
+    return { amount, isFree: amount === 0 };
+  }
+  
+  return { amount: 0, isFree: true };
+};
+
+// Get lowest price from ticket tiers - FIXED VERSION
+const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean } => {
+  if (!event.ticketTiers || !Array.isArray(event.ticketTiers) || event.ticketTiers.length === 0) {
+    return { price: 0, isFree: true };
+  }
+
+  let hasPaidTier = false;
+  let lowestPaidPrice = Infinity;
+  let hasFreeTier = false;
+
+  event.ticketTiers.forEach(tier => {
+    if (!tier || typeof tier !== 'object') return;
+    
+    // Check if tier has any tickets available
+    const available = tier.available || tier.quantity_available;
+    const sold = tier.sold || tier.quantity_sold || 0;
+    
+    // If tier has availability info and it's sold out, skip it
+    if (available !== undefined && (available === 0 || sold >= available)) {
+      return;
+    }
+    
+    const priceInfo = parsePrice(tier.price);
+    
+    if (priceInfo.isFree) {
+      hasFreeTier = true;
+    } else if (priceInfo.amount > 0) {
+      hasPaidTier = true;
+      if (priceInfo.amount < lowestPaidPrice) {
+        lowestPaidPrice = priceInfo.amount;
+      }
+    }
+  });
+
+  // If we found paid tiers, return the lowest price
+  if (hasPaidTier) {
+    return { price: lowestPaidPrice, isFree: false };
+  }
+  
+  // If we found free tiers, return free
+  if (hasFreeTier) {
+    return { price: 0, isFree: true };
+  }
+  
+  // Default to free
+  return { price: 0, isFree: true };
+};
+
+// Check if event is sold out - FIXED VERSION
+const isEventSoldOut = (event: Event): boolean => {
+  if (!event.ticketTiers || event.ticketTiers.length === 0) return false;
+  
+  // Check if ANY tier has available tickets
+  const hasAvailableTickets = event.ticketTiers.some(tier => {
+    if (!tier) return false;
+    
+    const available = tier.available || tier.quantity_available;
+    const sold = tier.sold || tier.quantity_sold || 0;
+    
+    // If available is undefined/null, it means unlimited tickets - not sold out
+    if (available == null) return true;
+    
+    // Check if there are tickets left
+    return available > 0 && sold < available;
+  });
+  
+  // Return true if NO tiers have available tickets
+  return !hasAvailableTickets;
+};
+
+// Get total available tickets
+const getAvailableTickets = (event: Event): number => {
+  if (!event.ticketTiers || !Array.isArray(event.ticketTiers)) return 0;
+  
+  return event.ticketTiers.reduce((total, tier) => {
+    if (!tier) return total;
+    
+    const available = tier.available || tier.quantity_available;
+    const sold = tier.sold || tier.quantity_sold || 0;
+    
+    // If available is undefined/null, it means unlimited - return a large number
+    if (available == null) return total + 9999;
+    
+    return total + Math.max(0, available - sold);
+  }, 0);
+};
+
+// Format price display
+const formatPriceDisplay = (price: number, isFree: boolean): string => {
+  if (isFree) return "Free";
+  return `₦${price.toLocaleString()}`;
+};
+
+// ---------------- Components ----------------
 const ChangeView: React.FC<{ center: [number, number]; zoom: number }> = ({ center, zoom }) => {
   const map = useMap();
   useEffect(() => {
@@ -120,7 +252,7 @@ const Badge = ({ type }: { type: "new" | "sponsored" | "featured" | "trending" }
 // ---------------- Event Card ----------------
 interface EventCardProps {
   event: Event;
-  goToEvent: (event: Event) => void; // Updated to pass entire event
+  goToEvent: (event: Event) => void;
 }
 
 const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) => {
@@ -140,6 +272,22 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
     const displayHour = hour % 12 || 12;
     return `${displayHour}:${(minute || 0).toString().padStart(2, "0")} ${period}`;
   }, []);
+
+  // Get price info
+  const { price, isFree } = getLowestPriceFromTiers(event);
+  const soldOut = isEventSoldOut(event);
+  const availableTickets = getAvailableTickets(event);
+  const isLowStock = availableTickets > 0 && availableTickets <= 10;
+  const isUnlimited = availableTickets >= 9999;
+  
+  // Debug logging
+  console.log(`Event Card: ${event.title}`, {
+    ticketTiers: event.ticketTiers,
+    soldOut,
+    availableTickets,
+    price,
+    isFree
+  });
 
   const handleCardClick = () => {
     goToEvent(event);
@@ -161,8 +309,8 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
       onKeyDown={handleKeyPress}
       tabIndex={0}
       role="button"
-      aria-label={`View details for ${event.title}`}
-      className="bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all cursor-pointer border border-purple-100 overflow-hidden group flex flex-col h-full focus:outline-none focus:ring-4 focus:ring-purple-300"
+      aria-label={`View details for ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
+      className={`bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all cursor-pointer border overflow-hidden group flex flex-col h-full focus:outline-none focus:ring-4 focus:ring-purple-300 ${soldOut ? 'opacity-90 border-gray-200' : 'border-purple-100'}`}
     >
       <div className="relative">
         {imageError ? (
@@ -170,13 +318,22 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
             <Calendar size={48} className="text-purple-300" />
           </div>
         ) : (
-          <img 
-            src={event.image} 
-            alt={event.title} 
-            className="w-full h-64 object-cover group-hover:scale-110 transition-transform duration-700"
-            onError={() => setImageError(true)}
-            loading="lazy"
-          />
+          <>
+            <img 
+              src={event.image} 
+              alt={event.title} 
+              className="w-full h-64 object-cover group-hover:scale-110 transition-transform duration-700"
+              onError={() => setImageError(true)}
+              loading="lazy"
+            />
+            {soldOut && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <div className="bg-gradient-to-r from-red-600 to-red-800 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2">
+                  <span className="text-lg">SOLD OUT</span>
+                </div>
+              </div>
+            )}
+          </>
         )}
         <div className="absolute top-4 left-4 flex flex-col gap-2">
           {event.isNew && <Badge type="new" />}
@@ -184,6 +341,23 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
           {event.featured && <Badge type="featured" />}
           {event.trending && <Badge type="trending" />}
         </div>
+        
+        {/* Stock Indicators */}
+        {!soldOut && isLowStock && (
+          <div className="absolute top-4 right-4">
+            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-red-600">
+              🔥 {availableTickets} left
+            </span>
+          </div>
+        )}
+        
+        {!soldOut && isUnlimited && (
+          <div className="absolute top-4 right-4">
+            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600">
+              ✓ Unlimited
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="p-6 flex flex-col flex-grow">
@@ -207,11 +381,18 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
         </div>
 
         <button 
-          className="mt-auto w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-lg hover:shadow-xl active:scale-95 focus:outline-none focus:ring-4 focus:ring-purple-300"
-          aria-label={`Get tickets for ${event.title} - ${event.ticketTiers?.[0]?.price ?? "Free"}`}
+          className={`mt-auto w-full font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-lg hover:shadow-xl active:scale-95 focus:outline-none focus:ring-4 focus:ring-purple-300 ${
+            soldOut 
+              ? 'bg-gray-400 text-white cursor-not-allowed hover:scale-100 hover:shadow-lg' 
+              : isFree 
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:scale-105' 
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
+          }`}
+          aria-label={`${soldOut ? 'Sold Out' : 'Get tickets for'} ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
+          disabled={soldOut}
         >
           <Ticket size={24} aria-hidden="true" />
-          Get Ticket • {event.ticketTiers?.[0]?.price ?? "Free"}
+          {soldOut ? 'SOLD OUT' : `Get Ticket • ${isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
         </button>
       </div>
     </motion.div>
@@ -271,24 +452,56 @@ export default function EventsPage() {
           return;
         }
 
-        const parsedEvents: Event[] = data.map((event: any) => ({
-          id: event.id,
-          title: event.title,
-          description: event.description,
-          category_id: event.category_id,
-          date: event.date,
-          time: event.time,
-          venue: event.venue,
-          location: event.location,
-          image: event.image || "https://via.placeholder.com/400x300?text=No+Image",
-          ticketTiers: Array.isArray(event.ticketTiers) ? event.ticketTiers : [],
-          featured: event.featured ?? false,
-          trending: event.trending ?? false,
-          isNew: event.isnew ?? false,
-          sponsored: event.sponsored ?? false,
-          coordinates: event.coordinates || null,
-          slug: event.slug || null, // Include slug
-        }));
+        // Debug: Log raw data
+        console.log("RAW EVENTS DATA FROM DB:", data);
+
+        const parsedEvents: Event[] = data.map((event: any) => {
+          // Parse ticket tiers safely
+          let ticketTiers = [];
+          try {
+            if (event.ticketTiers) {
+              if (typeof event.ticketTiers === 'string') {
+                ticketTiers = JSON.parse(event.ticketTiers);
+              } else if (Array.isArray(event.ticketTiers)) {
+                ticketTiers = event.ticketTiers;
+              }
+            }
+          } catch (err) {
+            console.warn("Failed to parse ticket tiers", err);
+            ticketTiers = [];
+          }
+
+          // Debug each event's ticket tiers
+          console.log(`Processing event: ${event.title}`, {
+            ticketTiersRaw: event.ticketTiers,
+            ticketTiersParsed: ticketTiers
+          });
+
+          // Parse coordinates
+          let coordinates = null;
+          if (event.lat && event.lng) {
+            coordinates = { lat: Number(event.lat), lng: Number(event.lng) };
+          }
+
+          return {
+            id: event.id,
+            title: event.title || "Untitled Event",
+            description: event.description,
+            category_id: event.category_id || 0,
+            date: event.date || new Date().toISOString(),
+            time: event.time || "",
+            venue: event.venue || "",
+            location: event.location || event.venue || "Location TBD",
+            image: event.image || event.cover_image || "https://via.placeholder.com/400x300?text=No+Image",
+            ticketTiers: ticketTiers,
+            featured: event.featured ?? false,
+            trending: event.trending ?? false,
+            isNew: event.isnew ?? false,
+            sponsored: event.sponsored ?? false,
+            coordinates: coordinates,
+            slug: event.slug || null,
+          };
+        });
 
         setEvents(parsedEvents);
       } catch (err) {
@@ -364,7 +577,6 @@ export default function EventsPage() {
 
   // ---------------- Handlers ----------------
   const goToEvent = useCallback((event: Event) => {
-    // Use slug if available, otherwise fallback to ID
     const path = event.slug 
       ? `/event/${event.slug}` 
       : `/event/${event.id}`;
@@ -373,7 +585,6 @@ export default function EventsPage() {
 
   const handleCategorySelect = useCallback((category: "All" | number) => {
     setSelectedCategory(category);
-    // Scroll to events section when category changes
     document.getElementById("events-section")?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
@@ -495,60 +706,77 @@ export default function EventsPage() {
                   className="flex transition-transform duration-700 ease-out"
                   style={{ transform: `translateX(-${currentSlide * 100}%)` }}
                 >
-                  {featuredEvents.map((event) => (
-                    <div 
-                      key={event.id} 
-                      className="w-full flex-shrink-0"
-                    >
-                      <button
-                        onClick={() => goToEvent(event)}
-                        className="w-full text-left"
-                        aria-label={`View featured event: ${event.title}`}
-                      >
-                        <div className="relative h-96 md:h-[560px] bg-black rounded-3xl overflow-hidden group/carousel">
-                          <img 
-                            src={event.image} 
-                            alt={event.title}
-                            className="w-full h-full object-cover opacity-70 group-hover/carousel:opacity-90 transition-opacity duration-500"
-                            onError={(e) => {
-                              e.currentTarget.src = "https://via.placeholder.com/1200x560?text=Event+Image";
-                            }}
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-                          <div className="absolute bottom-8 left-8 right-8 text-white">
-                            <div className="flex flex-wrap gap-2 mb-4">
-                              {event.sponsored && <Badge type="sponsored" />}
-                              {event.isNew && <Badge type="new" />}
-                              {event.featured && <Badge type="featured" />}
-                              {event.trending && <Badge type="trending" />}
-                            </div>
-                            <h3 className="text-5xl md:text-7xl font-black mt-4 leading-tight">
-                              {event.title}
-                            </h3>
-                            <p className="text-2xl mt-3 flex items-center gap-3">
-                              <Calendar size={28} aria-hidden="true" />
-                              <span className="font-bold">
-                                {new Date(event.date).toLocaleDateString("en-GB", { 
-                                  weekday: "long", 
-                                  day: "2-digit", 
-                                  month: "long",
-                                  year: "numeric" 
-                                })}
-                              </span>
-                            </p>
-                            <div className="flex items-center justify-between mt-6">
-                              <p className="text-3xl font-bold text-purple-400">
-                                {event.ticketTiers?.[0]?.price ?? "Free"}
+                  {featuredEvents.map((event) => {
+                    const { price, isFree } = getLowestPriceFromTiers(event);
+                    const soldOut = isEventSoldOut(event);
+                    const availableTickets = getAvailableTickets(event);
+                    
+                    return (
+                      <div key={event.id} className="w-full flex-shrink-0">
+                        <button
+                          onClick={() => goToEvent(event)}
+                          className="w-full text-left"
+                          aria-label={`View featured event: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
+                        >
+                          <div className="relative h-96 md:h-[560px] bg-black rounded-3xl overflow-hidden group/carousel">
+                            <img 
+                              src={event.image} 
+                              alt={event.title}
+                              className="w-full h-full object-cover opacity-70 group-hover/carousel:opacity-90 transition-opacity duration-500"
+                              onError={(e) => {
+                                e.currentTarget.src = "https://via.placeholder.com/1200x560?text=Event+Image";
+                              }}
+                            />
+                            {soldOut && (
+                              <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
+                                <div className="bg-gradient-to-r from-red-600 to-red-800 text-white px-8 py-4 rounded-full font-bold flex items-center gap-3">
+                                  <span className="text-2xl">SOLD OUT</span>
+                                </div>
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+                            <div className="absolute bottom-8 left-8 right-8 text-white z-20">
+                              <div className="flex flex-wrap gap-2 mb-4">
+                                {event.sponsored && <Badge type="sponsored" />}
+                                {event.isNew && <Badge type="new" />}
+                                {event.featured && <Badge type="featured" />}
+                                {event.trending && <Badge type="trending" />}
+                              </div>
+                              <h3 className="text-5xl md:text-7xl font-black mt-4 leading-tight">
+                                {event.title}
+                              </h3>
+                              <p className="text-2xl mt-3 flex items-center gap-3">
+                                <Calendar size={28} aria-hidden="true" />
+                                <span className="font-bold">
+                                  {new Date(event.date).toLocaleDateString("en-GB", { 
+                                    weekday: "long", 
+                                    day: "2-digit", 
+                                    month: "long",
+                                    year: "numeric" 
+                                  })}
+                                </span>
                               </p>
-                              <span className="text-white/80 text-lg">
-                                {event.location}
-                              </span>
+                              <div className="flex items-center justify-between mt-6">
+                                <p className={`text-3xl font-bold ${soldOut ? 'text-red-400' : isFree ? 'text-emerald-400' : 'text-purple-400'}`}>
+                                  {soldOut ? 'SOLD OUT' : isFree ? 'Free' : `₦${price.toLocaleString()}`}
+                                </p>
+                                <span className="text-white/80 text-lg">
+                                  {event.location}
+                                </span>
+                              </div>
+                              {!soldOut && availableTickets < 9999 && availableTickets > 0 && availableTickets <= 10 && (
+                                <div className="mt-4 text-center">
+                                  <span className="inline-flex items-center gap-2 text-orange-300 font-bold">
+                                    🔥 Only {availableTickets} tickets left!
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      </button>
-                    </div>
-                  ))}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Carousel Indicators */}
@@ -694,43 +922,70 @@ export default function EventsPage() {
               {/* Event Markers */}
               {events
                 .filter(event => event.coordinates)
-                .map((event) => (
-                  <Marker
-                    key={event.id}
-                    position={[event.coordinates!.lat, event.coordinates!.lng]}
-                    eventHandlers={{
-                      click: () => goToEvent(event),
-                    }}
-                  >
-                    <Popup>
-                      <div className="p-2 max-w-xs">
-                        <img 
-                          src={event.image} 
-                          alt={event.title}
-                          className="w-full h-32 object-cover rounded-lg mb-2"
-                          onError={(e) => {
-                            e.currentTarget.src = "https://via.placeholder.com/300x200?text=Event";
-                          }}
-                        />
-                        <h4 className="font-bold text-lg text-purple-700">{event.title}</h4>
-                        <p className="text-sm text-gray-600 mt-1">
-                          <Calendar size={12} className="inline mr-1" />
-                          {new Date(event.date).toLocaleDateString()}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          <MapPin size={12} className="inline mr-1" />
-                          {event.location}
-                        </p>
-                        <button
-                          onClick={() => goToEvent(event)}
-                          className="mt-3 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg hover:shadow transition text-sm"
-                        >
-                          View Details
-                        </button>
-                      </div>
-                    </Popup>
-                  </Marker>
-                ))}
+                .map((event) => {
+                  const { price, isFree } = getLowestPriceFromTiers(event);
+                  const soldOut = isEventSoldOut(event);
+                  const availableTickets = getAvailableTickets(event);
+                  const isLowStock = availableTickets > 0 && availableTickets <= 10;
+                  
+                  return (
+                    <Marker
+                      key={event.id}
+                      position={[event.coordinates!.lat, event.coordinates!.lng]}
+                      eventHandlers={{
+                        click: () => goToEvent(event),
+                      }}
+                    >
+                      <Popup>
+                        <div className="p-2 max-w-xs">
+                          <img 
+                            src={event.image} 
+                            alt={event.title}
+                            className="w-full h-32 object-cover rounded-lg mb-2"
+                            onError={(e) => {
+                              e.currentTarget.src = "https://via.placeholder.com/300x200?text=Event";
+                            }}
+                          />
+                          <h4 className="font-bold text-lg text-purple-700">{event.title}</h4>
+                          {soldOut && (
+                            <div className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold mt-1">
+                              SOLD OUT
+                            </div>
+                          )}
+                          {!soldOut && isLowStock && (
+                            <div className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold mt-1">
+                              🔥 {availableTickets} left
+                            </div>
+                          )}
+                          <p className="text-sm text-gray-600 mt-1">
+                            <Calendar size={12} className="inline mr-1" />
+                            {new Date(event.date).toLocaleDateString()}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            <MapPin size={12} className="inline mr-1" />
+                            {event.location}
+                          </p>
+                          <div className={`text-sm font-bold mt-2 ${soldOut ? 'text-red-600' : isFree ? 'text-emerald-600' : 'text-purple-600'}`}>
+                            {soldOut ? 'SOLD OUT' : isFree ? 'Free' : `₦${price.toLocaleString()}`}
+                          </div>
+                          <button
+                            onClick={() => goToEvent(event)}
+                            className={`mt-3 w-full py-2 rounded-lg hover:shadow transition text-sm font-bold ${
+                              soldOut 
+                                ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                : isFree
+                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:shadow-lg'
+                                  : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'
+                            }`}
+                            disabled={soldOut}
+                          >
+                            {soldOut ? 'Sold Out' : 'View Details'}
+                          </button>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
             </MapContainer>
             
             <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 backdrop-blur-sm p-4 rounded-2xl shadow-lg">
@@ -865,7 +1120,6 @@ export default function EventsPage() {
           <AdsenseAd slot="3333333333" style={{ minHeight: "120px" }} />
         </div>
       </div>
-
     </div>
   );
 }

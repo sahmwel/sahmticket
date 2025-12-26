@@ -27,10 +27,14 @@ import Modal from "../components/Modal";
 
 interface TicketTier {
   name: string;
-  price: string;
+  price: string | number;
   description?: string;
-  available: number;
-  sold: number;
+  available?: number;
+  sold?: number;
+  quantity_available?: number;
+  quantity_sold?: number;
+  tickets_sold?: number;
+  total_tickets?: number;
 }
 
 interface EventType {
@@ -53,6 +57,64 @@ declare global {
   interface Window { PaystackPop?: any }
 }
 
+// Email validation helper
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email.trim());
+};
+
+// Phone validation helper
+const isValidPhone = (phone: string): boolean => {
+  // Basic phone validation - adjust for your country
+  const phoneRegex = /^[+]?[\d\s-]{10,}$/;
+  return phoneRegex.test(phone.trim());
+};
+
+// Helper function to parse price
+const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
+  if (typeof price === 'number') {
+    return { amount: price, isFree: price === 0 };
+  }
+  
+  if (typeof price === 'string') {
+    const cleaned = price.replace(/[^\d.-]/g, '');
+    const amount = parseFloat(cleaned) || 0;
+    const lowerPrice = price.toLowerCase();
+    
+    // Check for "free" text or zero amount
+    if (lowerPrice.includes('free') || amount === 0) {
+      return { amount: 0, isFree: true };
+    }
+    
+    return { amount, isFree: false };
+  }
+  
+  return { amount: 0, isFree: true };
+};
+
+// Helper to check if tier is sold out
+const isTierSoldOut = (tier: TicketTier): boolean => {
+  const available = tier.available ?? tier.quantity_available ?? tier.total_tickets;
+  const sold = tier.sold ?? tier.quantity_sold ?? tier.tickets_sold ?? 0;
+  
+  // If available is undefined/null, it's unlimited - not sold out
+  if (available == null) return false;
+  
+  // Check if sold out
+  return sold >= available;
+};
+
+// Get available tickets for a tier
+const getAvailableTickets = (tier: TicketTier): number => {
+  const available = tier.available ?? tier.quantity_available ?? tier.total_tickets;
+  const sold = tier.sold ?? tier.quantity_sold ?? tier.tickets_sold ?? 0;
+  
+  // If available is undefined/null, it's unlimited
+  if (available == null) return Infinity;
+  
+  return Math.max(0, available - sold);
+};
+
 export default function EventDetails() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
@@ -62,13 +124,22 @@ export default function EventDetails() {
   const [quantities, setQuantities] = useState<{ [key: string]: number }>({});
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutData, setCheckoutData] = useState<any>(null);
-  const [formData, setFormData] = useState({ fullName: "", email: "", phone: "" });
+  const [formData, setFormData] = useState({ 
+    fullName: "", 
+    email: "", 
+    phone: "" 
+  });
+  const [formErrors, setFormErrors] = useState({
+    fullName: false,
+    email: false,
+    phone: false
+  });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
   const API_URL = import.meta.env.VITE_API_URL || 'https://api.sahmtickethub.online';
 
-  // Fetch Event - FIXED VERSION
+  // Fetch Event
   useEffect(() => {
     const fetchEvent = async () => {
       if (!slug) {
@@ -119,7 +190,7 @@ export default function EventDetails() {
           }
         }
 
-        // THIRD: Try the OR query as a last resort (but be careful with it)
+        // THIRD: Try the OR query as a last resort
         console.log("Trying OR query as fallback");
         const { data: orData, error: orError } = await supabase
           .from("events")
@@ -157,22 +228,72 @@ export default function EventDetails() {
     fetchEvent();
   }, [slug, navigate]);
 
-  // Helper function to parse event data
+  // Helper function to parse event data - IMPROVED VERSION
   const parseEventData = (data: any): EventType => {
-    // Parse ticket tiers
+    // Parse ticket tiers - IMPROVED VERSION
     let ticketTiers: TicketTier[] = [];
     const rawTiers = data.ticketTiers;
 
-    if (Array.isArray(rawTiers)) {
-      ticketTiers = rawTiers;
-    } else if (typeof rawTiers === "string") {
+    console.log("Raw ticket tiers from DB:", rawTiers);
+
+    if (rawTiers) {
       try {
-        ticketTiers = JSON.parse(rawTiers || "[]");
+        // Case 1: Already an array
+        if (Array.isArray(rawTiers)) {
+          ticketTiers = rawTiers.filter(tier => tier && typeof tier === 'object').map(tier => ({
+            name: tier.name || tier.tier_name || "General Admission",
+            price: tier.price || tier.tier_price || 0,
+            description: tier.description || tier.tier_description,
+            available: tier.available ?? tier.quantity_available ?? tier.total_tickets,
+            sold: tier.sold ?? tier.quantity_sold ?? tier.tickets_sold ?? 0,
+            quantity_available: tier.quantity_available ?? tier.available ?? tier.total_tickets,
+            quantity_sold: tier.quantity_sold ?? tier.sold ?? tier.tickets_sold ?? 0,
+            tickets_sold: tier.tickets_sold,
+            total_tickets: tier.total_tickets
+          }));
+        }
+        // Case 2: JSON string
+        else if (typeof rawTiers === "string") {
+          const parsed = JSON.parse(rawTiers || "[]");
+          if (Array.isArray(parsed)) {
+            ticketTiers = parsed.filter(tier => tier && typeof tier === 'object').map(tier => ({
+              name: tier.name || tier.tier_name || "General Admission",
+              price: tier.price || tier.tier_price || 0,
+              description: tier.description || tier.tier_description,
+              available: tier.available ?? tier.quantity_available ?? tier.total_tickets,
+              sold: tier.sold ?? tier.quantity_sold ?? tier.tickets_sold ?? 0,
+              quantity_available: tier.quantity_available ?? tier.available ?? tier.total_tickets,
+              quantity_sold: tier.quantity_sold ?? tier.sold ?? tier.tickets_sold ?? 0,
+              tickets_sold: tier.tickets_sold,
+              total_tickets: tier.total_tickets
+            }));
+          }
+        }
       } catch (err) {
-        console.warn("Failed to parse ticket tiers", err);
-        ticketTiers = [];
+        console.warn("Failed to parse ticket tiers:", err);
+        // Fallback: create a default tier
+        ticketTiers = [{
+          name: "General Admission",
+          price: 0,
+          description: "Standard admission ticket",
+          available: undefined,
+          sold: 0
+        }];
       }
     }
+
+    // If no tiers found, create a default one
+    if (ticketTiers.length === 0) {
+      ticketTiers = [{
+        name: "General Admission",
+        price: 0,
+        description: "Standard admission ticket",
+        available: undefined,
+        sold: 0
+      }];
+    }
+
+    console.log("Parsed ticket tiers:", ticketTiers);
 
     return {
       id: data.id,
@@ -182,7 +303,7 @@ export default function EventDetails() {
       location: data.location,
       address: data.address,
       venue: data.venue,
-      image: data.image || "https://via.placeholder.com/800x600?text=Event+Image",
+      image: data.image || data.cover_image || "https://via.placeholder.com/800x600?text=Event+Image",
       description: data.description,
       lat: data.lat,
       lng: data.lng,
@@ -190,6 +311,27 @@ export default function EventDetails() {
       slug: data.slug || null,
     };
   };
+
+  // Debug event data
+  useEffect(() => {
+    if (event) {
+      console.log("EVENT DETAILS DEBUG:", {
+        title: event.title,
+        hasTicketTiers: !!event.ticketTiers,
+        ticketTiersCount: event.ticketTiers?.length || 0,
+        ticketTiers: event.ticketTiers?.map(tier => ({
+          name: tier.name,
+          price: tier.price,
+          available: tier.available,
+          sold: tier.sold,
+          quantity_available: tier.quantity_available,
+          quantity_sold: tier.quantity_sold,
+          isSoldOut: isTierSoldOut(tier),
+          availableTickets: getAvailableTickets(tier)
+        }))
+      });
+    }
+  }, [event]);
 
   // Set document title when event is loaded
   useEffect(() => {
@@ -209,7 +351,11 @@ export default function EventDetails() {
   useEffect(() => {
     if (!event?.ticketTiers) return;
     const initQuantities: { [key: string]: number } = {};
-    event.ticketTiers.forEach(tier => (initQuantities[tier.name] = 1));
+    event.ticketTiers.forEach(tier => {
+      if (tier.name) {
+        initQuantities[tier.name] = 1;
+      }
+    });
     setQuantities(initQuantities);
   }, [event]);
 
@@ -283,9 +429,15 @@ export default function EventDetails() {
   };
 
   const handleBuyTicket = (tier: TicketTier) => {
+    if (!tier.name) return;
+    
     setBuyingTier(tier.name);
     setTimeout(() => {
-      setCheckoutData({ orderId: `ORD-${Date.now()}`, tier, quantity: quantities[tier.name] || 1 });
+      setCheckoutData({ 
+        orderId: `ORD-${Date.now()}`, 
+        tier, 
+        quantity: quantities[tier.name] || 1 
+      });
       setShowCheckout(true);
       setBuyingTier(null);
     }, 300);
@@ -295,17 +447,39 @@ export default function EventDetails() {
     setShowCheckout(false);
     setCheckoutData(null);
     setFormData({ fullName: "", email: "", phone: "" });
+    setFormErrors({ fullName: false, email: false, phone: false });
     setCheckoutLoading(false);
   };
 
-  const cleanPrice = checkoutData?.tier.price ? parseInt(checkoutData.tier.price.replace(/[^0-9]/g, ""), 10) || 0 : 0;
-  const totalAmount = cleanPrice * (checkoutData?.quantity || 1);
-  const formattedTotal = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 0 }).format(totalAmount);
+  // Validate form
+  const validateForm = (): boolean => {
+    const errors = {
+      fullName: !formData.fullName.trim(),
+      email: !isValidEmail(formData.email),
+      phone: !isValidPhone(formData.phone)
+    };
+    
+    setFormErrors(errors);
+    
+    if (errors.fullName || errors.email || errors.phone) {
+      return false;
+    }
+    
+    return true;
+  };
 
-  // 🚀 COMPLETE Paystack + Backend Integration
+  // Calculate totals
+  const cleanPrice = checkoutData?.tier.price ? 
+    parsePrice(checkoutData.tier.price).amount : 0;
+  const totalAmount = cleanPrice * (checkoutData?.quantity || 1);
+  const formattedTotal = totalAmount === 0 
+    ? "FREE" 
+    : new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 0 }).format(totalAmount);
+
+  // Complete Paystack + Backend Integration - FIXED VERSION
   const initializePaystack = async () => {
-    if (!formData.fullName.trim() || !formData.email.trim() || !formData.phone.trim()) {
-      alert("Please fill in all fields");
+    // Validate form first
+    if (!validateForm()) {
       setCheckoutLoading(false);
       return;
     }
@@ -316,44 +490,61 @@ export default function EventDetails() {
     if (totalAmount <= 0) {
       try {
         const freeRef = `FREE-${checkoutData.orderId}-${Date.now()}`;
+        const currentTime = new Date().toISOString();
 
-        // 1. Save to Supabase
+        // 1. Save to Supabase WITH EMAIL
+        const ticketPromises = [];
         for (let i = 0; i < (checkoutData.quantity || 1); i++) {
           const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}|${Math.random().toString(36).substring(2, 6)}`;
           const qr_code_url = await QRCode.toDataURL(qrData);
 
-          await supabase.from("tickets").insert({
-            event_id: event.id,
-            full_name: formData.fullName,
-            email: formData.email,
-            phone: formData.phone,
-            qr_code_url,
-            ticket_type: checkoutData.tier.name,
-            price: 0,
-            reference: freeRef
-          });
+          ticketPromises.push(
+            supabase.from("tickets").insert({
+              event_id: event.id,
+              full_name: formData.fullName.trim(),
+              email: formData.email.trim(), // EMAIL INCLUDED
+              phone: formData.phone.trim(),
+              qr_code_url,
+              ticket_type: checkoutData.tier.name,
+              price: 0,
+              reference: freeRef,
+              purchased_at: currentTime // ADD TIMESTAMP
+            })
+          );
         }
 
+        // Wait for all tickets to be saved
+        await Promise.all(ticketPromises);
+
         // 2. Send Email + PDF
-        await fetch(`${API_URL}/api/tickets/send-with-pdf`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: formData.email.trim(),
-            name: formData.fullName.trim(),
-            eventTitle: event.title,
-            eventDate: event.date,
-            eventTime: formatTime(event.time || ""),
-            eventVenue: event.venue || event.location,
-            tickets: [{
-              ticketType: checkoutData.tier.name,
-              quantity: checkoutData.quantity,
-              amount: formattedTotal,
-              codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${freeRef}-${i + 1}`)
-            }],
-            orderId: freeRef
-          })
-        });
+        try {
+          const emailResponse = await fetch(`${API_URL}/api/tickets/send-with-pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: formData.email.trim(),
+              name: formData.fullName.trim(),
+              eventTitle: event.title,
+              eventDate: event.date,
+              eventTime: formatTime(event.time || ""),
+              eventVenue: event.venue || event.location,
+              tickets: [{
+                ticketType: checkoutData.tier.name,
+                quantity: checkoutData.quantity,
+                amount: formattedTotal,
+                codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${freeRef}-${i + 1}`)
+              }],
+              orderId: freeRef
+            })
+          });
+
+          if (!emailResponse.ok) {
+            console.warn("Email sending failed, but ticket was created");
+          }
+        } catch (emailErr) {
+          console.warn("Email sending error:", emailErr);
+          // Continue even if email fails
+        }
 
         closeCheckout();
         navigate(
@@ -368,12 +559,13 @@ export default function EventDetails() {
           `&type=${encodeURIComponent(checkoutData.tier.name)}` +
           `&qty=${checkoutData.quantity}` +
           `&price=${formattedTotal}` +
-          `&ref=${freeRef}`
+          `&ref=${freeRef}` +
+          `&email=${encodeURIComponent(formData.email.trim())}` +
+          `&name=${encodeURIComponent(formData.fullName.trim())}`
         );
       } catch (err) {
         console.error("Free ticket error:", err);
         alert("Could not issue free ticket. Please try again.");
-      } finally {
         setCheckoutLoading(false);
       }
       return;
@@ -381,7 +573,7 @@ export default function EventDetails() {
 
     // Handle PAID tickets (Paystack)
     if (!window.PaystackPop) {
-      alert("Payment gateway loading...");
+      alert("Payment gateway loading... Please try again.");
       setCheckoutLoading(false);
       return;
     }
@@ -403,46 +595,61 @@ export default function EventDetails() {
         quantity: checkoutData.quantity,
         full_name: formData.fullName.trim(),
         phone: formData.phone.trim(),
+        email: formData.email.trim(), // Include email in metadata too
       },
       callback: async (response: PaystackResponse) => {
         try {
-          // 1. Save tickets to Supabase
+          const currentTime = new Date().toISOString();
+          
+          // 1. Save tickets to Supabase WITH EMAIL
+          const ticketPromises = [];
           for (let i = 0; i < (checkoutData.quantity || 1); i++) {
             const qrData = `${event.id}|${checkoutData.tier.name}|${Date.now()}|${i}`;
             const qr_code_url = await QRCode.toDataURL(qrData);
 
-            await supabase.from("tickets").insert({
-              event_id: event.id,
-              full_name: formData.fullName,
-              email: formData.email,
-              phone: formData.phone,
-              ticket_type: checkoutData.tier.name,
-              price: cleanPrice,
-              qr_code_url,
-              reference: response.reference,
-            });
+            ticketPromises.push(
+              supabase.from("tickets").insert({
+                event_id: event.id,
+                full_name: formData.fullName.trim(),
+                email: formData.email.trim(), // EMAIL INCLUDED
+                phone: formData.phone.trim(),
+                ticket_type: checkoutData.tier.name,
+                price: cleanPrice,
+                qr_code_url,
+                reference: response.reference,
+                purchased_at: currentTime // ADD TIMESTAMP
+              })
+            );
           }
 
-          // 🚀 2. Send Email + PDF via Backend
-          await fetch(`${API_URL}/api/tickets/send-with-pdf`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: formData.email.trim(),
-              name: formData.fullName.trim(),
-              eventTitle: event.title,
-              eventDate: event.date,
-              eventTime: formatTime(event.time || ""),
-              eventVenue: event.venue || event.location,
-              tickets: [{
-                ticketType: checkoutData.tier.name,
-                quantity: checkoutData.quantity,
-                amount: formattedTotal,
-                codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${response.reference}-${i + 1}`)
-              }],
-              orderId: response.reference
-            })
-          });
+          // Wait for all tickets to be saved
+          await Promise.all(ticketPromises);
+
+          // 2. Send Email + PDF via Backend
+          try {
+            await fetch(`${API_URL}/api/tickets/send-with-pdf`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                to: formData.email.trim(),
+                name: formData.fullName.trim(),
+                eventTitle: event.title,
+                eventDate: event.date,
+                eventTime: formatTime(event.time || ""),
+                eventVenue: event.venue || event.location,
+                tickets: [{
+                  ticketType: checkoutData.tier.name,
+                  quantity: checkoutData.quantity,
+                  amount: formattedTotal,
+                  codes: Array(checkoutData.quantity).fill(0).map((_, i) => `${response.reference}-${i + 1}`)
+                }],
+                orderId: response.reference
+              })
+            });
+          } catch (emailErr) {
+            console.warn("Email sending failed:", emailErr);
+            // Continue even if email fails
+          }
 
           closeCheckout();
           navigate(
@@ -457,16 +664,20 @@ export default function EventDetails() {
             `&type=${encodeURIComponent(checkoutData.tier.name)}` +
             `&qty=${checkoutData.quantity}` +
             `&price=${formattedTotal}` +
-            `&ref=${response.reference}`
+            `&ref=${response.reference}` +
+            `&email=${encodeURIComponent(formData.email.trim())}` +
+            `&name=${encodeURIComponent(formData.fullName.trim())}`
           );
         } catch (err) {
           console.error("Post-payment error:", err);
-          alert("Payment succeeded but email failed. Check your inbox or contact support.");
-        } finally {
+          alert("Payment succeeded but there was an issue saving your ticket. Please contact support with your reference: " + response.reference);
           setCheckoutLoading(false);
         }
       },
-      onClose: () => setCheckoutLoading(false),
+      onClose: () => {
+        console.log("Payment window closed");
+        setCheckoutLoading(false);
+      },
     });
 
     handler.openIframe ? handler.openIframe() : handler();
@@ -475,6 +686,16 @@ export default function EventDetails() {
   const handleCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     initializePaystack();
+  };
+
+  // Handle input changes with validation
+  const handleInputChange = (field: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Clear error when user starts typing
+    if (formErrors[field as keyof typeof formErrors]) {
+      setFormErrors(prev => ({ ...prev, [field]: false }));
+    }
   };
 
   return (
@@ -547,48 +768,91 @@ export default function EventDetails() {
                 <p className="text-lg text-gray-700">{event.description || "An amazing night of music and vibes!"}</p>
               </motion.div>
 
-              {/* Ticket Tiers */}
-              {event.ticketTiers && event.ticketTiers.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 50 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-3xl shadow-xl overflow-visible"
-                >
-                  <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-8 text-white">
-                    <h2 className="text-3xl font-black">Get Your Ticket</h2>
-                  </div>
-                  <div className="p-8 space-y-6">
-                    {event.ticketTiers.map((tier, idx) => {
-                      const remaining = (tier.available || 0) - (tier.sold || 0);
+              {/* Ticket Tiers - ALWAYS SHOW THIS SECTION */}
+              <motion.div
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-3xl shadow-xl overflow-visible"
+              >
+                <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-8 text-white">
+                  <h2 className="text-3xl font-black">Get Your Ticket</h2>
+                </div>
+                <div className="p-8 space-y-6">
+                  {/* ALWAYS SHOW AT LEAST ONE TICKET TIER */}
+                  {event.ticketTiers && event.ticketTiers.length > 0 ? (
+                    event.ticketTiers.map((tier, idx) => {
+                      const isSoldOut = isTierSoldOut(tier);
+                      const availableTickets = getAvailableTickets(tier);
+                      const isUnlimited = availableTickets === Infinity;
+                      const isLowStock = !isUnlimited && availableTickets > 0 && availableTickets <= 10;
+                      
+                      // Parse price
+                      const priceInfo = parsePrice(tier.price);
+                      const isFree = priceInfo.isFree;
+                      
+                      // Format price display
+                      const displayPrice = isFree ? 'FREE' : 
+                        typeof tier.price === 'string' ? tier.price : 
+                        `₦${tier.price.toLocaleString()}`;
+
                       return (
                         <div
                           key={tier.name || idx}
-                          className="border-2 border-purple-200 rounded-3xl p-6 hover:border-purple-500 transition flex flex-col md:flex-row md:justify-between md:items-center gap-4"
+                          className={`border-2 rounded-3xl p-6 transition flex flex-col md:flex-row md:justify-between md:items-center gap-4 ${
+                            isSoldOut 
+                              ? 'border-gray-300 bg-gray-50' 
+                              : 'border-purple-200 hover:border-purple-500'
+                          }`}
                         >
                           <div className="flex flex-col md:flex-row md:items-center md:gap-6">
                             <div>
                               <h3 className="text-2xl font-black">{tier.name}</h3>
                               {tier.description && <p className="text-gray-600">{tier.description}</p>}
-                              <p className="text-gray-500 mt-1">
-                                {remaining > 0 ? `${remaining} tickets left` : "Sold Out"}
-                              </p>
+                              <div className="mt-1 flex flex-wrap gap-2 items-center">
+                                {isSoldOut && (
+                                  <span className="text-red-600 font-bold text-sm bg-red-50 px-3 py-1 rounded-full">
+                                    Sold Out
+                                  </span>
+                                )}
+                                {!isSoldOut && isLowStock && (
+                                  <span className="text-orange-600 font-bold text-sm bg-orange-50 px-3 py-1 rounded-full">
+                                    🔥 Only {availableTickets} left!
+                                  </span>
+                                )}
+                                {!isSoldOut && isUnlimited && (
+                                  <span className="text-emerald-600 font-bold text-sm bg-emerald-50 px-3 py-1 rounded-full">
+                                    ✓ Unlimited tickets
+                                  </span>
+                                )}
+                                {!isSoldOut && !isUnlimited && !isLowStock && availableTickets > 10 && (
+                                  <span className="text-gray-500 text-sm">
+                                    {availableTickets} tickets available
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-3xl font-black text-purple-600 mt-2 md:mt-0">{tier.price}</span>
+                            <span className={`text-3xl font-black mt-2 md:mt-0 ${
+                              isFree ? 'text-emerald-600' : isSoldOut ? 'text-gray-400' : 'text-purple-600'
+                            }`}>
+                              {displayPrice}
+                            </span>
                           </div>
 
                           <div className="flex items-center gap-4 mt-4 md:mt-0">
                             <button
                               onClick={() => handleQuantityChange(tier.name, false)}
-                              className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50"
-                              disabled={(quantities[tier.name] || 1) <= 1 || remaining <= 0}
+                              className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50 transition"
+                              disabled={isSoldOut || (quantities[tier.name] || 1) <= 1}
                             >
                               −
                             </button>
-                            <span className="text-xl font-bold w-16 text-center">{quantities[tier.name] || 1}</span>
+                            <span className="text-xl font-bold w-16 text-center">
+                              {quantities[tier.name] || 1}
+                            </span>
                             <button
                               onClick={() => handleQuantityChange(tier.name, true)}
-                              className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50"
-                              disabled={quantities[tier.name] >= remaining}
+                              className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 disabled:opacity-50 transition"
+                              disabled={isSoldOut || (!isUnlimited && availableTickets !== undefined && (quantities[tier.name] || 1) >= availableTickets)}
                             >
                               +
                             </button>
@@ -596,17 +860,72 @@ export default function EventDetails() {
 
                           <button
                             onClick={() => handleBuyTicket(tier)}
-                            disabled={buyingTier === tier.name || remaining <= 0}
-                            className="w-full md:w-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 disabled:opacity-70 mt-4 md:mt-0"
+                            disabled={isSoldOut || buyingTier === tier.name}
+                            className={`w-full md:w-auto font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-not-allowed mt-4 md:mt-0 transition-all ${
+                              isSoldOut
+                                ? 'bg-gray-400 text-white'
+                                : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg hover:scale-105'
+                            }`}
                           >
-                            {buyingTier === tier.name ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Ticket className="w-6 h-6" /> Buy</>}
+                            {isSoldOut ? (
+                              <>
+                                <X className="w-6 h-6" /> Sold Out
+                              </>
+                            ) : buyingTier === tier.name ? (
+                              <Loader2 className="w-6 h-6 animate-spin" />
+                            ) : isFree ? (
+                              <>
+                                <Ticket className="w-6 h-6" /> Get Free Ticket
+                              </>
+                            ) : (
+                              <>
+                                <Ticket className="w-6 h-6" /> Buy Now
+                              </>
+                            )}
                           </button>
                         </div>
                       );
-                    })}
-                  </div>
-                </motion.div>
-              )}
+                    })
+                  ) : (
+                    // FALLBACK: Show a default ticket tier if none exist
+                    <div className="border-2 border-purple-200 rounded-3xl p-6 transition flex flex-col md:flex-row md:justify-between md:items-center gap-4 hover:border-purple-500">
+                      <div className="flex flex-col md:flex-row md:items-center md:gap-6">
+                        <div>
+                          <h3 className="text-2xl font-black">General Admission</h3>
+                          <p className="text-gray-600">Standard admission to the event</p>
+                          <p className="mt-1 text-gray-500">Tickets available soon</p>
+                        </div>
+                        <span className="text-3xl font-black mt-2 md:mt-0 text-purple-600">
+                          Coming Soon
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-4 mt-4 md:mt-0">
+                        <button
+                          className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 opacity-50 cursor-not-allowed"
+                          disabled
+                        >
+                          −
+                        </button>
+                        <span className="text-xl font-bold w-16 text-center">1</span>
+                        <button
+                          className="w-12 h-12 rounded-full border-2 hover:bg-gray-100 opacity-50 cursor-not-allowed"
+                          disabled
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <button
+                        disabled
+                        className="w-full md:w-auto font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 opacity-50 cursor-not-allowed mt-4 md:mt-0 bg-gray-300 text-white"
+                      >
+                        <Ticket className="w-6 h-6" /> Check Back Soon
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             </div>
 
             {/* Right Column */}
@@ -719,36 +1038,55 @@ export default function EventDetails() {
               <div className="p-8">
                 <form onSubmit={handleCheckoutSubmit}>
                   <div className="space-y-6">
-                    <input
-                      type="text"
-                      placeholder="Full Name *"
-                      value={formData.fullName}
-                      onChange={(e) =>
-                        setFormData({ ...formData, fullName: e.target.value })
-                      }
-                      className="w-full px-5 py-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      required
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email Address *"
-                      value={formData.email}
-                      onChange={(e) =>
-                        setFormData({ ...formData, email: e.target.value })
-                      }
-                      className="w-full px-5 py-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      required
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Phone Number *"
-                      value={formData.phone}
-                      onChange={(e) =>
-                        setFormData({ ...formData, phone: e.target.value })
-                      }
-                      className="w-full px-5 py-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      required
-                    />
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Full Name *"
+                        value={formData.fullName}
+                        onChange={(e) => handleInputChange('fullName', e.target.value)}
+                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                          formErrors.fullName ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
+                      />
+                      {formErrors.fullName && (
+                        <p className="text-red-500 text-sm mt-1 ml-1">Please enter your full name</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <input
+                        type="email"
+                        placeholder="Email Address *"
+                        value={formData.email}
+                        onChange={(e) => handleInputChange('email', e.target.value)}
+                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                          formErrors.email ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
+                        pattern="[^@\s]+@[^@\s]+\.[^@\s]+"
+                        title="Please enter a valid email address"
+                      />
+                      {formErrors.email && (
+                        <p className="text-red-500 text-sm mt-1 ml-1">Please enter a valid email address</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <input
+                        type="tel"
+                        placeholder="Phone Number *"
+                        value={formData.phone}
+                        onChange={(e) => handleInputChange('phone', e.target.value)}
+                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                          formErrors.phone ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
+                      />
+                      {formErrors.phone && (
+                        <p className="text-red-500 text-sm mt-1 ml-1">Please enter a valid phone number</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Order Summary */}
@@ -799,6 +1137,8 @@ export default function EventDetails() {
                   >
                     {checkoutLoading ? (
                       <Loader2 className="w-6 h-6 animate-spin" />
+                    ) : totalAmount === 0 ? (
+                      "Get Free Ticket"
                     ) : (
                       `Pay ${formattedTotal} securely`
                     )}

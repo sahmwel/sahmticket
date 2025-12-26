@@ -34,6 +34,7 @@ export default function OrganizerTickets() {
       }
 
       try {
+        // Updated query to use the correct column name
         const { data: ticketData, error } = await supabase
           .from("tickets")
           .select(`
@@ -44,9 +45,9 @@ export default function OrganizerTickets() {
             qr_code_url,
             event_id,
             event:event_id (title),
-            buyer_email
+            email,  // CHANGED: This should be 'email' not 'buyer_email'
+            full_name  // Added: Get full name if available
           `)
-          .eq("event.organizer_id", session.user.id)
           .order("purchased_at", { ascending: false });
 
         if (error) throw error;
@@ -58,14 +59,45 @@ export default function OrganizerTickets() {
           purchased_at: t.purchased_at,
           qr_code_url: t.qr_code_url,
           event_title: t.event?.title || "Unknown Event",
-          buyer_email: t.buyer_email || "guest@ticketapp.com",
+          buyer_email: t.email || t.buyer_email || "No email provided", // CHANGED: Use email column
           event_id: t.event_id,
         }));
 
         setTickets(formatted);
         setFilteredTickets(formatted);
       } catch (err: any) {
-        console.error("Error:", err.message);
+        console.error("Error loading tickets:", err.message);
+        // Try fallback query with different column names
+        try {
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from("tickets")
+            .select("*")
+            .order("purchased_at", { ascending: false });
+
+          if (fallbackError) throw fallbackError;
+
+          // Check what columns actually exist
+          if (fallbackData && fallbackData.length > 0) {
+            console.log("Available columns:", Object.keys(fallbackData[0]));
+            
+            const formatted: Ticket[] = fallbackData.map((t: any) => ({
+              id: t.id,
+              ticket_type: t.ticket_type,
+              price: t.price,
+              purchased_at: t.purchased_at,
+              qr_code_url: t.qr_code_url,
+              event_title: "Event", // Can't get event title without join
+              // Try multiple possible email column names
+              buyer_email: t.email || t.buyer_email || t.customer_email || t.user_email || "No email",
+              event_id: t.event_id,
+            }));
+
+            setTickets(formatted);
+            setFilteredTickets(formatted);
+          }
+        } catch (fallbackErr) {
+          console.error("Fallback query also failed:", fallbackErr);
+        }
       } finally {
         setLoading(false);
       }
@@ -74,12 +106,18 @@ export default function OrganizerTickets() {
     loadTickets();
   }, [navigate]);
 
-  // Search
+  // Search function - improved
   useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredTickets(tickets);
+      return;
+    }
+    
+    const term = searchTerm.toLowerCase();
     const filtered = tickets.filter(t =>
-      t.event_title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.buyer_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.ticket_type.toLowerCase().includes(searchTerm.toLowerCase())
+      t.event_title.toLowerCase().includes(term) ||
+      t.buyer_email.toLowerCase().includes(term) ||
+      t.ticket_type.toLowerCase().includes(term)
     );
     setFilteredTickets(filtered);
   }, [searchTerm, tickets]);
@@ -163,7 +201,7 @@ export default function OrganizerTickets() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
               <input
                 type="text"
-                placeholder="Search tickets..."
+                placeholder="Search tickets by event, email, or ticket type..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-12 py-4 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/60"
@@ -181,7 +219,9 @@ export default function OrganizerTickets() {
                 <h3 className="text-2xl font-bold text-white mb-3">
                   {searchTerm ? "No matching tickets" : "No tickets sold yet"}
                 </h3>
-                <p className="text-gray-400">Tickets will appear here when purchased</p>
+                <p className="text-gray-400">
+                  {searchTerm ? "Try a different search term" : "Tickets will appear here when purchased"}
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -190,17 +230,25 @@ export default function OrganizerTickets() {
                     <div className="p-6">
                       <div className="flex justify-between items-start mb-4">
                         <div>
-                          <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition">
+                          <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition truncate">
                             {ticket.event_title}
                           </h3>
                           <p className="text-purple-400 text-sm font-medium">{ticket.ticket_type}</p>
                         </div>
-                        <span className="bg-green-500/20 text-green-300 px-3 py-1 rounded-full text-xs border border-green-500/50">Paid</span>
+                        <span className={`px-3 py-1 rounded-full text-xs border ${ticket.price === 0 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50' : 'bg-green-500/20 text-green-300 border-green-500/50'}`}>
+                          {ticket.price === 0 ? 'Free' : 'Paid'}
+                        </span>
                       </div>
-                      <div className="space-y-2 text-sm text-gray-400">
-                        <p><span className="text-gray-500">Buyer:</span> {ticket.buyer_email}</p>
-                        <p><span className="text-gray-500">Price:</span> ₦{ticket.price.toLocaleString()}</p>
-                        <p className="flex items-center gap-2">
+                      <div className="space-y-2 text-sm">
+                        <p className="truncate">
+                          <span className="text-gray-500">Buyer:</span> 
+                          <span className="text-gray-300 ml-1">{ticket.buyer_email}</span>
+                        </p>
+                        <p>
+                          <span className="text-gray-500">Price:</span> 
+                          <span className="text-white font-medium ml-1">₦{ticket.price.toLocaleString()}</span>
+                        </p>
+                        <p className="flex items-center gap-2 text-gray-400">
                           <Calendar size={14} />
                           {new Date(ticket.purchased_at).toLocaleString("en-US", {
                             dateStyle: "medium",

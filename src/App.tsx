@@ -15,6 +15,7 @@ import Privacy from "./pages/Privacy";
 import Refunds from "./pages/Refunds";
 import Terms from "./pages/Terms";
 import Contact from "./pages/Contact";
+import OrganizerTeaser from "./components/OrganizerTeaser/OrganizerTeaser";
 
 // Auth
 import AuthPage from "./pages/auth/AuthPage";
@@ -26,6 +27,7 @@ import OrganizerMyEvents from "./pages/organizer/MyEvents";
 import OrganizerProfile from "./pages/organizer/Profile";
 import OrganizerTickets from "./pages/organizer/Tickets";
 import EditEvent from "./pages/organizer/EditEvent";
+import EventDetail from "./pages/EventDetails"; // Add this import
 
 // Admin
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -33,9 +35,6 @@ import AdminUsers from "./pages/admin/Users";
 import AdminEvents from "./pages/admin/Events";
 import AdminTickets from "./pages/admin/Tickets";
 import AdminSettings from "./pages/admin/Settings";
-
-// Redirect for old URLs
-import RedirectFromId from "./pages/RedirectFromId";
 
 function App() {
   return (
@@ -46,10 +45,10 @@ function App() {
         <Route element={<MainLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
-          {/* Changed from :id to :slug */}
+          {/* Public event details - uses slug */}
           <Route path="/event/:slug" element={<EventDetails />} />
-          {/* Keep for backwards compatibility */}
-          <Route path="/e/:id" element={<RedirectFromId />} />
+          {/* Fallback for old links using ID */}
+          <Route path="/event/id/:id" element={<EventDetails />} />
           <Route path="/bag/:orderId" element={<Bag />} />
           <Route path="/about" element={<About />} />
           <Route path="/faq" element={<FAQ />} />
@@ -57,6 +56,8 @@ function App() {
           <Route path="/refunds" element={<Refunds />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/contact" element={<Contact />} />
+          {/* Add Organizer Teaser Route */}
+          <Route path="/teaser" element={<OrganizerTeaser />} />
         </Route>
 
         {/* AUTH */}
@@ -70,9 +71,9 @@ function App() {
           <Route path="create-event" element={<CreateEvent />} />
           <Route path="profile" element={<OrganizerProfile />} />
           <Route path="tickets" element={<OrganizerTickets />} />
-          {/* Organizer should still use ID for editing */}
-          <Route path="event/:id" element={<EventDetails />} />
-          <Route path="event/:id/edit" element={<EditEvent />} />
+          {/* Organizer Event Management Pages */}
+          <Route path="event/:id" element={<EventDetail />} /> {/* Event detail management */}
+          <Route path="event/:id/edit" element={<EditEvent />} /> {/* Edit event form */}
         </Route>
 
         {/* ADMIN */}
