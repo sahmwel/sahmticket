@@ -84,8 +84,12 @@ export default function EditEvent() {
 
         // Fetch event
         const { data: event, error: eventError } = await supabase
-          .from("events")
-          .select("*")
+          .from('events')
+.select(`
+  *,
+  ticketTiers_event_id_fkey (*)   // <-- use the exact relationship name
+`)
+
           .eq("id", id)
           .eq("organizer_id", session.user.id)
           .single();

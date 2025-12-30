@@ -541,177 +541,188 @@ export default function Home() {
   useEffect(() => {
     let isMounted = true;
 
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const { data: eventsData, error: eventsError } = await supabase
-          .from("events")
-          .select("*")
-          .order("date", { ascending: true })
-          .eq("status", "published")
-          .limit(50);
+ const fetchData = async () => {
+  try {
+    setLoading(true);
 
-        if (!isMounted) return;
-        
-        if (eventsError) {
-          console.error("Error fetching events:", eventsError);
-          setError("Failed to load events. Please try again later.");
-          return;
-        }
-        
-        // Debug: Log raw data
-        console.log("RAW EVENTS DATA FROM DB:", eventsData);
-        
-        const parsedEvents = (eventsData || []).map((event: any) => {
-          // Process ticket tiers safely
-          let ticketTiers = [];
-          try {
-            if (event.ticketTiers) {
-              if (typeof event.ticketTiers === 'string') {
-                // Parse if it's a string
-                ticketTiers = JSON.parse(event.ticketTiers);
-              } else if (Array.isArray(event.ticketTiers)) {
-                // Already an array
-                ticketTiers = event.ticketTiers;
-              }
-            }
-          } catch (err) {
-            console.error("Error parsing ticket tiers:", err);
-            ticketTiers = [];
-          }
-          
-          // Debug each event's ticket tiers
-          console.log(`Processing event: ${event.title}`, {
-            ticketTiersRaw: event.ticketTiers,
-            ticketTiersParsed: ticketTiers
-          });
-          
-          return {
-            id: event.id,
-            title: event.title || "Untitled Event",
-            description: event.description,
-            date: event.date,
-            time: event.time,
-            venue: event.venue,
-            location: event.location || event.venue || "Location TBD",
-            image: event.image || event.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop",
-            ticketTiers: ticketTiers,
-            featured: event.featured ?? false,
-            trending: event.trending ?? false,
-            isNew: event.isnew ?? false,
-            sponsored: event.sponsored ?? false,
-            slug: event.slug || null,
-          };
-        });
+    // Use the explicit foreign key relationship
+    const { data, error } = await supabase
+      .from("events")
+      .select(`
+        id, title, date, time, venue, location, image, cover_image,
+        featured, trending, isnew, sponsored, slug, status,
+        ticketTiers!ticketTiers_event_id_fkey (
+          id, tier_name, description, price,
+          quantity_total, quantity_sold, is_active
+        )
+      `)
+      .eq("status", "published")
+      .order("date", { ascending: true })
+      .limit(50);
 
-        setEventsList(parsedEvents);
-        setError(null);
-      } catch (err) {
-        console.error("Unexpected error:", err);
-        setError("An unexpected error occurred.");
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
+    // If that doesn't work, try the other suggested relationship:
+    // ticketTiers!tickettiers_event_id_fkey
+
+    if (error) throw error;
+
+    console.log("Fetched events with tiers:", data);
+
+    const parsedEvents = (data || []).map((event: any) => {
+      const ticketTiers = (event.ticketTiers || []).map((t: any) => ({
+        name: t.tier_name || "General Admission",
+        price: Number(t.price) || 0,
+        description: t.description,
+        quantity_available: t.quantity_total ?? null,
+        quantity_sold: t.quantity_sold || 0,
+        is_active: t.is_active ?? true,
+      }));
+
+      // Filter out inactive tiers
+      const activeTiers = ticketTiers.filter((tier: any) => tier.is_active !== false);
+
+      return {
+        id: event.id,
+        title: event.title || "Untitled Event",
+        date: event.date,
+        time: event.time,
+        location: event.location || event.venue || "Location TBD",
+        image: event.image || event.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
+        ticketTiers: activeTiers,
+        featured: event.featured ?? false,
+        trending: event.trending ?? false,
+        isNew: event.isnew ?? false,
+        sponsored: event.sponsored ?? false,
+        slug: event.slug || null,
+      };
+    });
+
+    setEventsList(parsedEvents);
+  } catch (err: any) {
+    console.error("Fetch error:", err);
+    setError("Failed to load events");
+  } finally {
+    setLoading(false);
+  }
+};
 
     fetchData();
 
     // Subscribe to real-time updates
     const subscription = supabase
-      .channel("public:events")
-      .on(
-        "postgres_changes",
-        { 
-          event: "*", 
-          schema: "public", 
-          table: "events",
-          filter: "status=eq.published"
-        },
-        (payload: any) => {
-          if (!isMounted) return;
-          
-          if (payload.eventType === "INSERT") {
-            const newEvent = payload.new;
-            
-            // Process ticket tiers for new event
-            let ticketTiers = [];
-            try {
-              if (newEvent.ticketTiers) {
-                if (typeof newEvent.ticketTiers === 'string') {
-                  ticketTiers = JSON.parse(newEvent.ticketTiers);
-                } else if (Array.isArray(newEvent.ticketTiers)) {
-                  ticketTiers = newEvent.ticketTiers;
-                }
-              }
-            } catch (err) {
-              console.error("Error parsing ticket tiers:", err);
-              ticketTiers = [];
-            }
-            
-            const parsed = {
-              id: newEvent.id,
-              title: newEvent.title || "Untitled Event",
-              description: newEvent.description,
-              date: newEvent.date,
-              time: newEvent.time,
-              venue: newEvent.venue,
-              location: newEvent.location || newEvent.venue || "Location TBD",
-              image: newEvent.image || newEvent.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop",
-              ticketTiers: ticketTiers,
-              featured: newEvent.featured ?? false,
-              trending: newEvent.trending ?? false,
-              isNew: newEvent.isnew ?? false,
-              sponsored: newEvent.sponsored ?? false,
-              slug: newEvent.slug || null,
-            };
-            
-            setEventsList(prev => [parsed as Event, ...prev]);
-            setNewEventNotification(parsed as Event);
-            setTimeout(() => setNewEventNotification(null), 5000);
-          } else if (payload.eventType === "UPDATE") {
-            const updatedEvent = payload.new;
-            
-            // Process ticket tiers for updated event
-            let ticketTiers = [];
-            try {
-              if (updatedEvent.ticketTiers) {
-                if (typeof updatedEvent.ticketTiers === 'string') {
-                  ticketTiers = JSON.parse(updatedEvent.ticketTiers);
-                } else if (Array.isArray(updatedEvent.ticketTiers)) {
-                  ticketTiers = updatedEvent.ticketTiers;
-                }
-              }
-            } catch (err) {
-              console.error("Error parsing ticket tiers:", err);
-              ticketTiers = [];
-            }
-            
-            const parsed = {
-              id: updatedEvent.id,
-              title: updatedEvent.title || "Untitled Event",
-              description: updatedEvent.description,
-              date: updatedEvent.date,
-              time: updatedEvent.time,
-              venue: updatedEvent.venue,
-              location: updatedEvent.location || updatedEvent.venue || "Location TBD",
-              image: updatedEvent.image || updatedEvent.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop",
-              ticketTiers: ticketTiers,
-              featured: updatedEvent.featured ?? false,
-              trending: updatedEvent.trending ?? false,
-              isNew: updatedEvent.isnew ?? false,
-              sponsored: updatedEvent.sponsored ?? false,
-              slug: updatedEvent.slug || null,
-            };
-            
-            setEventsList(prev => prev.map(e => e.id === parsed.id ? parsed as Event : e));
-          } else if (payload.eventType === "DELETE") {
-            setEventsList(prev => prev.filter(e => e.id !== payload.old.id));
-          }
+  .channel("public:events")
+  .on(
+    "postgres_changes",
+    { 
+      event: "*", 
+      schema: "public", 
+      table: "events",
+      filter: "status=eq.published"
+    },
+    async (payload: any) => {
+      if (!isMounted) return;
+      
+      if (payload.eventType === "INSERT") {
+        const { data: newEventWithTiers, error } = await supabase
+          .from("events")
+          .select(`
+            id, title, date, time, venue, location, image, cover_image,
+            featured, trending, isnew, sponsored, slug, status,
+            ticketTiers!ticketTiers_event_id_fkey (
+              id, tier_name, description, price,
+              quantity_total, quantity_sold, is_active
+            )
+          `)
+          .eq("id", payload.new.id)
+          .single();
+
+        if (error) {
+          console.error("Error fetching new event with tiers:", error);
+          return;
         }
-      )
-      .subscribe();
+
+        if (newEventWithTiers) {
+          const ticketTiers = (newEventWithTiers.ticketTiers || []).map((t: any) => ({
+            name: t.tier_name || "General Admission",
+            price: Number(t.price) || 0,
+            description: t.description,
+            quantity_available: t.quantity_total ?? null,
+            quantity_sold: t.quantity_sold || 0,
+          })).filter((t: any) => (t.is_active ?? true) !== false);
+
+          const parsed = {
+            id: newEventWithTiers.id,
+            title: newEventWithTiers.title || "Untitled Event",
+            description: newEventWithTiers.description,
+            date: newEventWithTiers.date,
+            time: newEventWithTiers.time,
+            venue: newEventWithTiers.venue,
+            location: newEventWithTiers.location || newEventWithTiers.venue || "Location TBD",
+            image: newEventWithTiers.image || newEventWithTiers.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
+            ticketTiers,
+            featured: newEventWithTiers.featured ?? false,
+            trending: newEventWithTiers.trending ?? false,
+            isNew: newEventWithTiers.isnew ?? false,
+            sponsored: newEventWithTiers.sponsored ?? false,
+            slug: newEventWithTiers.slug || null,
+          };
+          
+          setEventsList(prev => [parsed as Event, ...prev]);
+          setNewEventNotification(parsed as Event);
+          setTimeout(() => setNewEventNotification(null), 5000);
+        }
+      } else if (payload.eventType === "UPDATE") {
+        const { data: updatedEventWithTiers, error } = await supabase
+          .from("events")
+          .select(`
+            id, title, date, time, venue, location, image, cover_image,
+            featured, trending, isnew, sponsored, slug, status,
+            ticketTiers!ticketTiers_event_id_fkey (
+              id, tier_name, description, price,
+              quantity_total, quantity_sold, is_active
+            )
+          `)
+          .eq("id", payload.new.id)
+          .single();
+
+        if (error) {
+          console.error("Error fetching updated event:", error);
+          return;
+        }
+
+        if (updatedEventWithTiers) {
+          const ticketTiers = (updatedEventWithTiers.ticketTiers || []).map((t: any) => ({
+            name: t.tier_name || "General Admission",
+            price: Number(t.price) || 0,
+            description: t.description,
+            quantity_available: t.quantity_total ?? null,
+            quantity_sold: t.quantity_sold || 0,
+          })).filter((t: any) => (t.is_active ?? true) !== false);
+
+          const parsed = {
+            id: updatedEventWithTiers.id,
+            title: updatedEventWithTiers.title || "Untitled Event",
+            description: updatedEventWithTiers.description,
+            date: updatedEventWithTiers.date,
+            time: updatedEventWithTiers.time,
+            venue: updatedEventWithTiers.venue,
+            location: updatedEventWithTiers.location || updatedEventWithTiers.venue || "Location TBD",
+            image: updatedEventWithTiers.image || updatedEventWithTiers.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
+            ticketTiers,
+            featured: updatedEventWithTiers.featured ?? false,
+            trending: updatedEventWithTiers.trending ?? false,
+            isNew: updatedEventWithTiers.isnew ?? false,
+            sponsored: updatedEventWithTiers.sponsored ?? false,
+            slug: updatedEventWithTiers.slug || null,
+          };
+          
+          setEventsList(prev => prev.map(e => e.id === parsed.id ? parsed as Event : e));
+        }
+      } else if (payload.eventType === "DELETE") {
+        setEventsList(prev => prev.filter(e => e.id !== payload.old.id));
+      }
+    }
+  )
+  .subscribe();
 
     return () => {
       isMounted = false;

@@ -27,81 +27,61 @@ export default function OrganizerTickets() {
 
   useEffect(() => {
     const loadTickets = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        navigate("/auth");
-        return;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
+    navigate("/auth");
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("tickets")
+      .select(`
+        id,
+        ticket_type,
+        price,
+        purchased_at,
+        qr_code_url,
+        event_id,
+        event:event_id (title),
+        email,
+        full_name
+      `)
+      .order("purchased_at", { ascending: false });
+
+    if (error) throw error;
+
+    const formatted: Ticket[] = (data || []).map((t: any) => ({
+      id: t.id,
+      ticket_type: t.ticket_type,
+      price: t.price || 0,
+      purchased_at: t.purchased_at,
+      qr_code_url: t.qr_code_url,
+      event_title: t.event?.title || "Unknown Event",
+      buyer_email: t.email || t.full_name || "No buyer info",
+      event_id: t.event_id,
+    }));
+
+    setTickets(formatted);
+    setFilteredTickets(formatted);
+  } catch (err: any) {
+    console.error("Error loading tickets:", err);
+    toast.error("Failed to load tickets: " + (err.message || "Unknown error"));
+
+    // Optional fallback: fetch raw data to debug columns
+    try {
+      const { data: debugData } = await supabase
+        .from("tickets")
+        .select("*")
+        .limit(1);
+      if (debugData?.[0]) {
+        console.log("Actual columns in tickets table:", Object.keys(debugData[0]));
       }
-
-      try {
-        // Updated query to use the correct column name
-        const { data: ticketData, error } = await supabase
-          .from("tickets")
-          .select(`
-            id,
-            ticket_type,
-            price,
-            purchased_at,
-            qr_code_url,
-            event_id,
-            event:event_id (title),
-            email,  // CHANGED: This should be 'email' not 'buyer_email'
-            full_name  // Added: Get full name if available
-          `)
-          .order("purchased_at", { ascending: false });
-
-        if (error) throw error;
-
-        const formatted: Ticket[] = (ticketData || []).map((t: any) => ({
-          id: t.id,
-          ticket_type: t.ticket_type,
-          price: t.price,
-          purchased_at: t.purchased_at,
-          qr_code_url: t.qr_code_url,
-          event_title: t.event?.title || "Unknown Event",
-          buyer_email: t.email || t.buyer_email || "No email provided", // CHANGED: Use email column
-          event_id: t.event_id,
-        }));
-
-        setTickets(formatted);
-        setFilteredTickets(formatted);
-      } catch (err: any) {
-        console.error("Error loading tickets:", err.message);
-        // Try fallback query with different column names
-        try {
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from("tickets")
-            .select("*")
-            .order("purchased_at", { ascending: false });
-
-          if (fallbackError) throw fallbackError;
-
-          // Check what columns actually exist
-          if (fallbackData && fallbackData.length > 0) {
-            console.log("Available columns:", Object.keys(fallbackData[0]));
-            
-            const formatted: Ticket[] = fallbackData.map((t: any) => ({
-              id: t.id,
-              ticket_type: t.ticket_type,
-              price: t.price,
-              purchased_at: t.purchased_at,
-              qr_code_url: t.qr_code_url,
-              event_title: "Event", // Can't get event title without join
-              // Try multiple possible email column names
-              buyer_email: t.email || t.buyer_email || t.customer_email || t.user_email || "No email",
-              event_id: t.event_id,
-            }));
-
-            setTickets(formatted);
-            setFilteredTickets(formatted);
-          }
-        } catch (fallbackErr) {
-          console.error("Fallback query also failed:", fallbackErr);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+    } catch {}
+  } finally {
+    setLoading(false);
+  }
+};
 
     loadTickets();
   }, [navigate]);

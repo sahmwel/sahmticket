@@ -29,8 +29,12 @@ export default function Events() {
 
         // Fetch events
         const { data, error } = await supabase
-          .from("events")
-          .select("*")
+          .from('events')
+.select(`
+  *,
+  ticketTiers_event_id_fkey (*)   // <-- use the exact relationship name
+`)
+
           .order("date", { ascending: true });
 
         if (error) throw error;

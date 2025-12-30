@@ -429,122 +429,259 @@ export default function EventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [mapZoom, setMapZoom] = useState(11);
   const navigate = useNavigate();
+// Fetch events + ticket tiers relation
+useEffect(() => {
+  const fetchEvents = async () => {
+    setIsLoading(true);
+    setError(null);
 
-  // ---------------- Fetch Events ----------------
-  useEffect(() => {
-    const fetchEvents = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const { data, error: supabaseError } = await supabase
+    try {
+      // Try with explicit foreign key relationship (based on the error hint)
+      const { data, error: fetchError } = await supabase
+        .from("events")
+        .select(`
+          id,
+          title,
+          description,
+          category_id,
+          date,
+          time,
+          venue,
+          location,
+          image,
+          featured,
+          trending,
+          isnew,
+          sponsored,
+          slug,
+          lat,
+          lng,
+          ticketTiers!ticketTiers_event_id_fkey (
+            tier_name,
+            price,
+            description,
+            quantity_total,
+            quantity_sold
+          )
+        `)
+        .eq("status", "published")
+        .order("date", { ascending: true })
+        .limit(50);
+
+      if (fetchError) {
+        // If the first foreign key doesn't work, try the second one from the hint
+        const { data: retryData, error: retryError } = await supabase
           .from("events")
+          .select(`
+            id,
+            title,
+            description,
+            category_id,
+            date,
+            time,
+            venue,
+            location,
+            image,
+            featured,
+            trending,
+            isnew,
+            sponsored,
+            slug,
+            lat,
+            lng,
+            ticketTiers!tickettiers_event_id_fkey (
+              tier_name,
+              price,
+              description,
+              quantity_total,
+              quantity_sold
+            )
+          `)
+          .eq("status", "published")
+          .order("date", { ascending: true })
+          .limit(50);
+        
+        if (retryError) throw retryError;
+        
+        // Process the data from retry
+        console.log("Fetched events with fallback foreign key:", retryData);
+        
+        const parsed = (retryData || []).map((raw: any) => {
+          const tiers = (raw.ticketTiers || []).map((t: any) => ({
+            name: t.tier_name || "General Admission",
+            price: t.price ?? 0,
+            description: t.description,
+            quantity_sold: t.quantity_sold ?? 0,
+            quantity_available: t.quantity_total ?? null,
+          }));
+
+          return {
+            id: raw.id,
+            title: raw.title || "Untitled Event",
+            description: raw.description,
+            category_id: raw.category_id ?? 0,
+            date: raw.date,
+            time: raw.time || "",
+            venue: raw.venue || "",
+            location: raw.location || raw.venue || "Location TBD",
+            image: raw.image || "https://via.placeholder.com/400x300?text=Event",
+            ticketTiers: tiers,
+            featured: raw.featured ?? false,
+            trending: raw.trending ?? false,
+            isNew: raw.isnew ?? false,
+            sponsored: raw.sponsored ?? false,
+            coordinates: raw.lat && raw.lng
+              ? { lat: Number(raw.lat), lng: Number(raw.lng) }
+              : undefined,
+            slug: raw.slug,
+          };
+        });
+
+        setEvents(parsed);
+        return;
+      }
+
+      console.log("Fetched events (with tiers):", data);
+
+      const parsed = (data || []).map((raw: any) => {
+        const tiers = (raw.ticketTiers || []).map((t: any) => ({
+          name: t.tier_name || "General Admission",
+          price: t.price ?? 0,
+          description: t.description,
+          quantity_sold: t.quantity_sold ?? 0,
+          quantity_available: t.quantity_total ?? null,
+        }));
+
+        return {
+          id: raw.id,
+          title: raw.title || "Untitled Event",
+          description: raw.description,
+          category_id: raw.category_id ?? 0,
+          date: raw.date,
+          time: raw.time || "",
+          venue: raw.venue || "",
+          location: raw.location || raw.venue || "Location TBD",
+          image: raw.image || "https://via.placeholder.com/400x300?text=Event",
+          ticketTiers: tiers,
+          featured: raw.featured ?? false,
+          trending: raw.trending ?? false,
+          isNew: raw.isnew ?? false,
+          sponsored: raw.sponsored ?? false,
+          coordinates: raw.lat && raw.lng
+            ? { lat: Number(raw.lat), lng: Number(raw.lng) }
+            : undefined,
+          slug: raw.slug,
+        };
+      });
+
+      setEvents(parsed);
+    } catch (err: any) {
+      console.error("Events fetch failed:", err);
+      
+      // Fallback to separate queries if both foreign keys fail
+      try {
+        console.log("Trying fallback method with separate queries...");
+        
+        // Fetch events first
+        const { data: eventsData, error: eventsError } = await supabase
+          .from("events")
+          .select("id, title, description, category_id, date, time, venue, location, image, featured, trending, isnew, sponsored, slug, lat, lng, status")
+          .eq("status", "published")
+          .order("date", { ascending: true })
+          .limit(50);
+
+        if (eventsError) throw eventsError;
+
+        // Fetch all active ticket tiers
+        const eventIds = eventsData.map((e: any) => e.id);
+        const { data: ticketTiersData, error: tiersError } = await supabase
+          .from("ticketTiers")
           .select("*")
-          .order("date", { ascending: true });
+          .in("event_id", eventIds)
+          .eq("is_active", true);
 
-        if (supabaseError) {
-          setError("Failed to load events. Please try again.");
-          console.error(supabaseError);
-          return;
-        }
+        if (tiersError) throw tiersError;
 
-        if (!data) {
-          setEvents([]);
-          return;
-        }
-
-        // Debug: Log raw data
-        console.log("RAW EVENTS DATA FROM DB:", data);
-
-        const parsedEvents: Event[] = data.map((event: any) => {
-          // Parse ticket tiers safely
-          let ticketTiers = [];
-          try {
-            if (event.ticketTiers) {
-              if (typeof event.ticketTiers === 'string') {
-                ticketTiers = JSON.parse(event.ticketTiers);
-              } else if (Array.isArray(event.ticketTiers)) {
-                ticketTiers = event.ticketTiers;
-              }
-            }
-          } catch (err) {
-            console.warn("Failed to parse ticket tiers", err);
-            ticketTiers = [];
+        // Group ticket tiers by event_id
+        const tiersByEventId: Record<string, any[]> = {};
+        (ticketTiersData || []).forEach((tier: any) => {
+          if (!tiersByEventId[tier.event_id]) {
+            tiersByEventId[tier.event_id] = [];
           }
+          tiersByEventId[tier.event_id].push(tier);
+        });
 
-          // Debug each event's ticket tiers
-          console.log(`Processing event: ${event.title}`, {
-            ticketTiersRaw: event.ticketTiers,
-            ticketTiersParsed: ticketTiers
-          });
-
-          // Parse coordinates
-          let coordinates = null;
-          if (event.lat && event.lng) {
-            coordinates = { lat: Number(event.lat), lng: Number(event.lng) };
-          }
+        // Combine the data
+        const parsed = eventsData.map((event: any) => {
+          const eventTiers = tiersByEventId[event.id] || [];
+          
+          const tiers = eventTiers.map((t: any) => ({
+            name: t.tier_name || "General Admission",
+            price: t.price ?? 0,
+            description: t.description,
+            quantity_sold: t.quantity_sold ?? 0,
+            quantity_available: t.quantity_total ?? null,
+          }));
 
           return {
             id: event.id,
             title: event.title || "Untitled Event",
             description: event.description,
-            category_id: event.category_id || 0,
-            date: event.date || new Date().toISOString(),
+            category_id: event.category_id ?? 0,
+            date: event.date,
             time: event.time || "",
             venue: event.venue || "",
             location: event.location || event.venue || "Location TBD",
-            image: event.image || event.cover_image || "https://via.placeholder.com/400x300?text=No+Image",
-            ticketTiers: ticketTiers,
+            image: event.image || "https://via.placeholder.com/400x300?text=Event",
+            ticketTiers: tiers,
             featured: event.featured ?? false,
             trending: event.trending ?? false,
             isNew: event.isnew ?? false,
             sponsored: event.sponsored ?? false,
-            coordinates: coordinates,
-            slug: event.slug || null,
+            coordinates: event.lat && event.lng
+              ? { lat: Number(event.lat), lng: Number(event.lng) }
+              : undefined,
+            slug: event.slug,
           };
         });
 
-        setEvents(parsedEvents);
-      } catch (err) {
-        setError("An unexpected error occurred.");
-        console.error(err);
-      } finally {
-        setIsLoading(false);
+        setEvents(parsed);
+        console.log("Successfully loaded events via fallback method");
+      } catch (fallbackErr: any) {
+        console.error("Fallback method also failed:", fallbackErr);
+        setError("Failed to load events. Please try again later.");
       }
-    };
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    fetchEvents();
-  }, []);
-
-  // ---------------- Fetch Categories ----------------
+  fetchEvents();
+}, []);
+  // Fetch categories (unchanged)
   useEffect(() => {
     const fetchCategories = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("categories")
         .select("id, name, gradient")
         .order("name");
-      
-      if (!error && data) {
-        setCategories(data);
-      }
+
+      if (data) setCategories(data);
     };
     fetchCategories();
   }, []);
 
-  // ---------------- Geolocation ----------------
+  // Geolocation (unchanged)
   useEffect(() => {
-    if (navigator.geolocation && viewMode === "map") {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          setUserLocation([latitude, longitude]);
-          setMapZoom(13);
-        },
-        () => {
-          console.log("Geolocation failed or denied, using default location");
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      );
-    }
+    if (viewMode !== "map" || !navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+        setMapZoom(13);
+      },
+      () => console.log("Geolocation denied/default used")
+    );
   }, [viewMode]);
 
   // ---------------- Carousel Autoplay ----------------

@@ -76,23 +76,51 @@ export default function EventDetail() {
           return;
         }
 
-        // Fetch event
-        const { data: eventData, error: eventError } = await supabase
-          .from("events")
-          .select("*")
-          .eq("id", id)
-          .eq("organizer_id", session.user.id)
-          .single();
+      // Fetch event
+const { data: eventData, error: eventError } = await supabase
+  .from("events")
+  .select(`
+    *,
+    ticketTiers:event_id (
+      id,
+      tier_name,
+      price,
+      description,
+      quantity_total,
+      quantity_sold,
+      is_active
+    )
+  `)
+  .eq("id", id)
+  .eq("organizer_id", session.user.id)
+  .single();
 
-        if (eventError) throw eventError;
-        if (!eventData) {
-          toast.error("Event not found");
-          navigate("/organizer/events");
-          return;
-        }
+if (eventError) throw eventError;
+if (!eventData) {
+  toast.error("Event not found");
+  navigate("/organizer/events");
+  return;
+}
 
-        setEvent(eventData);
-        setEventUrl(`${window.location.origin}/event/${eventData.id}`);
+// ✅ NORMALIZE HERE
+const normalizedTiers = (eventData.ticketTiers || []).map((t: any) => ({
+  id: t.id,
+  name: t.tier_name,
+  price: t.price ?? 0,
+  description: t.description ?? "",
+  quantity_available: t.quantity_total ?? 0,
+  quantity_sold: t.quantity_sold ?? 0,
+  is_active: t.is_active ?? true,
+}));
+
+// ✅ SET EVENT HERE
+setEvent({
+  ...eventData,
+  ticketTiers: normalizedTiers,
+});
+
+setEventUrl(`${window.location.origin}/event/${eventData.id}`);
+
 
         // Fetch ticket sales (if you have a ticket_sales table)
         const { data: salesData, error: salesError } = await supabase

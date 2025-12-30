@@ -2,16 +2,17 @@
 import Sidebar from "../../components/Sidebar";
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { 
-  Upload, X, Plus, CheckCircle, AlertCircle, 
-  Calendar, MapPin, Image as ImageIcon, Menu, 
+import {
+  Upload, X, Plus, CheckCircle, AlertCircle,
+  Calendar, MapPin, Image as ImageIcon, Menu,
   Tag, Globe, DollarSign, Users
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-interface Category {
-  id: number;
-  name: string;
+// Interfaces
+interface Category { 
+  id: number; 
+  name: string; 
 }
 
 interface TicketTier {
@@ -22,24 +23,47 @@ interface TicketTier {
   quantity: string;
 }
 
-// Helper function to generate slug
-function generateSlug(text: string): string {
+// Slug helpers
+function baseSlug(text: string): string {
   return text
     .toLowerCase()
+    .trim()
     .replace(/[^\w\s-]/g, '')
     .replace(/\s+/g, '-')
-    .replace(/--+/g, '-')
-    .trim();
+    .replace(/-+/g, '-');
+}
+
+async function generateUniqueSlug(title: string): Promise<string> {
+  if (!title?.trim()) return `event-${Date.now()}`;
+
+  let slug = baseSlug(title);
+  const maxAttempts = 6;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidate = i === 0 ? slug : `${slug}-${i}`;
+
+    const { data } = await supabase
+      .from('events')
+      .select('id')
+      .eq('slug', candidate)
+      .maybeSingle();
+
+    if (!data) return candidate;
+  }
+
+  // Fallback with random suffix
+  const random = Math.random().toString(36).substring(2, 8);
+  return `${slug}-${random}`;
 }
 
 export default function CreateEvent() {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
-const [time, setTime] = useState("18:00"); // Set a default time  const [venue, setVenue] = useState("");
+  const [time, setTime] = useState("18:00");
+  const [venue, setVenue] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
-  const [venue, setVenue] = useState("");
   const [country, setCountry] = useState("Nigeria");
   const [description, setDescription] = useState("");
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -47,21 +71,25 @@ const [time, setTime] = useState("18:00"); // Set a default time  const [venue, 
   const [categoryId, setCategoryId] = useState<number | "">("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([
-    { id: "1", name: "General Admission", price: "", description: "Standard access to the event", quantity: "100" }
+    { 
+      id: "1", 
+      name: "General Admission", 
+      price: "0", 
+      description: "Standard admission to the event", 
+      quantity: "100" 
+    }
   ]);
 
-  // Flags
   const [featured, setFeatured] = useState(false);
   const [trending, setTrending] = useState(false);
   const [isNew, setIsNew] = useState(false);
   const [sponsored, setSponsored] = useState(false);
 
-  // Additional fields
-  const [eventType, setEventType] = useState("physical"); // "physical" or "virtual"
+  const [eventType, setEventType] = useState("physical");
   const [virtualLink, setVirtualLink] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
-  const [tags, setTags] = useState<string[]>(["music", "concert"]);
+  const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -69,6 +97,7 @@ const [time, setTime] = useState("18:00"); // Set a default time  const [venue, 
   const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const navigate = useNavigate();
 
   // Load categories
@@ -79,12 +108,7 @@ const [time, setTime] = useState("18:00"); // Set a default time  const [venue, 
         .select("id, name")
         .order("name");
 
-      if (error) {
-        console.error("Failed to load categories:", error);
-        setError("Failed to load categories");
-      } else {
-        setCategories(data || []);
-      }
+      if (!error && data) setCategories(data);
     };
     loadCategories();
   }, []);
@@ -100,7 +124,7 @@ const [time, setTime] = useState("18:00"); // Set a default time  const [venue, 
   }, [bannerFile]);
 
   const handleBannerChange = (file: File) => {
-    if (file && file.type.startsWith("image/")) {
+    if (file?.type.startsWith("image/")) {
       if (file.size > 5 * 1024 * 1024) {
         setError("Image too large (max 5MB)");
         return;
@@ -112,13 +136,22 @@ const [time, setTime] = useState("18:00"); // Set a default time  const [venue, 
     }
   };
 
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleBannerChange(e.dataTransfer.files[0]);
+    }
+  };
+
   const addTicketTier = () => {
-    setTicketTiers(prev => [...prev, { 
-      id: Date.now().toString(), 
-      name: "", 
-      price: "", 
-      description: "", 
-      quantity: "" 
+    setTicketTiers(prev => [...prev, {
+      id: Date.now().toString(),
+      name: "",
+      price: "0",
+      description: "",
+      quantity: ""
     }]);
   };
 
@@ -132,14 +165,6 @@ const [time, setTime] = useState("18:00"); // Set a default time  const [venue, 
     setTicketTiers(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragActive(false);
-    if (e.dataTransfer.files[0]) {
-      handleBannerChange(e.dataTransfer.files[0]);
-    }
-  };
-
   const addTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim().toLowerCase())) {
       setTags(prev => [...prev, tagInput.trim().toLowerCase()]);
@@ -151,216 +176,346 @@ const [time, setTime] = useState("18:00"); // Set a default time  const [venue, 
     setTags(prev => prev.filter(tag => tag !== tagToRemove));
   };
 
+  const handleCreateEvent = async () => {
+    setError("");
+    setSuccess(false);
 
-const handleCreateEvent = async () => {
-  setError("");
-  setSuccess(false);
-
-  // Validation
-  if (!title.trim() || !date || !venue.trim() || !categoryId) {
-    setError("Title, Date, Venue, and Category are required");
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("Please log in to create events");
-
-    console.log("User ID:", session.user.id);
-
-    // Upload banner image - with error handling
-    let banner_url: string | null = null;
-    if (bannerFile) {
-      try {
-        const ext = bannerFile.name.split(".").pop() || 'jpg';
-        const fileName = `${session.user.id}/${Date.now()}.${ext}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from("event-banners")
-          .upload(fileName, bannerFile);
-        
-        if (uploadError) {
-          console.error("Image upload failed, continuing without image:", uploadError);
-          // Continue without image
-        } else {
-          const { data: urlData } = supabase.storage
-            .from("event-banners")
-            .getPublicUrl(fileName);
-          banner_url = urlData.publicUrl;
-        }
-      } catch (uploadErr) {
-        console.error("Image upload error:", uploadErr);
-        // Continue without image
-      }
-    }
-
-    // Prepare ticket tiers
-    const validTiers = ticketTiers.filter(t => t.name && t.price && t.quantity);
-    const ticketTiersData = validTiers.map(tier => ({
-      name: tier.name,
-      price: parseFloat(tier.price) || 0,
-      description: tier.description || "",
-      quantity_available: parseInt(tier.quantity) || 0,
-      quantity_sold: 0
-    }));
-
-    // Build event data with only essential fields
-    const eventData = {
-      title: title.trim(),
-      description: description.trim() || null,
-      category_id: categoryId,
-      date: time ? `${date}T${time}:00` : `${date}T00:00:00`,
-      time: time || "00:00",
-      venue: venue.trim(),
-      location: address.trim() || null,
-      image: banner_url,
-      cover_image: banner_url,
-      ticketTiers: ticketTiersData.length > 0 ? ticketTiersData : null,
-      featured: featured || false,
-      trending: trending || false,
-      isnew: isNew || false,
-      sponsored: sponsored || false,
-      status: "draft",
-      organizer_id: session.user.id, // CRITICAL: This must match auth.uid()
-      slug: generateSlug(title.trim()),
-      tags: tags.length > 0 ? tags : null,
-      lat: null,
-      lng: null,
-      created_at: new Date().toISOString()
-    };
-
-    console.log("Inserting event data:", eventData);
-
-    // Try to insert with error handling
-    const { data: event, error: insertError } = await supabase
-      .from("events")
-      .insert(eventData)
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error("Insert error:", insertError);
-      
-      // Try minimal insert as fallback
-      const minimalData = {
-        title: title.trim(),
-        category_id: categoryId,
-        date: time ? `${date}T${time}:00` : `${date}T00:00:00`,
-        time: time || "00:00",
-        venue: venue.trim(),
-        organizer_id: session.user.id,
-        status: "draft"
-      };
-      
-      console.log("Trying minimal insert:", minimalData);
-      const { error: minimalError } = await supabase
-        .from("events")
-        .insert(minimalData);
-      
-      if (minimalError) {
-        console.error("Minimal insert failed:", minimalError);
-        
-        // Check user's role
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .single();
-        
-        console.log("User profile:", profile);
-        
-        if (profile && profile.role !== 'organizer') {
-          throw new Error(`Only organizers can create events. Your role is: ${profile.role}`);
-        }
-        
-        throw new Error(`RLS Policy Violation: ${minimalError.message}`);
-      }
-      
-      // If minimal insert worked, get the event ID and update
-      const { data: createdEvents } = await supabase
-        .from("events")
-        .select("id")
-        .eq("organizer_id", session.user.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      
-      if (createdEvents && createdEvents[0]) {
-        await supabase
-          .from("events")
-          .update({
-            description: description.trim() || null,
-            location: address.trim() || null,
-            image: banner_url,
-            cover_image: banner_url,
-            ticketTiers: ticketTiersData.length > 0 ? ticketTiersData : null,
-            featured,
-            trending,
-            isnew: isNew,
-            sponsored,
-            slug: generateSlug(title.trim()),
-            tags: tags.length > 0 ? tags : null
-          })
-          .eq("id", createdEvents[0].id);
-      }
-    }
-
-    console.log("Event created successfully");
-    setSuccess(true);
-    
-    setTimeout(() => {
-      navigate("/organizer/events");
-    }, 1500);
-
-  } catch (err: any) {
-    console.error("Error creating event:", err);
-    
-    // User-friendly error messages
-    if (err.message.includes("violates row-level security policy")) {
-      setError("Permission denied. Please make sure you're logged in and have organizer permissions.");
-    } else if (err.message.includes("Only organizers can create events")) {
-      setError(err.message);
-    } else if (err.message.includes("StorageApiError")) {
-      setError("Failed to upload image. Please try a different image or continue without one.");
-    } else {
-      setError(err.message || "Failed to create event. Please try again.");
-    }
-  } finally {
-    setLoading(false);
-  }
-};
-  // Test RLS function
-  const testRLS = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      alert("Please log in first");
+    // Basic validation
+    if (!title.trim() || !date || !venue.trim() || !categoryId) {
+      setError("Title, Date, Venue, and Category are required");
       return;
     }
 
-    const testData = {
-      title: "RLS Test Event",
-      category_id: 1,
-      date: new Date().toISOString(),
-      venue: "Test Venue",
-      organizer_id: session.user.id,
-      status: "draft"
-    };
+    // Check ticket tiers are valid
+    const invalidTier = ticketTiers.find(t => !t.name.trim() || !t.quantity.trim());
+    if (invalidTier) {
+      setError("All ticket tiers must have a name and quantity");
+      return;
+    }
 
-    const { error } = await supabase
-      .from("events")
-      .insert(testData);
+    setLoading(true);
 
-    if (error) {
-      alert(`RLS Error: ${error.message}\n\nCheck if organizer_id column exists and RLS policies are set.`);
-      console.error("RLS Test Error:", error);
-    } else {
-      alert("RLS Test: Insert succeeded! Cleaning up...");
-      // Clean up
-      await supabase
+    try {
+      console.log("=== STARTING EVENT CREATION ===");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        console.error("No session found");
+        throw new Error("Please log in to create events");
+      }
+
+      console.log("User ID:", session.user.id);
+
+      // Upload banner
+      let banner_url: string | null = null;
+      if (bannerFile) {
+        console.log("Uploading banner...");
+        const ext = bannerFile.name.split(".").pop() || "jpg";
+        const fileName = `${session.user.id}/${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("event-banners")
+          .upload(fileName, bannerFile);
+
+        if (!uploadError) {
+          const { data } = supabase.storage.from("event-banners").getPublicUrl(fileName);
+          banner_url = data.publicUrl;
+          console.log("✅ Banner uploaded:", banner_url);
+        } else {
+          console.warn("⚠️ Banner upload failed:", uploadError);
+        }
+      }
+
+      // Generate unique slug
+      console.log("Generating unique slug...");
+      const uniqueSlug = await generateUniqueSlug(title.trim());
+      console.log("✅ Generated slug:", uniqueSlug);
+
+      // Prepare ticket tiers for separate ticketTiers table (PRIMARY SOURCE)
+      const tiersToInsert = ticketTiers.map(tier => {
+        const price = parseFloat(tier.price) || 0;
+        const quantity = parseInt(tier.quantity) || 100;
+        
+        return {
+          event_id: "", // Will be set after event creation
+          tier_name: tier.name.trim(),
+          description: tier.description.trim() || `${tier.name} ticket`,
+          price: price,
+          quantity_total: quantity,
+          quantity_sold: 0,
+          is_active: true
+        };
+      });
+
+      console.log("📋 Ticket tiers for ticketTiers table:", tiersToInsert);
+
+      // Build event data - set as DRAFT first
+      const eventPayload = {
+        title: title.trim(),
+        description: description.trim() || null,
+        category_id: categoryId,
+        date: `${date}T${time}:00.000Z`,
+        time: time || "00:00",
+        venue: venue.trim(),
+        location: venue.trim(),
+        city: city.trim() || null,
+        state: state.trim() || null,
+        country: country.trim() || "Nigeria",
+        image: banner_url,
+        cover_image: banner_url,
+        featured: false, // Always false for drafts
+        trending: false, // Always false for drafts
+        isnew: false, // Always false for drafts
+        sponsored: false, // Always false for drafts
+        status: "draft",
+        organizer_id: session.user.id,
+        slug: uniqueSlug,
+        tags: tags.length > 0 ? tags : null,
+        lat: null,
+        lng: null,
+        event_type: eventType || "physical",
+        virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
+        contact_email: contactEmail.trim() || null,
+        contact_phone: contactPhone.trim() || null,
+        published_at: null,
+      };
+
+      console.log("📦 Event payload (draft):", JSON.stringify(eventPayload, null, 2));
+
+      // Test events table access
+      console.log("🔍 Testing events table access...");
+      const { error: testError } = await supabase
         .from("events")
-        .delete()
-        .eq("title", "RLS Test Event");
+        .select("id")
+        .limit(1);
+      
+      if (testError) {
+        console.error("❌ Events table permission test failed:", testError);
+        throw testError;
+      }
+      console.log("✅ Events table access OK");
+
+      // Create event as DRAFT
+      console.log("🚀 Creating event as DRAFT...");
+      const { data: event, error: eventError } = await supabase
+        .from("events")
+        .insert(eventPayload)
+        .select("id, title, slug, status")
+        .single();
+
+      
+      if (!event?.id) throw new Error("Failed to create event - no ID returned");
+
+      console.log("✅ Draft event created successfully:", event);
+
+      // CRITICAL FIX: Save ticket tiers to separate ticketTiers table
+      console.log(`📋 Creating ${ticketTiers.length} ticket tiers in ticketTiers table...`);
+      
+      // Update tiers with the actual event ID
+      const tiersWithEventId = tiersToInsert.map(tier => ({
+        ...tier,
+        event_id: event.id
+      }));
+
+      try {
+        // Check if ticketTiers table exists and is accessible
+        console.log("🔍 Checking ticketTiers table...");
+        const { error: tableCheckError } = await supabase
+          .from("ticketTiers")
+          .select("id")
+          .limit(1);
+        
+        if (tableCheckError) {
+          console.error("❌ ticketTiers table check failed:", tableCheckError);
+          throw new Error(`ticketTiers table not accessible: ${tableCheckError.message}`);
+        }
+        
+        console.log("✅ ticketTiers table accessible, inserting tiers...");
+        
+        // Insert into ticketTiers table
+        const { data: insertedTiers, error: tiersError } = await supabase
+          .from("ticketTiers")
+          .insert(tiersWithEventId)
+          .select("id, tier_name, event_id");
+        
+        if (tiersError) {
+          console.error("❌ Failed to insert into ticketTiers table:", tiersError);
+          throw new Error(`Failed to create ticket tiers: ${tiersError.message}`);
+        }
+        
+        console.log("✅ Ticket tiers created in ticketTiers table:", insertedTiers);
+        
+        // Also save to events.ticketTiers column for backup/compatibility
+        try {
+          const ticketTiersForEventsColumn = tiersWithEventId.map(tier => ({
+            id: tier.event_id + "-" + tier.tier_name.toLowerCase().replace(/\s+/g, '-'),
+            name: tier.tier_name,
+            price: tier.price,
+            description: tier.description,
+            quantity_available: tier.quantity_total,
+            quantity_sold: 0,
+            is_active: true
+          }));
+          
+          const { error: updateEventError } = await supabase
+            .from("events")
+            .update({ ticketTiers: ticketTiersForEventsColumn })
+            .eq("id", event.id);
+          
+          if (updateEventError) {
+            console.warn("⚠️ Could not update events.ticketTiers column:", updateEventError.message);
+          } else {
+            console.log("✅ Also saved to events.ticketTiers column");
+          }
+        } catch (columnErr) {
+          console.warn("⚠️ Error updating events.ticketTiers column:", columnErr);
+        }
+        
+      } catch (tiersErr: any) {
+        console.error("💥 Critical: Failed to create ticket tiers:", tiersErr);
+        // Delete the event since ticket tiers failed
+        await supabase.from("events").delete().eq("id", event.id);
+        throw new Error(`Failed to create ticket tiers: ${tiersErr.message}`);
+      }
+
+      // Ask user if they want to publish
+      const shouldPublish = window.confirm(
+        "Draft event created successfully!\n\nWould you like to publish it now?\n\n" +
+        "Click OK to publish immediately.\n" +
+        "Click Cancel to keep as draft and edit later."
+      );
+
+      if (shouldPublish) {
+        console.log("📢 Publishing draft event...");
+        
+        const publishData = {
+          status: "published",
+          published_at: new Date().toISOString(),
+          featured: featured || false,
+          trending: trending || false,
+          isnew: isNew || false,
+          sponsored: sponsored || false,
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: publishError } = await supabase
+          .from("events")
+          .update(publishData)
+          .eq("id", event.id);
+
+        if (publishError) {
+          console.error("❌ Failed to publish event:", publishError);
+          setError(`Event saved as draft, but couldn't be published: ${publishError.message}`);
+          setSuccess(true);
+        } else {
+          console.log("✅ Event published successfully!");
+          setSuccess(true);
+        }
+      } else {
+        console.log("📝 Keeping event as draft");
+        setSuccess(true);
+        setError(""); // Clear any previous error
+      }
+
+      // Navigate to edit page
+      setTimeout(() => {
+        navigate(`/organizer/event/${event.id}/edit`);
+      }, 1500);
+
+    } catch (err: any) {
+      console.error("💥 ERROR in event creation:", err);
+      
+      // Clean up error message
+      let userMessage = err.message || "Failed to create event. Please try again.";
+      
+      // Handle specific database errors
+      if (err.code) {
+        switch (err.code) {
+          case "23505":
+            userMessage = "An event with similar title already exists. Try changing the title slightly.";
+            break;
+          case "42501":
+            userMessage = "Permission denied. Please make sure you have organizer permissions.";
+            break;
+          case "42703":
+            if (err.message?.includes("ticketTiers")) {
+              userMessage = "Ticket tiers table has schema issues. Please contact support.";
+            } else {
+              userMessage = `Database column error: ${err.message}.`;
+            }
+            break;
+          case "42P01":
+            userMessage = "Database table not found. Please contact support.";
+            break;
+          case "22P02":
+            userMessage = "Invalid data format. Please check your input values.";
+            break;
+          case "23502":
+            userMessage = "Missing required field. Please fill all required fields.";
+            break;
+          case "23514":
+            userMessage = "Data validation failed. Please check your input values.";
+            break;
+          case "22007":
+            userMessage = "Invalid date/time format. Please check your date and time values.";
+            break;
+        }
+      }
+      
+      // Handle RLS errors
+      if (err.message?.includes("violates row-level security policy")) {
+        userMessage = "Permission denied. Check your RLS policies and organizer permissions.";
+      }
+      
+      // Handle network errors
+      if (err.message?.includes("Failed to fetch") || err.message?.includes("NetworkError")) {
+        userMessage = "Network error. Please check your internet connection and try again.";
+      }
+      
+      setError(userMessage);
+      
+    } finally {
+      setLoading(false);
+      console.log("=== EVENT CREATION PROCESS ENDED ===");
+    }
+  };
+
+  // Test database connectivity
+  const testDatabase = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert("Please log in first");
+        return;
+      }
+
+      alert("Testing database connectivity...");
+      
+      // Test 1: Check if ticketTiers table exists and is accessible
+      const { data: tiersTest, error: tiersError } = await supabase
+        .from("ticketTiers")
+        .select("id")
+        .limit(1);
+      
+      if (tiersError) {
+        alert(`ticketTiers table error: ${tiersError.message}\n\nThis table must exist for ticket purchases to work.`);
+      } else {
+        alert("✅ ticketTiers table is accessible");
+      }
+      
+      // Test 2: Check if events table is accessible
+      const { data: eventsTest, error: eventsError } = await supabase
+        .from("events")
+        .select("id")
+        .limit(1);
+      
+      if (eventsError) {
+        alert(`Events table error: ${eventsError.message}`);
+      } else {
+        alert("✅ Events table is accessible");
+      }
+      
+    } catch (err: any) {
+      alert(`Database test failed: ${err.message}`);
     }
   };
 
@@ -380,8 +535,8 @@ const handleCreateEvent = async () => {
       <div className="flex-1 flex flex-col">
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between p-4 bg-gray-900/90 backdrop-blur-xl border-b border-white/10">
-          <button 
-            onClick={() => setSidebarOpen(true)} 
+          <button
+            onClick={() => setSidebarOpen(true)}
             className="text-white p-2 rounded-lg hover:bg-white/10"
           >
             <Menu size={24} />
@@ -398,12 +553,14 @@ const handleCreateEvent = async () => {
                 <h1 className="text-4xl font-bold text-white mb-2">Create New Event</h1>
                 <p className="text-gray-400">Fill in the details to launch your event</p>
               </div>
-              <button
-                onClick={testRLS}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition"
-              >
-                Test RLS
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={testDatabase}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition"
+                >
+                  Test Database
+                </button>
+              </div>
             </div>
 
             {success && (
@@ -433,10 +590,14 @@ const handleCreateEvent = async () => {
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-2xl p-6">
                   <label className="text-white font-medium mb-3 block">Event Banner *</label>
                   <div
-                    onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragActive(true);
+                    }}
                     onDragLeave={() => setDragActive(false)}
                     onDrop={handleDrop}
-                    className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all ${dragActive ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"}`}
+                    className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all ${dragActive ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
+                      }`}
                   >
                     <input
                       type="file"
@@ -446,10 +607,10 @@ const handleCreateEvent = async () => {
                     />
                     {bannerPreview ? (
                       <div className="relative">
-                        <img 
-                          src={bannerPreview} 
-                          alt="Preview" 
-                          className="w-full h-64 object-cover rounded-xl" 
+                        <img
+                          src={bannerPreview}
+                          alt="Preview"
+                          className="w-full h-64 object-cover rounded-xl"
                         />
                         <button
                           onClick={() => { setBannerFile(null); setBannerPreview(null); }}
@@ -487,7 +648,7 @@ const handleCreateEvent = async () => {
                       Virtual
                     </button>
                   </div>
-                  
+
                   {eventType === "virtual" && (
                     <div className="mt-4">
                       <label className="text-white font-medium mb-2 block">Virtual Link *</label>
@@ -508,37 +669,37 @@ const handleCreateEvent = async () => {
                   <div className="space-y-3">
                     <label className="flex items-center justify-between text-white">
                       <span>Featured Event</span>
-                      <input 
-                        type="checkbox" 
-                        checked={featured} 
-                        onChange={(e) => setFeatured(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={featured}
+                        onChange={(e) => setFeatured(e.target.checked)}
                         className="w-5 h-5 accent-purple-500"
                       />
                     </label>
                     <label className="flex items-center justify-between text-white">
                       <span>Trending</span>
-                      <input 
-                        type="checkbox" 
-                        checked={trending} 
-                        onChange={(e) => setTrending(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={trending}
+                        onChange={(e) => setTrending(e.target.checked)}
                         className="w-5 h-5 accent-purple-500"
                       />
                     </label>
                     <label className="flex items-center justify-between text-white">
                       <span>New Event</span>
-                      <input 
-                        type="checkbox" 
-                        checked={isNew} 
-                        onChange={(e) => setIsNew(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={isNew}
+                        onChange={(e) => setIsNew(e.target.checked)}
                         className="w-5 h-5 accent-purple-500"
                       />
                     </label>
                     <label className="flex items-center justify-between text-white">
                       <span>Sponsored</span>
-                      <input 
-                        type="checkbox" 
-                        checked={sponsored} 
-                        onChange={(e) => setSponsored(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={sponsored}
+                        onChange={(e) => setSponsored(e.target.checked)}
                         className="w-5 h-5 accent-purple-500"
                       />
                     </label>
@@ -563,30 +724,31 @@ const handleCreateEvent = async () => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-  <div>
-    <label className="text-white font-medium mb-2 block flex items-center gap-2">
-      <Calendar size={18} /> Date *
-    </label>
-    <input 
-      type="date" 
-      value={date} 
-      onChange={(e) => setDate(e.target.value)} 
-      className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl text-white"
-      required
-    />
-  </div>
-  <div>
-    <label className="text-white font-medium mb-2 block">Time *</label>
-    <input 
-      type="time" 
-      value={time} 
-      onChange={(e) => setTime(e.target.value)} 
-      className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl text-white"
-      required
-    />
-    <p className="text-gray-500 text-sm mt-1">Required field</p>
-  </div>
-</div>
+                      <div>
+                        <label className="text-white font-medium mb-2 block flex items-center gap-2">
+                          <Calendar size={18} /> Date *
+                        </label>
+                        <input
+                          type="date"
+                          value={date}
+                          onChange={(e) => setDate(e.target.value)}
+                          className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl text-white"
+                          required
+                          min={new Date().toISOString().split('T')[0]}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-white font-medium mb-2 block">Time *</label>
+                        <input
+                          type="time"
+                          value={time}
+                          onChange={(e) => setTime(e.target.value)}
+                          className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl text-white"
+                          required
+                        />
+                        <p className="text-gray-500 text-sm mt-1">Required field</p>
+                      </div>
+                    </div>
                     <div>
                       <label className="text-white font-medium mb-2 block">
                         <Tag size={18} className="inline mr-2" />
@@ -679,7 +841,11 @@ const handleCreateEvent = async () => {
                       <Plus size={20} /> Add Tier
                     </button>
                   </div>
-                  
+
+                  <p className="text-gray-400 text-sm mb-4">
+                    Ticket tiers will be saved to the database. At least one tier is required.
+                  </p>
+
                   <div className="space-y-4">
                     {ticketTiers.map((tier) => (
                       <div key={tier.id} className="bg-white/5 border border-white/10 rounded-xl p-6 relative">
@@ -691,7 +857,7 @@ const handleCreateEvent = async () => {
                             <X size={20} />
                           </button>
                         )}
-                        
+
                         <div className="space-y-4">
                           <div>
                             <label className="text-white font-medium mb-2 block">Tier Name *</label>
@@ -702,7 +868,7 @@ const handleCreateEvent = async () => {
                               className="w-full px-4 py-3 bg-white/10 rounded-lg text-white placeholder-gray-500"
                             />
                           </div>
-                          
+
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                               <label className="text-white font-medium mb-2 block flex items-center gap-2">
@@ -750,7 +916,7 @@ const handleCreateEvent = async () => {
                 {/* Tags & Contact */}
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-2xl p-6">
                   <h2 className="text-xl font-bold text-white mb-6">Additional Details</h2>
-                  
+
                   <div className="space-y-6">
                     {/* Tags */}
                     <div>
