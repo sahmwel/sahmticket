@@ -614,7 +614,7 @@ const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
 
     // Handle free tickets
     if (totalAmount === 0) {
-      const freeRef = `FREE-${orderId}-${Date.now()}`.replace(/[^a-zA-Z0-9-]/g, '');
+const freeRef = `SKT-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
       
       const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
         const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
@@ -672,7 +672,7 @@ const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
 
     const amountInKobo = Math.round(totalAmount * 100);
     const cleanEmail = formData.email.trim().toLowerCase();
-    const uniqueRef = `TIX-${orderId}-${Date.now()}`.replace(/[^a-zA-Z0-9-]/g, '');
+const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
     // Store references for the callback
     const paymentData = {
