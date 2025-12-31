@@ -173,7 +173,7 @@ export default function Sidebar({ role }: SidebarProps) {
           <div className="p-1.5 bg-gray-800 group-hover:bg-red-500/20 rounded-lg transition-colors">
             <LogOut size={16} />
           </div>
-          <span className="font-medium text-sm">Log Out</span>
+          {/* <span className="font-medium text-sm">Log Out</span> */}
         </button>
         
         {/* Version */}
