@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import AdsenseAd from "../components/AdsenseAd";
 import {
   Search,
   Calendar,
@@ -17,8 +16,16 @@ import {
   Navigation,
   BadgeCheck,
   Clock,
+  X,
+  AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+
+// --- Constants ---
+const PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop";
+const EVENTS_PER_PAGE = 50;
+const NOTIFICATION_TIMEOUT = 5000;
 
 // --- Event Type ---
 export interface Event {
@@ -44,9 +51,64 @@ export interface Event {
   slug?: string;
 }
 
-// --- Helper Functions ---
+// --- Your Date Formatting Functions ---
+const formatDate = (timestamp: string | null) => {
+  if (!timestamp) return "Date not set";
 
-// Parse price helper
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return "Invalid date";
+    
+    const datePart = timestamp.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[month - 1];
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const eventDate = new Date(year, month - 1, day);
+    
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
+    
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const formattedTime = `${hours}:${minutes} ${ampm}`;
+
+    if (diffDays < -1) return `${formattedDate} (Past)`;
+    if (diffDays === -1) return `Yesterday at ${formattedTime}`;
+    if (diffDays === 0) return `Today at ${formattedTime}`;
+    if (diffDays === 1) return `Tomorrow at ${formattedTime}`;
+    if (diffDays <= 7) return `${formattedDate} (in ${diffDays} days)`;
+    
+    return formattedDate;
+  } catch (error) {
+    return "Invalid date";
+  }
+};
+
+const formatDateOnly = (timestamp: string | null) => {
+  if (!timestamp) return "No date";
+  try {
+    const datePart = timestamp.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[month - 1];
+    
+    return `${monthName} ${day}, ${year}`;
+  } catch {
+    return "Invalid date";
+  }
+};
+
+// --- Helper Functions ---
 const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
   if (typeof price === 'number') {
     return { amount: price, isFree: price === 0 };
@@ -55,18 +117,10 @@ const parsePrice = (price: string | number): { amount: number; isFree: boolean }
   if (typeof price === 'string') {
     const lowerPrice = price.toLowerCase().trim();
     
-    // Check for free indicators
-    if (lowerPrice.includes('free') || 
-        lowerPrice === '0' || 
-        lowerPrice === '₦0' ||
-        lowerPrice === 'ngn0' ||
-        lowerPrice === 'n0' ||
-        lowerPrice === '0.00' ||
-        lowerPrice === '0.0') {
+    if (['free', '0', '₦0', 'ngn0', 'n0', '0.00', '0.0'].includes(lowerPrice)) {
       return { amount: 0, isFree: true };
     }
     
-    // Extract numeric value
     const cleaned = price.replace(/[^\d.-]/g, '');
     const amount = parseFloat(cleaned) || 0;
     
@@ -76,7 +130,7 @@ const parsePrice = (price: string | number): { amount: number; isFree: boolean }
   return { amount: 0, isFree: true };
 };
 
-// Get lowest price from ticket tiers, checking for sold-out tiers
+// Helper functions that don't use hooks
 const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean } => {
   if (!event.ticketTiers || !Array.isArray(event.ticketTiers) || event.ticketTiers.length === 0) {
     return { price: 0, isFree: true };
@@ -89,11 +143,9 @@ const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean
   event.ticketTiers.forEach(tier => {
     if (!tier || typeof tier !== 'object') return;
     
-    // Check if tier has any tickets available
     const available = tier.available || tier.quantity_available;
     const sold = tier.sold || tier.quantity_sold || 0;
     
-    // If tier has availability info and it's sold out, skip it
     if (available !== undefined && (available === 0 || sold >= available)) {
       return;
     }
@@ -110,43 +162,34 @@ const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean
     }
   });
 
-  // If we found paid tiers, return the lowest price
   if (hasPaidTier) {
     return { price: lowestPaidPrice, isFree: false };
   }
   
-  // If we found free tiers, return free
   if (hasFreeTier) {
     return { price: 0, isFree: true };
   }
   
-  // Default to free
   return { price: 0, isFree: true };
 };
 
-// Check if event is sold out - FIXED VERSION
 const isEventSoldOut = (event: Event): boolean => {
   if (!event.ticketTiers || event.ticketTiers.length === 0) return false;
   
-  // Check if ANY tier has available tickets
   const hasAvailableTickets = event.ticketTiers.some(tier => {
     if (!tier) return false;
     
     const available = tier.available || tier.quantity_available;
     const sold = tier.sold || tier.quantity_sold || 0;
     
-    // If available is undefined/null, it means unlimited tickets - not sold out
     if (available == null) return true;
     
-    // Check if there are tickets left
     return available > 0 && sold < available;
   });
   
-  // Return true if NO tiers have available tickets
   return !hasAvailableTickets;
 };
 
-// Get total available tickets
 const getAvailableTickets = (event: Event): number => {
   if (!event.ticketTiers || !Array.isArray(event.ticketTiers)) return 0;
   
@@ -156,35 +199,98 @@ const getAvailableTickets = (event: Event): number => {
     const available = tier.available || tier.quantity_available;
     const sold = tier.sold || tier.quantity_sold || 0;
     
-    // If available is undefined/null, it means unlimited - return a large number
     if (available == null) return total + 9999;
     
     return total + Math.max(0, available - sold);
   }, 0);
 };
 
-// Format price display
 const formatPriceDisplay = (price: number, isFree: boolean): string => {
   if (isFree) return "Free";
-  return `₦${price.toLocaleString()}`;
+  return `₦${price.toLocaleString('en-NG')}`;
 };
 
-// --- Date & Time Helpers ---
-const formatEventDateShort = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  });
-
-const formatEventTime = (isoOrTime?: string) => {
-  if (!isoOrTime) return "";
-  if (!isoOrTime.includes("T")) return isoOrTime;
-  const d = new Date(isoOrTime);
-  return d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
+// Updated formatEventDateShort to use your formatDate function
+const formatEventDateShort = (iso: string): string => {
+  const formatted = formatDate(iso);
+  // Extract just the date part from your formatDate output
+  if (formatted.includes("(")) {
+    return formatted.split("(")[0].trim();
+  }
+  if (formatted.includes(" at ")) {
+    return formatted.split(" at ")[0].trim();
+  }
+  return formatted;
 };
 
-// --- Badge ---
+// Updated formatEventTime to extract time from your formatDate function
+const formatEventTime = (eventDate: string, eventTime?: string): string => {
+  // First try to use the event.time if available
+  if (eventTime) {
+    // Try to parse and format the time string
+    try {
+      const [hours, minutes] = eventTime.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes || 0, 0);
+      let hoursFormatted = hours % 12 || 12;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const minutesFormatted = minutes ? minutes.toString().padStart(2, '0') : '00';
+      return `${hoursFormatted}:${minutesFormatted} ${ampm}`;
+    } catch {
+      return eventTime;
+    }
+  }
+  
+  // If no event.time, try to extract time from formatDate output
+  const formatted = formatDate(eventDate);
+  if (formatted.includes(" at ")) {
+    return formatted.split(" at ")[1].trim();
+  }
+  
+  // Fallback to time from ISO string
+  try {
+    const date = new Date(eventDate);
+    if (isNaN(date.getTime())) return "Time TBD";
+    
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours}:${minutes} ${ampm}`;
+  } catch {
+    return "Time TBD";
+  }
+};
+
+// --- Loading Skeleton Component ---
+const EventCardSkeleton = () => (
+  <div className="group relative bg-white rounded-2xl overflow-hidden shadow-md animate-pulse">
+    <div className="aspect-[3/2] bg-gray-200" />
+    <div className="p-4 pb-6 space-y-3">
+      <div className="h-4 bg-gray-200 rounded w-3/4" />
+      <div className="space-y-2">
+        <div className="h-3 bg-gray-200 rounded w-1/2" />
+        <div className="h-3 bg-gray-200 rounded w-2/3" />
+        <div className="h-3 bg-gray-200 rounded w-1/3" />
+      </div>
+      <div className="h-10 bg-gray-200 rounded-xl" />
+    </div>
+  </div>
+);
+
+const EventSectionSkeleton = () => (
+  <div className="px-4 md:px-6 mb-20">
+    <div className="h-10 bg-gray-200 rounded w-48 mx-auto mb-10" />
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+      {[1, 2, 3, 4].map(i => (
+        <EventCardSkeleton key={i} />
+      ))}
+    </div>
+  </div>
+);
+
+// --- Badge Component ---
 const badgeConfig = {
   featured: { gradient: "from-purple-500 to-pink-600", icon: Star, text: "Star" },
   trending: { gradient: "from-orange-500 to-red-600", icon: Flame, text: "Hot" },
@@ -204,35 +310,59 @@ const Badge = ({ variant }: { variant: BadgeVariant }) => {
   );
 };
 
-// --- TimelineSchedule ---
+// --- TimelineSchedule Component ---
 const TimelineSchedule = ({ events }: { events: Event[] }) => {
   const navigate = useNavigate();
+  
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
   const nextDay = new Date(today);
   nextDay.setDate(today.getDate() + 2);
 
-  const formatDate = (d: Date) => d.toISOString().split("T")[0];
+  // Helper function to check if event is on a specific date
+  const isEventOnDate = useCallback((event: Event, targetDate: Date): boolean => {
+    if (!event.date) return false;
+    
+    try {
+      const eventDate = new Date(event.date);
+      if (isNaN(eventDate.getTime())) return false;
+      
+      const eventDateOnly = new Date(
+        eventDate.getFullYear(),
+        eventDate.getMonth(),
+        eventDate.getDate()
+      );
+      const targetDateOnly = new Date(
+        targetDate.getFullYear(),
+        targetDate.getMonth(),
+        targetDate.getDate()
+      );
+      
+      return eventDateOnly.getTime() === targetDateOnly.getTime();
+    } catch {
+      return false;
+    }
+  }, []);
 
-  const eventsToday = events.filter(
-    (e) => e.date && e.date.split("T")[0] === formatDate(today)
-  );
-  const eventsTomorrow = events.filter(
-    (e) => e.date && e.date.split("T")[0] === formatDate(tomorrow)
-  );
-  const eventsNext = events.filter(
-    (e) => e.date && e.date.split("T")[0] === formatDate(nextDay)
-  );
+  const eventsToday = useMemo(() => events.filter(
+    (e) => isEventOnDate(e, today)
+  ), [events, today, isEventOnDate]);
 
-  const handleEventClick = (event: Event) => {
-    const path = event.slug 
-      ? `/event/${event.slug}` 
-      : `/event/${event.id}`;
+  const eventsTomorrow = useMemo(() => events.filter(
+    (e) => isEventOnDate(e, tomorrow)
+  ), [events, tomorrow, isEventOnDate]);
+
+  const eventsNext = useMemo(() => events.filter(
+    (e) => isEventOnDate(e, nextDay)
+  ), [events, nextDay, isEventOnDate]);
+
+  const handleEventClick = useCallback((event: Event) => {
+    const path = event.slug ? `/event/${event.slug}` : `/event/${event.id}`;
     navigate(path);
-  };
+  }, [navigate]);
 
-  const renderEvents = (eventList: Event[], label: string) => {
+  const renderEvents = useCallback((eventList: Event[], label: string) => {
     if (!eventList || eventList.length === 0) return null;
 
     const firstEventWithDate = eventList.find((e) => e.date);
@@ -262,7 +392,8 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
             transition={{ delay: 0.2 }}
             className="text-center text-pink-200 text-lg mb-10"
           >
-            {formatEventDateShort(firstEventWithDate.date)}
+            {/* Use formatDate to show relative date */}
+            {firstEventWithDate.date ? formatDate(firstEventWithDate.date) : "Date TBD"}
           </motion.p>
 
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
@@ -275,13 +406,19 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
               
               return (
                 <motion.div
-                  key={event.id || i}
+                  key={`${event.id}-${i}-${label}`}
                   initial={{ opacity: 0, x: -100 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.15, duration: 0.6 }}
                   whileHover={{ scale: 1.03 }}
-                  className={`group relative backdrop-blur-xl rounded-3xl p-6 border overflow-hidden cursor-pointer ${soldOut ? 'bg-gray-800/30 border-gray-700/50' : 'bg-white/12 border-white/10'}`}
+                  className={`group relative backdrop-blur-xl rounded-3xl p-6 border overflow-hidden cursor-pointer ${
+                    soldOut ? 'bg-gray-800/30 border-gray-700/50' : 'bg-white/12 border-white/10'
+                  }`}
                   onClick={() => handleEventClick(event)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && handleEventClick(event)}
+                  aria-label={`View ${event.title} event`}
                 >
                   {soldOut && (
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10">
@@ -292,18 +429,20 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                     </div>
                   )}
                   
-                  <motion.div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                  <h3 className={`text-xl md:text-2xl font-bold line-clamp-2 mb-3 group-hover:text-pink-300 transition ${soldOut ? 'text-gray-300' : 'text-white'}`}>
+                  <h3 className={`text-xl md:text-2xl font-bold line-clamp-2 mb-3 group-hover:text-pink-300 transition ${
+                    soldOut ? 'text-gray-300' : 'text-white'
+                  }`}>
                     {event.title || "Untitled Event"}
                   </h3>
 
-                  <div className={`flex flex-col gap-2 text-sm mb-6 ${soldOut ? 'text-gray-400' : 'text-pink-100'}`}>
-                    {event.time && (
-                      <span className="flex items-center gap-2">
-                        <Clock className="w-4 h-4" /> {event.time}
-                      </span>
-                    )}
+                  <div className={`flex flex-col gap-2 text-sm mb-6 ${
+                    soldOut ? 'text-gray-400' : 'text-pink-100'
+                  }`}>
+                    <span className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" /> {formatEventTime(event.date, event.time)}
+                    </span>
                     <span className="flex items-center gap-2">
                       <MapPin className="w-4 h-4" /> {event.location || "Location TBD"}
                     </span>
@@ -332,6 +471,7 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                         e.stopPropagation();
                         handleEventClick(event);
                       }}
+                      aria-label={`Get ticket for ${event.title} for ${priceDisplay}`}
                     >
                       <Ticket className="w-4 h-4" />
                       Get Ticket • {priceDisplay}
@@ -344,7 +484,7 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
         </div>
       </motion.section>
     );
-  };
+  }, [handleEventClick]);
 
   return (
     <AnimatePresence mode="wait">
@@ -355,7 +495,7 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
   );
 };
 
-// --- EventCard & EventSection ---
+// --- EventCard Component ---
 const containerVariants = { hidden: { opacity: 1 }, visible: { transition: { staggerChildren: 0.08 } } };
 const itemVariants = { hidden: { y: 30, opacity: 0 }, visible: { y: 0, opacity: 1 } };
 
@@ -367,26 +507,14 @@ const EventCard = ({ event }: { event: Event }) => {
   const availableTickets = getAvailableTickets(event);
   const isLowStock = availableTickets > 0 && availableTickets <= 10;
 
-  // Debug logging
-  console.log(`Event Card: ${event.title}`, {
-    ticketTiers: event.ticketTiers,
-    soldOut,
-    availableTickets,
-    priceInfo: { price, isFree },
-    priceDisplay
-  });
-
-  const handleEventClick = () => {
-    const path = event.slug 
-      ? `/event/${event.slug}` 
-      : `/event/${event.id}`;
+  const handleEventClick = useCallback(() => {
+    const path = event.slug ? `/event/${event.slug}` : `/event/${event.id}`;
     navigate(path);
-  };
+  }, [event.slug, event.id, navigate]);
 
-  // Handle image error
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    e.currentTarget.src = "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop";
-  };
+  const handleImageError = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    e.currentTarget.src = PLACEHOLDER_IMAGE;
+  }, []);
 
   return (
     <motion.article
@@ -396,25 +524,27 @@ const EventCard = ({ event }: { event: Event }) => {
       whileHover={{ y: -16, scale: 1.04 }}
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className={`group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-500 border border-gray-100 cursor-pointer ${soldOut ? 'opacity-90' : ''}`}
+      className={`group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-500 border border-gray-100 cursor-pointer ${
+        soldOut ? 'opacity-90' : ''
+      }`}
       onClick={handleEventClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && handleEventClick()}
+      aria-label={`View ${event.title} event details`}
     >
-      <motion.div
-        className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100"
-        initial={{ scale: 0.8 }}
-        whileHover={{ scale: 1.3 }}
-        transition={{ duration: 0.6 }}
-      />
+      <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100" />
       <div className="relative aspect-[3/2] bg-gray-50 overflow-hidden">
         <img
-          src={event.image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop"}
+          src={event.image || PLACEHOLDER_IMAGE}
           alt={event.title}
           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
           onError={handleImageError}
           loading="lazy"
+          width={300}
+          height={200}
         />
         
-        {/* Sold Out Overlay */}
         {soldOut && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
             <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-lg font-bold text-white bg-gradient-to-r from-red-600 to-red-800">
@@ -431,7 +561,6 @@ const EventCard = ({ event }: { event: Event }) => {
           {event.sponsored && <Badge variant="sponsored" />}
         </div>
         
-        {/* Low Stock Indicator */}
         {!soldOut && isLowStock && (
           <div className="absolute top-3 right-3">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-red-600">
@@ -440,7 +569,6 @@ const EventCard = ({ event }: { event: Event }) => {
           </div>
         )}
         
-        {/* Unlimited Tickets Indicator */}
         {!soldOut && availableTickets >= 9999 && (
           <div className="absolute top-3 right-3">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600">
@@ -458,12 +586,12 @@ const EventCard = ({ event }: { event: Event }) => {
         <div className="mt-3 space-y-2 text-xs text-gray-600">
           <div className="flex items-center gap-2">
             <Calendar size={13} className="text-purple-600" />
-            <span>{event.date ? formatEventDateShort(event.date) : "Date TBD"}</span>
+            <span>{event.date ? formatDate(event.date) : "Date not set"}</span>
           </div>
           <div className="flex items-center gap-2">
             <Clock size={13} className="text-purple-600" />
             <span className="font-semibold">
-              {event.date ? formatEventTime(event.date) : event.time || "Time TBD"}
+              {formatEventTime(event.date, event.time)}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -490,6 +618,7 @@ const EventCard = ({ event }: { event: Event }) => {
               e.stopPropagation();
               handleEventClick();
             }}
+            aria-label={`Get ticket for ${event.title} for ${priceDisplay}`}
           >
             <Ticket size={24} />
             Get Ticket • {priceDisplay}
@@ -530,7 +659,49 @@ const EventSection = ({ title, events }: { title: string; events: Event[] }) => 
   );
 };
 
-// --- Home Component ---
+// --- SearchBar Component ---
+const SearchBar = ({ 
+  searchTerm, 
+  setSearchTerm,
+  resultsCount 
+}: { 
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  resultsCount: number;
+}) => {
+  const handleClear = useCallback(() => setSearchTerm(""), [setSearchTerm]);
+
+  return (
+    <div className="max-w-2xl mx-auto px-5 my-16">
+      <div className="relative">
+        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 w-6 h-6" />
+        <input
+          type="text"
+          placeholder="Search events, artists, venues..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="w-full pl-14 pr-10 py-5 rounded-2xl bg-white border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none shadow-lg text-base transition"
+          aria-label="Search events"
+        />
+        {searchTerm && (
+          <button
+            onClick={handleClear}
+            className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label="Clear search"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+      <p className="text-center text-gray-600 mt-4">
+        Found {resultsCount} event{resultsCount !== 1 ? 's' : ''}
+        {searchTerm && ` for "${searchTerm}"`}
+      </p>
+    </div>
+  );
+};
+
+// --- Main Home Component ---
 export default function Home() {
   const [eventsList, setEventsList] = useState<Event[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -538,195 +709,167 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const navigate = useNavigate();
+
   useEffect(() => {
     let isMounted = true;
+    let subscription: any;
 
- const fetchData = async () => {
-  try {
-    setLoading(true);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-    // Use the explicit foreign key relationship
-    const { data, error } = await supabase
-      .from("events")
-      .select(`
-        id, title, date, time, venue, location, image, cover_image,
-        featured, trending, isnew, sponsored, slug, status,
-        ticketTiers!ticketTiers_event_id_fkey (
-          id, tier_name, description, price,
-          quantity_total, quantity_sold, is_active
-        )
-      `)
-      .eq("status", "published")
-      .order("date", { ascending: true })
-      .limit(50);
+        const { data, error: fetchError } = await supabase
+          .from("events")
+          .select(`
+            id, title, date, time, venue, location, image, cover_image,
+            featured, trending, isnew, sponsored, slug, status,
+            ticketTiers!ticketTiers_event_id_fkey (
+              id, tier_name, description, price,
+              quantity_total, quantity_sold, is_active
+            )
+          `)
+          .eq("status", "published")
+          .order("date", { ascending: true })
+          .limit(EVENTS_PER_PAGE);
 
-    // If that doesn't work, try the other suggested relationship:
-    // ticketTiers!tickettiers_event_id_fkey
+        if (fetchError) throw fetchError;
 
-    if (error) throw error;
+        if (!isMounted) return;
 
-    console.log("Fetched events with tiers:", data);
+        const parsedEvents = (data || []).map((event: any) => {
+          const ticketTiers = (event.ticketTiers || []).map((t: any) => ({
+            name: t.tier_name || "General Admission",
+            price: Number(t.price) || 0,
+            description: t.description,
+            quantity_available: t.quantity_total ?? null,
+            quantity_sold: t.quantity_sold || 0,
+            is_active: t.is_active ?? true,
+          }));
 
-    const parsedEvents = (data || []).map((event: any) => {
-      const ticketTiers = (event.ticketTiers || []).map((t: any) => ({
-        name: t.tier_name || "General Admission",
-        price: Number(t.price) || 0,
-        description: t.description,
-        quantity_available: t.quantity_total ?? null,
-        quantity_sold: t.quantity_sold || 0,
-        is_active: t.is_active ?? true,
-      }));
+          const activeTiers = ticketTiers.filter((tier: any) => tier.is_active !== false);
 
-      // Filter out inactive tiers
-      const activeTiers = ticketTiers.filter((tier: any) => tier.is_active !== false);
+          return {
+            id: event.id,
+            title: event.title || "Untitled Event",
+            date: event.date,
+            time: event.time,
+            location: event.location || event.venue || "Location TBD",
+            image: event.image || event.cover_image || PLACEHOLDER_IMAGE,
+            ticketTiers: activeTiers,
+            featured: event.featured ?? false,
+            trending: event.trending ?? false,
+            isNew: event.isnew ?? false,
+            sponsored: event.sponsored ?? false,
+            slug: event.slug || null,
+          };
+        });
 
-      return {
-        id: event.id,
-        title: event.title || "Untitled Event",
-        date: event.date,
-        time: event.time,
-        location: event.location || event.venue || "Location TBD",
-        image: event.image || event.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
-        ticketTiers: activeTiers,
-        featured: event.featured ?? false,
-        trending: event.trending ?? false,
-        isNew: event.isnew ?? false,
-        sponsored: event.sponsored ?? false,
-        slug: event.slug || null,
-      };
-    });
+        setEventsList(parsedEvents);
+      } catch (err: any) {
+        if (!isMounted) return;
+        console.error("Fetch error:", err);
+        setError(err.message || "Failed to load events");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
 
-    setEventsList(parsedEvents);
-  } catch (err: any) {
-    console.error("Fetch error:", err);
-    setError("Failed to load events");
-  } finally {
-    setLoading(false);
-  }
-};
+    const setupRealtime = () => {
+      try {
+        subscription = supabase
+          .channel("public:events")
+          .on(
+            "postgres_changes",
+            { 
+              event: "*", 
+              schema: "public", 
+              table: "events",
+              filter: "status=eq.published"
+            },
+            async (payload: any) => {
+              if (!isMounted) return;
+              
+              if (payload.eventType === "INSERT") {
+                try {
+                  const { data: newEventWithTiers, error: fetchError } = await supabase
+                    .from("events")
+                    .select(`
+                      id, title, date, time, venue, location, image, cover_image,
+                      featured, trending, isnew, sponsored, slug, status,
+                      ticketTiers!ticketTiers_event_id_fkey (
+                        id, tier_name, description, price,
+                        quantity_total, quantity_sold, is_active
+                      )
+                    `)
+                    .eq("id", payload.new.id)
+                    .single();
+
+                  if (fetchError) throw fetchError;
+
+                  if (newEventWithTiers) {
+                    const ticketTiers = (newEventWithTiers.ticketTiers || []).map((t: any) => ({
+                      name: t.tier_name || "General Admission",
+                      price: Number(t.price) || 0,
+                      description: t.description,
+                      quantity_available: t.quantity_total ?? null,
+                      quantity_sold: t.quantity_sold || 0,
+                    })).filter((t: any) => (t.is_active ?? true) !== false);
+
+                    const parsed = {
+                      id: newEventWithTiers.id,
+                      title: newEventWithTiers.title || "Untitled Event",
+                      date: newEventWithTiers.date,
+                      time: newEventWithTiers.time,
+                      location: newEventWithTiers.location || newEventWithTiers.venue || "Location TBD",
+                      image: newEventWithTiers.image || newEventWithTiers.cover_image || PLACEHOLDER_IMAGE,
+                      ticketTiers,
+                      featured: newEventWithTiers.featured ?? false,
+                      trending: newEventWithTiers.trending ?? false,
+                      isNew: newEventWithTiers.isnew ?? false,
+                      sponsored: newEventWithTiers.sponsored ?? false,
+                      slug: newEventWithTiers.slug || null,
+                    };
+                    
+                    setEventsList(prev => [parsed as Event, ...prev]);
+                    setNewEventNotification(parsed as Event);
+                    setTimeout(() => {
+                      if (isMounted) setNewEventNotification(null);
+                    }, NOTIFICATION_TIMEOUT);
+                  }
+                } catch (err) {
+                  console.error("Error processing new event:", err);
+                }
+              } else if (payload.eventType === "UPDATE") {
+                setEventsList(prev => 
+                  prev.map(event => 
+                    event.id === payload.new.id 
+                      ? { ...event, ...payload.new } 
+                      : event
+                  )
+                );
+              } else if (payload.eventType === "DELETE") {
+                setEventsList(prev => prev.filter(event => event.id !== payload.old.id));
+              }
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.error("Realtime setup error:", err);
+      }
+    };
 
     fetchData();
-
-    // Subscribe to real-time updates
-    const subscription = supabase
-  .channel("public:events")
-  .on(
-    "postgres_changes",
-    { 
-      event: "*", 
-      schema: "public", 
-      table: "events",
-      filter: "status=eq.published"
-    },
-    async (payload: any) => {
-      if (!isMounted) return;
-      
-      if (payload.eventType === "INSERT") {
-        const { data: newEventWithTiers, error } = await supabase
-          .from("events")
-          .select(`
-            id, title, date, time, venue, location, image, cover_image,
-            featured, trending, isnew, sponsored, slug, status,
-            ticketTiers!ticketTiers_event_id_fkey (
-              id, tier_name, description, price,
-              quantity_total, quantity_sold, is_active
-            )
-          `)
-          .eq("id", payload.new.id)
-          .single();
-
-        if (error) {
-          console.error("Error fetching new event with tiers:", error);
-          return;
-        }
-
-        if (newEventWithTiers) {
-          const ticketTiers = (newEventWithTiers.ticketTiers || []).map((t: any) => ({
-            name: t.tier_name || "General Admission",
-            price: Number(t.price) || 0,
-            description: t.description,
-            quantity_available: t.quantity_total ?? null,
-            quantity_sold: t.quantity_sold || 0,
-          })).filter((t: any) => (t.is_active ?? true) !== false);
-
-          const parsed = {
-            id: newEventWithTiers.id,
-            title: newEventWithTiers.title || "Untitled Event",
-            description: newEventWithTiers.description,
-            date: newEventWithTiers.date,
-            time: newEventWithTiers.time,
-            venue: newEventWithTiers.venue,
-            location: newEventWithTiers.location || newEventWithTiers.venue || "Location TBD",
-            image: newEventWithTiers.image || newEventWithTiers.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
-            ticketTiers,
-            featured: newEventWithTiers.featured ?? false,
-            trending: newEventWithTiers.trending ?? false,
-            isNew: newEventWithTiers.isnew ?? false,
-            sponsored: newEventWithTiers.sponsored ?? false,
-            slug: newEventWithTiers.slug || null,
-          };
-          
-          setEventsList(prev => [parsed as Event, ...prev]);
-          setNewEventNotification(parsed as Event);
-          setTimeout(() => setNewEventNotification(null), 5000);
-        }
-      } else if (payload.eventType === "UPDATE") {
-        const { data: updatedEventWithTiers, error } = await supabase
-          .from("events")
-          .select(`
-            id, title, date, time, venue, location, image, cover_image,
-            featured, trending, isnew, sponsored, slug, status,
-            ticketTiers!ticketTiers_event_id_fkey (
-              id, tier_name, description, price,
-              quantity_total, quantity_sold, is_active
-            )
-          `)
-          .eq("id", payload.new.id)
-          .single();
-
-        if (error) {
-          console.error("Error fetching updated event:", error);
-          return;
-        }
-
-        if (updatedEventWithTiers) {
-          const ticketTiers = (updatedEventWithTiers.ticketTiers || []).map((t: any) => ({
-            name: t.tier_name || "General Admission",
-            price: Number(t.price) || 0,
-            description: t.description,
-            quantity_available: t.quantity_total ?? null,
-            quantity_sold: t.quantity_sold || 0,
-          })).filter((t: any) => (t.is_active ?? true) !== false);
-
-          const parsed = {
-            id: updatedEventWithTiers.id,
-            title: updatedEventWithTiers.title || "Untitled Event",
-            description: updatedEventWithTiers.description,
-            date: updatedEventWithTiers.date,
-            time: updatedEventWithTiers.time,
-            venue: updatedEventWithTiers.venue,
-            location: updatedEventWithTiers.location || updatedEventWithTiers.venue || "Location TBD",
-            image: updatedEventWithTiers.image || updatedEventWithTiers.cover_image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
-            ticketTiers,
-            featured: updatedEventWithTiers.featured ?? false,
-            trending: updatedEventWithTiers.trending ?? false,
-            isNew: updatedEventWithTiers.isnew ?? false,
-            sponsored: updatedEventWithTiers.sponsored ?? false,
-            slug: updatedEventWithTiers.slug || null,
-          };
-          
-          setEventsList(prev => prev.map(e => e.id === parsed.id ? parsed as Event : e));
-        }
-      } else if (payload.eventType === "DELETE") {
-        setEventsList(prev => prev.filter(e => e.id !== payload.old.id));
-      }
-    }
-  )
-  .subscribe();
+    setupRealtime();
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(subscription);
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
     };
   }, []);
 
@@ -740,34 +883,47 @@ export default function Home() {
     [eventsList, searchTerm]
   );
 
-  const trendingEvents = filteredEvents.filter(e => e.trending);
-  const featuredEvents = filteredEvents.filter(e => e.featured);
-  const newEvents = filteredEvents.filter(e => e.isNew);
-  const sponsoredEvents = filteredEvents.filter(e => e.sponsored);
+  const trendingEvents = useMemo(() => filteredEvents.filter(e => e.trending), [filteredEvents]);
+  const featuredEvents = useMemo(() => filteredEvents.filter(e => e.featured), [filteredEvents]);
+  const newEvents = useMemo(() => filteredEvents.filter(e => e.isNew), [filteredEvents]);
+  const sponsoredEvents = useMemo(() => filteredEvents.filter(e => e.sponsored), [filteredEvents]);
+
+  const handleNotificationClick = useCallback((event: Event) => {
+    const path = event.slug ? `/event/${event.slug}` : `/event/${event.id}`;
+    navigate(path);
+  }, [navigate]);
+
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    window.location.reload();
+  }, []);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-700">Loading events...</p>
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50">
+        <div className="pt-28 pb-16 text-center px-5">
+          <div className="h-12 bg-gray-200 rounded w-64 mx-auto mb-6 animate-pulse" />
+          <div className="h-6 bg-gray-200 rounded w-48 mx-auto mb-10 animate-pulse" />
         </div>
+        <EventSectionSkeleton />
+        <EventSectionSkeleton />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md mx-4">
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex items-center justify-center p-4">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md w-full">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-red-600 text-2xl">!</span>
+            <AlertCircle className="w-8 h-8 text-red-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Events</h2>
           <p className="text-gray-600 mb-6">{error}</p>
           <button 
-            onClick={() => window.location.reload()}
-            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition"
+            onClick={handleRetry}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200 w-full"
           >
             Try Again
           </button>
@@ -775,6 +931,9 @@ export default function Home() {
       </div>
     );
   }
+
+  const hasEvents = eventsList.length > 0;
+  const hasSearchResults = filteredEvents.length > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 relative">
@@ -785,17 +944,19 @@ export default function Home() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-5 right-5 z-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3 cursor-pointer"
-            onClick={() => {
-              const path = newEventNotification.slug 
-                ? `/event/${newEventNotification.slug}` 
-                : `/event/${newEventNotification.id}`;
-              window.location.href = path;
-            }}
+            className="fixed top-5 right-5 z-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3 cursor-pointer max-w-md"
+            onClick={() => handleNotificationClick(newEventNotification)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && handleNotificationClick(newEventNotification)}
+            aria-label={`New event: ${newEventNotification.title}. Click to view.`}
           >
-            <Sparkles className="w-5 h-5" />
-            <span className="font-semibold">New Event:</span>
-            <span className="truncate max-w-xs">{newEventNotification.title}</span>
+            <Sparkles className="w-5 h-5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="font-semibold">New Event: </span>
+              <span className="truncate">{newEventNotification.title}</span>
+            </div>
+            <ExternalLink className="w-4 h-4 flex-shrink-0" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -827,19 +988,19 @@ export default function Home() {
         >
           <Link 
             to="/teaser" 
-            className="flex items-center justify-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold px-8 py-4 rounded-full shadow-xl hover:scale-105 transition"
+            className="flex items-center justify-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold px-8 py-4 rounded-full shadow-xl hover:scale-105 transition-transform duration-200"
           >
             <Plus className="w-6 h-6" /> Create Event
           </Link>
           <Link 
             to="/events" 
-            className="bg-black text-white font-bold px-10 py-4 rounded-full shadow-xl hover:scale-105 transition"
+            className="bg-black text-white font-bold px-10 py-4 rounded-full shadow-xl hover:scale-105 transition-transform duration-200"
           >
             Explore Events
           </Link>
           <Link 
             to="/about" 
-            className="bg-transparent border-2 border-gray-800 text-gray-800 font-bold px-10 py-4 rounded-full hover:bg-gray-900 hover:text-white transition"
+            className="bg-transparent border-2 border-gray-800 text-gray-800 font-bold px-10 py-4 rounded-full hover:bg-gray-900 hover:text-white transition-colors duration-200"
           >
             Learn More
           </Link>
@@ -857,60 +1018,25 @@ export default function Home() {
       </section>
 
       {/* Timeline */}
-      <TimelineSchedule events={filteredEvents} />
+      {hasEvents && <TimelineSchedule events={filteredEvents} />}
 
       {/* Search */}
-      <div className="max-w-2xl mx-auto px-5 my-16">
-        <div className="relative">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 w-6 h-6" />
-          <input
-            type="text"
-            placeholder="Search events, artists, venues..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-14 pr-6 py-5 rounded-2xl bg-white border border-gray-200 focus:border-purple-500 focus:outline-none shadow-lg text-base transition"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm("")}
-              className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-        <p className="text-center text-gray-600 mt-4">
-          Found {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
-          {searchTerm && ` for "${searchTerm}"`}
-        </p>
-      </div>
+      <SearchBar 
+        searchTerm={searchTerm} 
+        setSearchTerm={setSearchTerm}
+        resultsCount={filteredEvents.length}
+      />
 
       {/* Event Sections */}
       <div className="space-y-20 pb-28">
-        {trendingEvents.length > 0 && <EventSection title="🔥 Trending Now" events={trendingEvents} />}
-        {featuredEvents.length > 0 && <EventSection title="⭐ Featured Events" events={featuredEvents} />}
-        {newEvents.length > 0 && <EventSection title="🆕 Fresh Drops" events={newEvents} />}
-        {sponsoredEvents.length > 0 && <EventSection title="💎 Sponsored Picks" events={sponsoredEvents} />}
-        
-        {/* If no events match search */}
-        {filteredEvents.length === 0 && searchTerm && (
-          <div className="text-center py-20">
-            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Search className="w-12 h-12 text-gray-400" />
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-3">No events found</h3>
-            <p className="text-gray-600 mb-8">Try a different search term or browse all events</p>
-            <Link 
-              to="/events"
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition"
-            >
-              Browse All Events
-            </Link>
-          </div>
-        )}
-
-        {/* If no events at all */}
-        {eventsList.length === 0 && !searchTerm && (
+        {hasEvents ? (
+          <>
+            {trendingEvents.length > 0 && <EventSection title=" Trending Now" events={trendingEvents} />}
+            {featuredEvents.length > 0 && <EventSection title=" Featured Events" events={featuredEvents} />}
+            {newEvents.length > 0 && <EventSection title=" Fresh Drops" events={newEvents} />}
+            {sponsoredEvents.length > 0 && <EventSection title=" Sponsored Picks" events={sponsoredEvents} />}
+          </>
+        ) : (
           <div className="text-center py-20">
             <div className="w-24 h-24 bg-gradient-to-r from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Calendar className="w-12 h-12 text-purple-600" />
@@ -919,11 +1045,34 @@ export default function Home() {
             <p className="text-gray-600 mb-8">Be the first to create an amazing event!</p>
             <Link 
               to="/teaser"
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition"
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
             >
               <Plus className="w-5 h-5" /> Create First Event
             </Link>
           </div>
+        )}
+
+        {!hasSearchResults && searchTerm && (
+          <div className="text-center py-20">
+            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Search className="w-12 h-12 text-gray-400" />
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-3">No events found</h3>
+            <p className="text-gray-600 mb-8">Try a different search term or browse all events</p>
+            <Link 
+              to="/events"
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
+            >
+              Browse All Events
+            </Link>
+          </div>
+        )}
+
+        {hasSearchResults && !searchTerm && filteredEvents.length > 0 && (
+          <EventSection 
+            title="All Events" 
+            events={filteredEvents.slice(0, 8)}
+          />
         )}
       </div>
     </div>

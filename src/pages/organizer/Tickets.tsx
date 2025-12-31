@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { Search, Download, Calendar, Ticket, DollarSign, Users, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 
 interface Ticket {
   id: string;

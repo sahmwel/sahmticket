@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import AdsenseAd from "../components/AdsenseAd";
 import {
   Calendar,
   MapPin,
@@ -28,17 +27,23 @@ import L from "leaflet";
 import { supabase } from "../lib/supabaseClient";
 import "leaflet/dist/leaflet.css";
 
-// Leaflet icon fix for TypeScript
-const iconDefault = L.Icon.Default.prototype as any;
-delete iconDefault._getIconUrl;
+// --- Constants ---
+const DEFAULT_LOCATION: [number, number] = [6.5244, 3.3792]; // Lagos, Nigeria
+const PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop";
+const EVENTS_PER_PAGE = 50;
+const CAROUSEL_INTERVAL = 5000;
 
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+// --- Type Definitions ---
+interface TicketTier {
+  name: string;
+  price: string | number;
+  sold?: number;
+  available?: number;
+  quantity_sold?: number;
+  quantity_available?: number;
+  description?: string;
+}
 
-// ---------------- Types ----------------
 interface Event {
   id: string;
   title: string;
@@ -49,14 +54,7 @@ interface Event {
   venue: string;
   location: string;
   image: string;
-  ticketTiers: {
-    name: string;
-    price: string | number;
-    sold?: number;
-    available?: number;
-    quantity_sold?: number;
-    quantity_available?: number;
-  }[];
+  ticketTiers: TicketTier[];
   featured?: boolean;
   trending?: boolean;
   isNew?: boolean;
@@ -71,9 +69,142 @@ interface Category {
   gradient: string;
 }
 
-// ---------------- Helper Functions ----------------
+// --- Your Date Formatting Functions ---
+const formatDate = (timestamp: string | null) => {
+  if (!timestamp) return "Date not set";
 
-// Parse price helper
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return "Invalid date";
+    
+    const datePart = timestamp.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[month - 1];
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const eventDate = new Date(year, month - 1, day);
+    
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
+    
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const formattedTime = `${hours}:${minutes} ${ampm}`;
+
+    if (diffDays < -1) return `${formattedDate} (Past)`;
+    if (diffDays === -1) return `Yesterday at ${formattedTime}`;
+    if (diffDays === 0) return `Today at ${formattedTime}`;
+    if (diffDays === 1) return `Tomorrow at ${formattedTime}`;
+    if (diffDays <= 7) return `${formattedDate} (in ${diffDays} days)`;
+    
+    return formattedDate;
+  } catch (error) {
+    return "Invalid date";
+  }
+};
+
+const formatDateOnly = (timestamp: string | null) => {
+  if (!timestamp) return "No date";
+  try {
+    const datePart = timestamp.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[month - 1];
+    
+    return `${monthName} ${day}, ${year}`;
+  } catch {
+    return "Invalid date";
+  }
+};
+
+// Helper function to combine date and time for formatDate
+const combineDateTime = (dateString: string, timeString: string): string | null => {
+  if (!dateString) return null;
+  
+  try {
+    const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
+    
+    let hours = 0, minutes = 0;
+    if (timeString) {
+      const [timeHours, timeMinutes] = timeString.split(':').map(Number);
+      hours = timeHours || 0;
+      minutes = timeMinutes || 0;
+    }
+    
+    const date = new Date(year, month - 1, day, hours, minutes);
+    return date.toISOString();
+  } catch (error) {
+    console.error("Error combining date and time:", error);
+    return null;
+  }
+};
+
+// Format date and time together using your formatDate function
+const formatEventDateTime = (dateString: string, timeString: string) => {
+  const combinedDateTime = combineDateTime(dateString, timeString);
+  return formatDate(combinedDateTime);
+};
+
+// Extract just the time part from formatDate output
+const extractTimeFromFormatDate = (formattedDate: string): string => {
+  if (formattedDate.includes(" at ")) {
+    return formattedDate.split(" at ")[1].trim();
+  }
+  return "";
+};
+
+// Format date for event cards (shorter version)
+const formatEventDateShort = (dateString: string): string => {
+  const formatted = formatDate(dateString);
+  // Extract just the date part from your formatDate output
+  if (formatted.includes("(")) {
+    return formatted.split("(")[0].trim();
+  }
+  if (formatted.includes(" at ")) {
+    return formatted.split(" at ")[0].trim();
+  }
+  return formatted;
+};
+
+// Format time for event cards
+const formatEventTime = (dateString: string, timeString?: string): string => {
+  if (!dateString) return "Time TBD";
+  
+  // First try to use the timeString if available
+  if (timeString) {
+    try {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      const displayMinutes = minutes ? minutes.toString().padStart(2, '0') : '00';
+      return `${displayHours}:${displayMinutes} ${ampm}`;
+    } catch {
+      // Fall through to using formatDate
+    }
+  }
+  
+  // Use formatDate to get the time
+  const formatted = formatDate(dateString);
+  return extractTimeFromFormatDate(formatted) || "Time TBD";
+};
+
+// --- Leaflet Setup ---
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+// --- Helper Functions ---
 const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
   if (typeof price === 'number') {
     return { amount: price, isFree: price === 0 };
@@ -82,18 +213,10 @@ const parsePrice = (price: string | number): { amount: number; isFree: boolean }
   if (typeof price === 'string') {
     const lowerPrice = price.toLowerCase().trim();
     
-    // Check for free indicators
-    if (lowerPrice.includes('free') || 
-        lowerPrice === '0' || 
-        lowerPrice === '₦0' ||
-        lowerPrice === 'ngn0' ||
-        lowerPrice === 'n0' ||
-        lowerPrice === '0.00' ||
-        lowerPrice === '0.0') {
+    if (['free', '0', '₦0', 'ngn0', 'n0', '0.00', '0.0'].includes(lowerPrice)) {
       return { amount: 0, isFree: true };
     }
     
-    // Extract numeric value
     const cleaned = price.replace(/[^\d.-]/g, '');
     const amount = parseFloat(cleaned) || 0;
     
@@ -103,9 +226,8 @@ const parsePrice = (price: string | number): { amount: number; isFree: boolean }
   return { amount: 0, isFree: true };
 };
 
-// Get lowest price from ticket tiers - FIXED VERSION
-const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean } => {
-  if (!event.ticketTiers || !Array.isArray(event.ticketTiers) || event.ticketTiers.length === 0) {
+const getLowestPriceFromTiers = (ticketTiers: TicketTier[]): { price: number; isFree: boolean } => {
+  if (!ticketTiers?.length) {
     return { price: 0, isFree: true };
   }
 
@@ -113,14 +235,12 @@ const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean
   let lowestPaidPrice = Infinity;
   let hasFreeTier = false;
 
-  event.ticketTiers.forEach(tier => {
-    if (!tier || typeof tier !== 'object') return;
+  ticketTiers.forEach(tier => {
+    if (!tier) return;
     
-    // Check if tier has any tickets available
-    const available = tier.available || tier.quantity_available;
-    const sold = tier.sold || tier.quantity_sold || 0;
+    const available = tier.available ?? tier.quantity_available;
+    const sold = tier.sold ?? tier.quantity_sold ?? 0;
     
-    // If tier has availability info and it's sold out, skip it
     if (available !== undefined && (available === 0 || sold >= available)) {
       return;
     }
@@ -131,72 +251,63 @@ const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean
       hasFreeTier = true;
     } else if (priceInfo.amount > 0) {
       hasPaidTier = true;
-      if (priceInfo.amount < lowestPaidPrice) {
-        lowestPaidPrice = priceInfo.amount;
-      }
+      lowestPaidPrice = Math.min(lowestPaidPrice, priceInfo.amount);
     }
   });
 
-  // If we found paid tiers, return the lowest price
   if (hasPaidTier) {
     return { price: lowestPaidPrice, isFree: false };
   }
   
-  // If we found free tiers, return free
   if (hasFreeTier) {
     return { price: 0, isFree: true };
   }
   
-  // Default to free
   return { price: 0, isFree: true };
 };
 
-// Check if event is sold out - FIXED VERSION
-const isEventSoldOut = (event: Event): boolean => {
-  if (!event.ticketTiers || event.ticketTiers.length === 0) return false;
+const isEventSoldOut = (ticketTiers: TicketTier[]): boolean => {
+  if (!ticketTiers?.length) return false;
   
-  // Check if ANY tier has available tickets
-  const hasAvailableTickets = event.ticketTiers.some(tier => {
+  const hasAvailableTickets = ticketTiers.some(tier => {
     if (!tier) return false;
     
-    const available = tier.available || tier.quantity_available;
-    const sold = tier.sold || tier.quantity_sold || 0;
+    const available = tier.available ?? tier.quantity_available;
+    const sold = tier.sold ?? tier.quantity_sold ?? 0;
     
-    // If available is undefined/null, it means unlimited tickets - not sold out
     if (available == null) return true;
     
-    // Check if there are tickets left
     return available > 0 && sold < available;
   });
   
-  // Return true if NO tiers have available tickets
   return !hasAvailableTickets;
 };
 
-// Get total available tickets
-const getAvailableTickets = (event: Event): number => {
-  if (!event.ticketTiers || !Array.isArray(event.ticketTiers)) return 0;
+const getAvailableTickets = (ticketTiers: TicketTier[]): number => {
+  if (!ticketTiers?.length) return 0;
   
-  return event.ticketTiers.reduce((total, tier) => {
+  return ticketTiers.reduce((total, tier) => {
     if (!tier) return total;
     
-    const available = tier.available || tier.quantity_available;
-    const sold = tier.sold || tier.quantity_sold || 0;
+    const available = tier.available ?? tier.quantity_available;
+    const sold = tier.sold ?? tier.quantity_sold ?? 0;
     
-    // If available is undefined/null, it means unlimited - return a large number
     if (available == null) return total + 9999;
     
     return total + Math.max(0, available - sold);
   }, 0);
 };
 
-// Format price display
 const formatPriceDisplay = (price: number, isFree: boolean): string => {
   if (isFree) return "Free";
-  return `₦${price.toLocaleString()}`;
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    minimumFractionDigits: 0,
+  }).format(price);
 };
 
-// ---------------- Components ----------------
+// --- Map Components ---
 const ChangeView: React.FC<{ center: [number, number]; zoom: number }> = ({ center, zoom }) => {
   const map = useMap();
   useEffect(() => {
@@ -219,7 +330,8 @@ const LocationMarker: React.FC<{ position: [number, number] }> = ({ position }) 
           <p className="font-bold text-purple-600">Your Location</p>
           <button
             onClick={handleClick}
-            className="mt-2 px-3 py-1 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition"
+            className="mt-2 px-3 py-1 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+            aria-label="Center map on your location"
           >
             <LocateFixed size={14} className="inline mr-1" />
             Center Map
@@ -230,14 +342,17 @@ const LocationMarker: React.FC<{ position: [number, number] }> = ({ position }) 
   );
 };
 
-const Badge = ({ type }: { type: "new" | "sponsored" | "featured" | "trending" }) => {
+// --- UI Components ---
+const Badge: React.FC<{ type: "new" | "sponsored" | "featured" | "trending" }> = ({ type }) => {
   const config = {
     new: { icon: Sparkles, color: "from-emerald-500 to-teal-600", text: "New" },
     sponsored: { icon: BadgeCheck, color: "from-blue-500 to-cyan-600", text: "Sponsored" },
     featured: { icon: Star, color: "from-purple-500 to-pink-600", text: "Featured" },
     trending: { icon: Flame, color: "from-orange-500 to-red-600", text: "Trending" },
   }[type];
+  
   const Icon = config.icon;
+  
   return (
     <span 
       className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r ${config.color} shadow-lg`}
@@ -249,82 +364,78 @@ const Badge = ({ type }: { type: "new" | "sponsored" | "featured" | "trending" }
   );
 };
 
-// ---------------- Event Card ----------------
-interface EventCardProps {
-  event: Event;
-  goToEvent: (event: Event) => void;
-}
+const EventCardSkeleton: React.FC = () => (
+  <div className="bg-white rounded-3xl shadow-xl border border-purple-100 overflow-hidden animate-pulse">
+    <div className="w-full h-64 bg-gray-200" />
+    <div className="p-6 space-y-4">
+      <div className="h-6 bg-gray-200 rounded w-3/4" />
+      <div className="space-y-3">
+        <div className="h-4 bg-gray-200 rounded w-1/2" />
+        <div className="h-4 bg-gray-200 rounded w-2/3" />
+        <div className="h-4 bg-gray-200 rounded w-3/4" />
+      </div>
+      <div className="h-12 bg-gray-200 rounded-2xl mt-8" />
+    </div>
+  </div>
+);
 
-const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) => {
+// --- Main Components ---
+const EventCard: React.FC<{ 
+  event: Event;
+  onEventClick: (event: Event) => void;
+}> = React.memo(({ event, onEventClick }) => {
   const [imageError, setImageError] = useState(false);
   
-  const formatDate = useCallback((d: string) => 
-    new Date(d).toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long" }), []);
-  
-  const formatTime = useCallback((timeStr: string) => {
-    if (!timeStr) return "Time TBD";
-    if (timeStr.includes(" ") || timeStr.toLowerCase().includes("am") || timeStr.toLowerCase().includes("pm")) {
-      return timeStr.trim();
-    }
-    const [hour, minute] = timeStr.split(":").map(Number);
-    if (isNaN(hour)) return timeStr;
-    const period = hour >= 12 ? "PM" : "AM";
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${(minute || 0).toString().padStart(2, "0")} ${period}`;
-  }, []);
-
-  // Get price info
-  const { price, isFree } = getLowestPriceFromTiers(event);
-  const soldOut = isEventSoldOut(event);
-  const availableTickets = getAvailableTickets(event);
+  const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
+  const soldOut = isEventSoldOut(event.ticketTiers);
+  const availableTickets = getAvailableTickets(event.ticketTiers);
   const isLowStock = availableTickets > 0 && availableTickets <= 10;
   const isUnlimited = availableTickets >= 9999;
   
-  // Debug logging
-  console.log(`Event Card: ${event.title}`, {
-    ticketTiers: event.ticketTiers,
-    soldOut,
-    availableTickets,
-    price,
-    isFree
-  });
-
-  const handleCardClick = () => {
-    goToEvent(event);
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleClick = useCallback(() => {
+    onEventClick(event);
+  }, [event, onEventClick]);
+  
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      goToEvent(event);
+      onEventClick(event);
     }
-  };
+  }, [event, onEventClick]);
+  
+  const handleImageError = useCallback(() => {
+    setImageError(true);
+  }, []);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      onClick={handleCardClick}
-      onKeyDown={handleKeyPress}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
       tabIndex={0}
       role="button"
-      aria-label={`View details for ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
-      className={`bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all cursor-pointer border overflow-hidden group flex flex-col h-full focus:outline-none focus:ring-4 focus:ring-purple-300 ${soldOut ? 'opacity-90 border-gray-200' : 'border-purple-100'}`}
+      aria-label={`View details for ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+      className={`bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all cursor-pointer border overflow-hidden group flex flex-col h-full focus:outline-none focus:ring-4 focus:ring-purple-300 ${
+        soldOut ? 'opacity-90 border-gray-200' : 'border-purple-100'
+      }`}
     >
       <div className="relative">
         {imageError ? (
           <div className="w-full h-64 bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
-            <Calendar size={48} className="text-purple-300" />
+            <Calendar size={48} className="text-purple-300" aria-hidden="true" />
           </div>
         ) : (
           <>
             <img 
-              src={event.image} 
+              src={event.image || PLACEHOLDER_IMAGE} 
               alt={event.title} 
               className="w-full h-64 object-cover group-hover:scale-110 transition-transform duration-700"
-              onError={() => setImageError(true)}
+              onError={handleImageError}
               loading="lazy"
+              width={400}
+              height={256}
             />
             {soldOut && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -335,6 +446,7 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
             )}
           </>
         )}
+        
         <div className="absolute top-4 left-4 flex flex-col gap-2">
           {event.isNew && <Badge type="new" />}
           {event.sponsored && <Badge type="sponsored" />}
@@ -342,7 +454,6 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
           {event.trending && <Badge type="trending" />}
         </div>
         
-        {/* Stock Indicators */}
         {!soldOut && isLowStock && (
           <div className="absolute top-4 right-4">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-red-600">
@@ -361,18 +472,18 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
       </div>
 
       <div className="p-6 flex flex-col flex-grow">
-        <h3 className="text-2xl font-black text-gray-900 group-hover:text-purple-600 transition line-clamp-2">
+        <h3 className="text-2xl font-black text-gray-900 group-hover:text-purple-600 transition-colors line-clamp-2">
           {event.title}
         </h3>
 
         <div className="mt-4 space-y-3 text-gray-700">
           <div className="flex items-center gap-3">
             <Calendar size={20} className="text-purple-600 flex-shrink-0" aria-hidden="true" />
-            <span className="font-semibold">{formatDate(event.date)}</span>
+            <span className="font-semibold">{formatEventDateShort(event.date)}</span>
           </div>
           <div className="flex items-center gap-3">
             <Clock size={20} className="text-purple-600 flex-shrink-0" aria-hidden="true" />
-            <span>{formatTime(event.time)}</span>
+            <span>{formatEventTime(event.date, event.time)}</span>
           </div>
           <div className="flex items-center gap-3">
             <MapPin size={20} className="text-purple-600 flex-shrink-0" aria-hidden="true" />
@@ -388,11 +499,11 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:scale-105' 
                 : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
           }`}
-          aria-label={`${soldOut ? 'Sold Out' : 'Get tickets for'} ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
+          aria-label={`${soldOut ? 'Sold Out' : 'Get tickets for'} ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
           disabled={soldOut}
         >
           <Ticket size={24} aria-hidden="true" />
-          {soldOut ? 'SOLD OUT' : `Get Ticket • ${isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
+          {soldOut ? 'SOLD OUT' : `Get Ticket • ${isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
         </button>
       </div>
     </motion.div>
@@ -401,42 +512,42 @@ const EventCard: React.FC<EventCardProps> = React.memo(({ event, goToEvent }) =>
 
 EventCard.displayName = 'EventCard';
 
-// ---------------- Loading Skeleton ----------------
-const EventCardSkeleton: React.FC = () => (
-  <div className="bg-white rounded-3xl shadow-xl border border-purple-100 overflow-hidden animate-pulse">
-    <div className="w-full h-64 bg-gray-200" />
-    <div className="p-6 space-y-4">
-      <div className="h-6 bg-gray-200 rounded w-3/4" />
-      <div className="space-y-3">
-        <div className="h-4 bg-gray-200 rounded w-1/2" />
-        <div className="h-4 bg-gray-200 rounded w-2/3" />
-        <div className="h-4 bg-gray-200 rounded w-3/4" />
-      </div>
-      <div className="h-12 bg-gray-200 rounded-2xl mt-8" />
-    </div>
-  </div>
-);
-
-// ---------------- Main Component ----------------
+// --- Main Events Page Component ---
 export default function EventsPage() {
   const [viewMode, setViewMode] = useState<"map" | "list">("list");
   const [selectedCategory, setSelectedCategory] = useState<"All" | number>("All");
-  const [userLocation, setUserLocation] = useState<[number, number]>([6.5244, 3.3792]);
+  const [userLocation, setUserLocation] = useState<[number, number]>(DEFAULT_LOCATION);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [events, setEvents] = useState<Event[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapZoom, setMapZoom] = useState(11);
+  
   const navigate = useNavigate();
-// Fetch events + ticket tiers relation
-useEffect(() => {
-  const fetchEvents = async () => {
-    setIsLoading(true);
-    setError(null);
 
+  // --- Memoized Values ---
+  const featuredEvents = useMemo(() => 
+    events.filter((e) => e.featured), [events]
+  );
+
+  const filteredEvents = useMemo(() => 
+    selectedCategory === "All" 
+      ? events 
+      : events.filter((e) => e.category_id === selectedCategory), 
+    [events, selectedCategory]
+  );
+
+  const nearYouEvents = useMemo(() => 
+    events.slice(0, 8), [events]
+  );
+
+  // --- Data Fetching ---
+  const fetchEvents = useCallback(async () => {
     try {
-      // Try with explicit foreign key relationship (based on the error hint)
+      setIsLoading(true);
+      setError(null);
+
       const { data, error: fetchError } = await supabase
         .from("events")
         .select(`
@@ -466,212 +577,65 @@ useEffect(() => {
         `)
         .eq("status", "published")
         .order("date", { ascending: true })
-        .limit(50);
+        .limit(EVENTS_PER_PAGE);
 
-      if (fetchError) {
-        // If the first foreign key doesn't work, try the second one from the hint
-        const { data: retryData, error: retryError } = await supabase
-          .from("events")
-          .select(`
-            id,
-            title,
-            description,
-            category_id,
-            date,
-            time,
-            venue,
-            location,
-            image,
-            featured,
-            trending,
-            isnew,
-            sponsored,
-            slug,
-            lat,
-            lng,
-            ticketTiers!tickettiers_event_id_fkey (
-              tier_name,
-              price,
-              description,
-              quantity_total,
-              quantity_sold
-            )
-          `)
-          .eq("status", "published")
-          .order("date", { ascending: true })
-          .limit(50);
-        
-        if (retryError) throw retryError;
-        
-        // Process the data from retry
-        console.log("Fetched events with fallback foreign key:", retryData);
-        
-        const parsed = (retryData || []).map((raw: any) => {
-          const tiers = (raw.ticketTiers || []).map((t: any) => ({
-            name: t.tier_name || "General Admission",
-            price: t.price ?? 0,
-            description: t.description,
-            quantity_sold: t.quantity_sold ?? 0,
-            quantity_available: t.quantity_total ?? null,
-          }));
+      if (fetchError) throw fetchError;
 
-          return {
-            id: raw.id,
-            title: raw.title || "Untitled Event",
-            description: raw.description,
-            category_id: raw.category_id ?? 0,
-            date: raw.date,
-            time: raw.time || "",
-            venue: raw.venue || "",
-            location: raw.location || raw.venue || "Location TBD",
-            image: raw.image || "https://via.placeholder.com/400x300?text=Event",
-            ticketTiers: tiers,
-            featured: raw.featured ?? false,
-            trending: raw.trending ?? false,
-            isNew: raw.isnew ?? false,
-            sponsored: raw.sponsored ?? false,
-            coordinates: raw.lat && raw.lng
-              ? { lat: Number(raw.lat), lng: Number(raw.lng) }
-              : undefined,
-            slug: raw.slug,
-          };
-        });
+      const parsedEvents = (data || []).map((item: any) => ({
+        id: item.id,
+        title: item.title || "Untitled Event",
+        description: item.description,
+        category_id: item.category_id ?? 0,
+        date: item.date,
+        time: item.time || "",
+        venue: item.venue || "",
+        location: item.location || item.venue || "Location TBD",
+        image: item.image || PLACEHOLDER_IMAGE,
+        ticketTiers: (item.ticketTiers || []).map((tier: any) => ({
+          name: tier.tier_name || "General Admission",
+          price: tier.price ?? 0,
+          description: tier.description,
+          quantity_sold: tier.quantity_sold ?? 0,
+          quantity_available: tier.quantity_total ?? null,
+        })),
+        featured: item.featured ?? false,
+        trending: item.trending ?? false,
+        isNew: item.isnew ?? false,
+        sponsored: item.sponsored ?? false,
+        coordinates: item.lat && item.lng
+          ? { lat: Number(item.lat), lng: Number(item.lng) }
+          : undefined,
+        slug: item.slug,
+      }));
 
-        setEvents(parsed);
-        return;
-      }
-
-      console.log("Fetched events (with tiers):", data);
-
-      const parsed = (data || []).map((raw: any) => {
-        const tiers = (raw.ticketTiers || []).map((t: any) => ({
-          name: t.tier_name || "General Admission",
-          price: t.price ?? 0,
-          description: t.description,
-          quantity_sold: t.quantity_sold ?? 0,
-          quantity_available: t.quantity_total ?? null,
-        }));
-
-        return {
-          id: raw.id,
-          title: raw.title || "Untitled Event",
-          description: raw.description,
-          category_id: raw.category_id ?? 0,
-          date: raw.date,
-          time: raw.time || "",
-          venue: raw.venue || "",
-          location: raw.location || raw.venue || "Location TBD",
-          image: raw.image || "https://via.placeholder.com/400x300?text=Event",
-          ticketTiers: tiers,
-          featured: raw.featured ?? false,
-          trending: raw.trending ?? false,
-          isNew: raw.isnew ?? false,
-          sponsored: raw.sponsored ?? false,
-          coordinates: raw.lat && raw.lng
-            ? { lat: Number(raw.lat), lng: Number(raw.lng) }
-            : undefined,
-          slug: raw.slug,
-        };
-      });
-
-      setEvents(parsed);
+      setEvents(parsedEvents);
     } catch (err: any) {
       console.error("Events fetch failed:", err);
-      
-      // Fallback to separate queries if both foreign keys fail
-      try {
-        console.log("Trying fallback method with separate queries...");
-        
-        // Fetch events first
-        const { data: eventsData, error: eventsError } = await supabase
-          .from("events")
-          .select("id, title, description, category_id, date, time, venue, location, image, featured, trending, isnew, sponsored, slug, lat, lng, status")
-          .eq("status", "published")
-          .order("date", { ascending: true })
-          .limit(50);
-
-        if (eventsError) throw eventsError;
-
-        // Fetch all active ticket tiers
-        const eventIds = eventsData.map((e: any) => e.id);
-        const { data: ticketTiersData, error: tiersError } = await supabase
-          .from("ticketTiers")
-          .select("*")
-          .in("event_id", eventIds)
-          .eq("is_active", true);
-
-        if (tiersError) throw tiersError;
-
-        // Group ticket tiers by event_id
-        const tiersByEventId: Record<string, any[]> = {};
-        (ticketTiersData || []).forEach((tier: any) => {
-          if (!tiersByEventId[tier.event_id]) {
-            tiersByEventId[tier.event_id] = [];
-          }
-          tiersByEventId[tier.event_id].push(tier);
-        });
-
-        // Combine the data
-        const parsed = eventsData.map((event: any) => {
-          const eventTiers = tiersByEventId[event.id] || [];
-          
-          const tiers = eventTiers.map((t: any) => ({
-            name: t.tier_name || "General Admission",
-            price: t.price ?? 0,
-            description: t.description,
-            quantity_sold: t.quantity_sold ?? 0,
-            quantity_available: t.quantity_total ?? null,
-          }));
-
-          return {
-            id: event.id,
-            title: event.title || "Untitled Event",
-            description: event.description,
-            category_id: event.category_id ?? 0,
-            date: event.date,
-            time: event.time || "",
-            venue: event.venue || "",
-            location: event.location || event.venue || "Location TBD",
-            image: event.image || "https://via.placeholder.com/400x300?text=Event",
-            ticketTiers: tiers,
-            featured: event.featured ?? false,
-            trending: event.trending ?? false,
-            isNew: event.isnew ?? false,
-            sponsored: event.sponsored ?? false,
-            coordinates: event.lat && event.lng
-              ? { lat: Number(event.lat), lng: Number(event.lng) }
-              : undefined,
-            slug: event.slug,
-          };
-        });
-
-        setEvents(parsed);
-        console.log("Successfully loaded events via fallback method");
-      } catch (fallbackErr: any) {
-        console.error("Fallback method also failed:", fallbackErr);
-        setError("Failed to load events. Please try again later.");
-      }
+      setError("Failed to load events. Please try again later.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  fetchEvents();
-}, []);
-  // Fetch categories (unchanged)
-  useEffect(() => {
-    const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
+    try {
       const { data } = await supabase
         .from("categories")
         .select("id, name, gradient")
         .order("name");
-
+      
       if (data) setCategories(data);
-    };
-    fetchCategories();
+    } catch (err) {
+      console.error("Categories fetch failed:", err);
+    }
   }, []);
 
-  // Geolocation (unchanged)
+  useEffect(() => {
+    fetchEvents();
+    fetchCategories();
+  }, [fetchEvents, fetchCategories]);
+
+  // --- Geolocation ---
   useEffect(() => {
     if (viewMode !== "map" || !navigator.geolocation) return;
 
@@ -684,54 +648,38 @@ useEffect(() => {
     );
   }, [viewMode]);
 
-  // ---------------- Carousel Autoplay ----------------
+  // --- Carousel Autoplay ---
   useEffect(() => {
-    const featuredEvents = events.filter((e) => e.featured);
     if (featuredEvents.length <= 1) return;
 
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % featuredEvents.length);
-    }, 5000);
+    }, CAROUSEL_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [events.length]);
+  }, [featuredEvents]);
 
-  // ---------------- Memoized Values ----------------
-  const featuredEvents = useMemo(() => 
-    events.filter((e) => e.featured), [events]
-  );
-
-  const filteredEvents = useMemo(() => 
-    selectedCategory === "All" 
-      ? events 
-      : events.filter((e) => e.category_id === selectedCategory), 
-    [events, selectedCategory]
-  );
-
-  const nearYouEvents = useMemo(() => 
-    events.slice(0, 8), [events]
-  );
-
-  // ---------------- Handlers ----------------
-  const goToEvent = useCallback((event: Event) => {
-    const path = event.slug 
-      ? `/event/${event.slug}` 
-      : `/event/${event.id}`;
+  // --- Event Handlers ---
+  const handleEventClick = useCallback((event: Event) => {
+    const path = event.slug ? `/event/${event.slug}` : `/event/${event.id}`;
     navigate(path);
   }, [navigate]);
 
   const handleCategorySelect = useCallback((category: "All" | number) => {
     setSelectedCategory(category);
-    document.getElementById("events-section")?.scrollIntoView({ behavior: "smooth" });
+    const eventsSection = document.getElementById("events-section");
+    if (eventsSection) {
+      eventsSection.scrollIntoView({ behavior: "smooth" });
+    }
   }, []);
 
   const handlePrevSlide = useCallback(() => {
     setCurrentSlide(prev => (prev - 1 + featuredEvents.length) % featuredEvents.length);
-  }, [featuredEvents.length]);
+  }, [featuredEvents]);
 
   const handleNextSlide = useCallback(() => {
     setCurrentSlide(prev => (prev + 1) % featuredEvents.length);
-  }, [featuredEvents.length]);
+  }, [featuredEvents]);
 
   const handleMapZoomIn = useCallback(() => {
     setMapZoom(prev => Math.min(prev + 2, 18));
@@ -741,16 +689,22 @@ useEffect(() => {
     setMapZoom(prev => Math.max(prev - 2, 1));
   }, []);
 
-  // ---------------- Loading State ----------------
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setIsLoading(true);
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // --- Loading State ---
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex flex-col items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="text-center space-y-6"
         >
-          <Loader2 className="w-16 h-16 text-purple-600 animate-spin mx-auto" />
+          <Loader2 className="w-16 h-16 text-purple-600 animate-spin mx-auto" aria-hidden="true" />
           <h2 className="text-3xl font-bold text-gray-800">Loading Events...</h2>
           <p className="text-gray-600">Discovering amazing experiences for you</p>
         </motion.div>
@@ -758,7 +712,7 @@ useEffect(() => {
     );
   }
 
-  // ---------------- Error State ----------------
+  // --- Error State ---
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex flex-col items-center justify-center p-8">
@@ -767,12 +721,13 @@ useEffect(() => {
           animate={{ scale: 1, opacity: 1 }}
           className="max-w-md text-center space-y-6"
         >
-          <AlertCircle className="w-20 h-20 text-red-500 mx-auto" />
+          <AlertCircle className="w-20 h-20 text-red-500 mx-auto" aria-hidden="true" />
           <h2 className="text-3xl font-bold text-gray-800">Oops! Something went wrong</h2>
           <p className="text-gray-600">{error}</p>
           <button
-            onClick={() => window.location.reload()}
-            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-8 rounded-2xl hover:shadow-xl transition-all"
+            onClick={handleRetry}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-8 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-600"
+            aria-label="Try loading events again"
           >
             Try Again
           </button>
@@ -781,6 +736,7 @@ useEffect(() => {
     );
   }
 
+  // --- Main Render ---
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -806,10 +762,11 @@ useEffect(() => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="mb-12"
+              aria-label="Featured events carousel"
             >
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <Flame className="w-10 h-10 text-red-600 animate-pulse" />
+                  <Flame className="w-10 h-10 text-red-600" aria-hidden="true" />
                   <h2 className="text-3xl sm:text-4xl font-black">Hot & Featured</h2>
                 </div>
                 <div className="text-sm text-gray-600">
@@ -823,17 +780,17 @@ useEffect(() => {
                   <>
                     <button
                       onClick={handlePrevSlide}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 z-10 bg-white/80 hover:bg-white p-3 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"
+                      className="absolute left-4 top-1/2 -translate-y-1/2 z-10 bg-white/80 hover:bg-white p-3 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-purple-600"
                       aria-label="Previous slide"
                     >
-                      <ChevronLeft size={24} />
+                      <ChevronLeft size={24} aria-hidden="true" />
                     </button>
                     <button
                       onClick={handleNextSlide}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 z-10 bg-white/80 hover:bg-white p-3 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 z-10 bg-white/80 hover:bg-white p-3 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-purple-600"
                       aria-label="Next slide"
                     >
-                      <ChevronRight size={24} />
+                      <ChevronRight size={24} aria-hidden="true" />
                     </button>
                   </>
                 )}
@@ -842,27 +799,29 @@ useEffect(() => {
                 <div 
                   className="flex transition-transform duration-700 ease-out"
                   style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+                  aria-live="polite"
+                  aria-atomic="true"
                 >
-                  {featuredEvents.map((event) => {
-                    const { price, isFree } = getLowestPriceFromTiers(event);
-                    const soldOut = isEventSoldOut(event);
-                    const availableTickets = getAvailableTickets(event);
+                  {featuredEvents.map((event, index) => {
+                    const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
+                    const soldOut = isEventSoldOut(event.ticketTiers);
+                    const availableTickets = getAvailableTickets(event.ticketTiers);
                     
                     return (
                       <div key={event.id} className="w-full flex-shrink-0">
                         <button
-                          onClick={() => goToEvent(event)}
-                          className="w-full text-left"
-                          aria-label={`View featured event: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString()}`}`}
+                          onClick={() => handleEventClick(event)}
+                          className="w-full text-left focus:outline-none focus:ring-4 focus:ring-purple-300 rounded-3xl"
+                          aria-label={`Featured event ${index + 1}: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
                         >
                           <div className="relative h-96 md:h-[560px] bg-black rounded-3xl overflow-hidden group/carousel">
                             <img 
-                              src={event.image} 
+                              src={event.image || PLACEHOLDER_IMAGE} 
                               alt={event.title}
                               className="w-full h-full object-cover opacity-70 group-hover/carousel:opacity-90 transition-opacity duration-500"
-                              onError={(e) => {
-                                e.currentTarget.src = "https://via.placeholder.com/1200x560?text=Event+Image";
-                              }}
+                              loading="lazy"
+                              width={1200}
+                              height={560}
                             />
                             {soldOut && (
                               <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
@@ -885,17 +844,12 @@ useEffect(() => {
                               <p className="text-2xl mt-3 flex items-center gap-3">
                                 <Calendar size={28} aria-hidden="true" />
                                 <span className="font-bold">
-                                  {new Date(event.date).toLocaleDateString("en-GB", { 
-                                    weekday: "long", 
-                                    day: "2-digit", 
-                                    month: "long",
-                                    year: "numeric" 
-                                  })}
+                                  {formatEventDateTime(event.date, event.time)}
                                 </span>
                               </p>
                               <div className="flex items-center justify-between mt-6">
                                 <p className={`text-3xl font-bold ${soldOut ? 'text-red-400' : isFree ? 'text-emerald-400' : 'text-purple-400'}`}>
-                                  {soldOut ? 'SOLD OUT' : isFree ? 'Free' : `₦${price.toLocaleString()}`}
+                                  {soldOut ? 'SOLD OUT' : isFree ? 'Free' : formatPriceDisplay(price, isFree)}
                                 </p>
                                 <span className="text-white/80 text-lg">
                                   {event.location}
@@ -918,7 +872,7 @@ useEffect(() => {
 
                 {/* Carousel Indicators */}
                 {featuredEvents.length > 1 && (
-                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3">
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3" role="tablist" aria-label="Featured events slides">
                     {featuredEvents.map((_, i) => (
                       <button
                         key={i}
@@ -928,7 +882,9 @@ useEffect(() => {
                             ? "bg-white w-12 scale-110" 
                             : "bg-white/50 hover:bg-white/80"
                         }`}
+                        role="tab"
                         aria-label={`Go to slide ${i + 1}`}
+                        aria-selected={currentSlide === i}
                       />
                     ))}
                   </div>
@@ -938,20 +894,15 @@ useEffect(() => {
           )}
         </AnimatePresence>
 
-        {/* AD: After Featured Carousel */}
-        <div className="max-w-7xl mx-auto px-5 my-12">
-          <AdsenseAd slot="1111111111" style={{ minHeight: "120px" }} />
-        </div>
-
         {/* Near You Section */}
-        <section className="mb-16">
+        <section className="mb-16" aria-label="Events near your location">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
-              <Navigation className="w-10 h-10 text-purple-600" />
+              <Navigation className="w-10 h-10 text-purple-600" aria-hidden="true" />
               <h2 className="text-3xl sm:text-4xl font-black">Near You</h2>
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Filter size={16} />
+              <Filter size={16} aria-hidden="true" />
               <span>Based on your location</span>
             </div>
           </div>
@@ -964,16 +915,21 @@ useEffect(() => {
               transition={{ staggerChildren: 0.1 }}
             >
               {nearYouEvents.map((event) => (
-                <EventCard key={event.id} event={event} goToEvent={goToEvent} />
+                <EventCard 
+                  key={event.id} 
+                  event={event} 
+                  onEventClick={handleEventClick} 
+                />
               ))}
             </motion.div>
           ) : (
             <div className="text-center py-12">
-              <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" aria-hidden="true" />
               <p className="text-gray-600 text-xl">No events found near your location</p>
               <button
                 onClick={() => setViewMode("map")}
-                className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-2xl hover:shadow-xl transition-all"
+                className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                aria-label="Explore all events on map"
               >
                 Explore All Events on Map
               </button>
@@ -981,16 +937,13 @@ useEffect(() => {
           )}
         </section>
 
-        {/* AD: After Near You Section */}
-        <div className="max-w-7xl mx-auto px-5 my-12">
-          <AdsenseAd slot="2222222222" style={{ minHeight: "120px" }} />
-        </div>
-
         {/* View Mode Toggle */}
         <motion.div 
           className="flex justify-center gap-6 mb-10"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
+          role="radiogroup"
+          aria-label="View mode selection"
         >
           <button
             onClick={() => setViewMode("map")}
@@ -999,9 +952,11 @@ useEffect(() => {
                 ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
                 : "bg-white text-gray-800 hover:shadow-2xl"
             }`}
-            aria-pressed={viewMode === "map"}
+            role="radio"
+            aria-checked={viewMode === "map"}
+            aria-label="Map view"
           >
-            <MapPinned size={24} /> Map View
+            <MapPinned size={24} aria-hidden="true" /> Map View
           </button>
           <button
             onClick={() => setViewMode("list")}
@@ -1010,9 +965,11 @@ useEffect(() => {
                 ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
                 : "bg-white text-gray-800 hover:shadow-2xl"
             }`}
-            aria-pressed={viewMode === "list"}
+            role="radio"
+            aria-checked={viewMode === "list"}
+            aria-label="List view"
           >
-            <List size={24} /> List View
+            <List size={24} aria-hidden="true" /> List View
           </button>
         </motion.div>
 
@@ -1023,19 +980,20 @@ useEffect(() => {
             animate={{ opacity: 1, scale: 1 }}
             className="h-[70vh] rounded-3xl overflow-hidden shadow-2xl mb-16 relative"
             id="map-section"
+            aria-label="Map showing event locations"
           >
             {/* Map Controls */}
             <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
               <button
                 onClick={handleMapZoomIn}
-                className="bg-white p-3 rounded-full shadow-lg hover:shadow-xl transition"
+                className="bg-white p-3 rounded-full shadow-lg hover:shadow-xl transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-purple-600"
                 aria-label="Zoom in"
               >
                 <span className="text-xl font-bold">+</span>
               </button>
               <button
                 onClick={handleMapZoomOut}
-                className="bg-white p-3 rounded-full shadow-lg hover:shadow-xl transition"
+                className="bg-white p-3 rounded-full shadow-lg hover:shadow-xl transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-purple-600"
                 aria-label="Zoom out"
               >
                 <span className="text-xl font-bold">−</span>
@@ -1048,6 +1006,7 @@ useEffect(() => {
               style={{ height: "100%", width: "100%" }}
               scrollWheelZoom={true}
               className="rounded-3xl"
+              aria-label="Interactive map showing event locations"
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -1060,9 +1019,9 @@ useEffect(() => {
               {events
                 .filter(event => event.coordinates)
                 .map((event) => {
-                  const { price, isFree } = getLowestPriceFromTiers(event);
-                  const soldOut = isEventSoldOut(event);
-                  const availableTickets = getAvailableTickets(event);
+                  const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
+                  const soldOut = isEventSoldOut(event.ticketTiers);
+                  const availableTickets = getAvailableTickets(event.ticketTiers);
                   const isLowStock = availableTickets > 0 && availableTickets <= 10;
                   
                   return (
@@ -1070,18 +1029,19 @@ useEffect(() => {
                       key={event.id}
                       position={[event.coordinates!.lat, event.coordinates!.lng]}
                       eventHandlers={{
-                        click: () => goToEvent(event),
+                        click: () => handleEventClick(event),
                       }}
+                      aria-label={`Event: ${event.title} at ${event.location}`}
                     >
                       <Popup>
                         <div className="p-2 max-w-xs">
                           <img 
-                            src={event.image} 
+                            src={event.image || PLACEHOLDER_IMAGE} 
                             alt={event.title}
                             className="w-full h-32 object-cover rounded-lg mb-2"
-                            onError={(e) => {
-                              e.currentTarget.src = "https://via.placeholder.com/300x200?text=Event";
-                            }}
+                            loading="lazy"
+                            width={300}
+                            height={128}
                           />
                           <h4 className="font-bold text-lg text-purple-700">{event.title}</h4>
                           {soldOut && (
@@ -1095,19 +1055,19 @@ useEffect(() => {
                             </div>
                           )}
                           <p className="text-sm text-gray-600 mt-1">
-                            <Calendar size={12} className="inline mr-1" />
-                            {new Date(event.date).toLocaleDateString()}
+                            <Calendar size={12} className="inline mr-1" aria-hidden="true" />
+                            {formatEventDateTime(event.date, event.time)}
                           </p>
                           <p className="text-sm text-gray-600">
-                            <MapPin size={12} className="inline mr-1" />
+                            <MapPin size={12} className="inline mr-1" aria-hidden="true" />
                             {event.location}
                           </p>
                           <div className={`text-sm font-bold mt-2 ${soldOut ? 'text-red-600' : isFree ? 'text-emerald-600' : 'text-purple-600'}`}>
-                            {soldOut ? 'SOLD OUT' : isFree ? 'Free' : `₦${price.toLocaleString()}`}
+                            {soldOut ? 'SOLD OUT' : isFree ? 'Free' : formatPriceDisplay(price, isFree)}
                           </div>
                           <button
-                            onClick={() => goToEvent(event)}
-                            className={`mt-3 w-full py-2 rounded-lg hover:shadow transition text-sm font-bold ${
+                            onClick={() => handleEventClick(event)}
+                            className={`mt-3 w-full py-2 rounded-lg hover:shadow transition text-sm font-bold focus:outline-none focus:ring-2 focus:ring-purple-600 ${
                               soldOut 
                                 ? 'bg-gray-400 text-white cursor-not-allowed' 
                                 : isFree
@@ -1115,6 +1075,7 @@ useEffect(() => {
                                   : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'
                             }`}
                             disabled={soldOut}
+                            aria-label={`View details for ${event.title}`}
                           >
                             {soldOut ? 'Sold Out' : 'View Details'}
                           </button>
@@ -1142,6 +1103,7 @@ useEffect(() => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             id="events-section"
+            aria-label="All events list"
           >
             {/* Category Filter */}
             <div className="mb-12">
@@ -1153,7 +1115,7 @@ useEffect(() => {
               </div>
               
               <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-purple-300 scrollbar-track-transparent pb-4">
-                <div className="flex gap-4 min-w-max">
+                <div className="flex gap-4 min-w-max" role="tablist" aria-label="Event categories">
                   <button
                     onClick={() => handleCategorySelect("All")}
                     className={`px-8 py-4 rounded-2xl font-bold shadow-lg transition-all whitespace-nowrap focus:outline-none focus:ring-4 focus:ring-purple-300 ${
@@ -1161,7 +1123,9 @@ useEffect(() => {
                         ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-xl"
                         : "bg-white text-gray-800 border hover:shadow-xl"
                     }`}
-                    aria-pressed={selectedCategory === "All"}
+                    role="tab"
+                    aria-selected={selectedCategory === "All"}
+                    aria-label="All categories"
                   >
                     All Events ({events.length})
                   </button>
@@ -1176,7 +1140,9 @@ useEffect(() => {
                             ? `bg-gradient-to-r ${cat.gradient} text-white shadow-xl`
                             : "bg-white text-gray-800 border hover:shadow-xl"
                         }`}
-                        aria-pressed={selectedCategory === cat.id}
+                        role="tab"
+                        aria-selected={selectedCategory === cat.id}
+                        aria-label={`${cat.name} events (${count} available)`}
                       >
                         {cat.name} ({count})
                       </button>
@@ -1202,7 +1168,7 @@ useEffect(() => {
                   className="text-center py-20"
                 >
                   <div className="w-24 h-24 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Calendar className="w-12 h-12 text-purple-400" />
+                    <Calendar className="w-12 h-12 text-purple-400" aria-hidden="true" />
                   </div>
                   <h3 className="text-2xl font-bold text-gray-800 mb-3">
                     No events found
@@ -1215,7 +1181,8 @@ useEffect(() => {
                   {selectedCategory !== "All" && (
                     <button
                       onClick={() => setSelectedCategory("All")}
-                      className="mt-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-8 rounded-2xl hover:shadow-xl transition-all"
+                      className="mt-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-8 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      aria-label="View all events"
                     >
                       View All Events
                     </button>
@@ -1228,22 +1195,24 @@ useEffect(() => {
                 >
                   <AnimatePresence>
                     {filteredEvents.map((event) => (
-                      <EventCard key={event.id} event={event} goToEvent={goToEvent} />
+                      <EventCard 
+                        key={event.id} 
+                        event={event} 
+                        onEventClick={handleEventClick} 
+                      />
                     ))}
                   </AnimatePresence>
                 </motion.div>
               )}
             </div>
 
-            {/* Load More (if needed) */}
+            {/* Load More */}
             {filteredEvents.length > 0 && filteredEvents.length < events.length && (
               <div className="text-center mt-12">
                 <button
-                  className="bg-white border-2 border-purple-600 text-purple-600 font-bold py-4 px-12 rounded-2xl hover:bg-purple-50 hover:shadow-xl transition-all"
-                  onClick={() => {
-                    // Implement load more logic here
-                    console.log("Load more events");
-                  }}
+                  className="bg-white border-2 border-purple-600 text-purple-600 font-bold py-4 px-12 rounded-2xl hover:bg-purple-50 hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-300"
+                  onClick={() => console.log("Load more events")}
+                  aria-label="Load more events"
                 >
                   Load More Events
                 </button>
@@ -1251,11 +1220,6 @@ useEffect(() => {
             )}
           </motion.section>
         )}
-
-        {/* Footer AD */}
-        <div className="max-w-7xl mx-auto px-5 mt-16">
-          <AdsenseAd slot="3333333333" style={{ minHeight: "120px" }} />
-        </div>
       </div>
     </div>
   );

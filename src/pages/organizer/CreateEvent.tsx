@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabaseClient";
 import {
   Upload, X, Plus, CheckCircle, AlertCircle,
   Calendar, MapPin, Image as ImageIcon, Menu,
-  Tag, Globe, DollarSign, Users
+  Tag, Globe, DollarSign, Users, Map, Navigation
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -56,6 +56,37 @@ async function generateUniqueSlug(title: string): Promise<string> {
   return `${slug}-${random}`;
 }
 
+// Geocoding function to get coordinates from address
+async function geocodeAddress(address: string): Promise<{ lat: number | null; lng: number | null }> {
+  if (!address.trim()) return { lat: null, lng: null };
+
+  try {
+    // Using OpenStreetMap Nominatim API (free, no API key required)
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
+    );
+    
+    if (!response.ok) {
+      console.warn("Geocoding API error:", response.status);
+      return { lat: null, lng: null };
+    }
+    
+    const data = await response.json();
+    
+    if (data && data.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon)
+      };
+    }
+    
+    return { lat: null, lng: null };
+  } catch (error) {
+    console.warn("Geocoding failed:", error);
+    return { lat: null, lng: null };
+  }
+}
+
 export default function CreateEvent() {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -92,6 +123,12 @@ export default function CreateEvent() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
 
+  // Latitude and Longitude fields
+  const [latitude, setLatitude] = useState<string>("");
+  const [longitude, setLongitude] = useState<string>("");
+  const [geocoding, setGeocoding] = useState(false);
+  const [manualCoordinates, setManualCoordinates] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -122,6 +159,17 @@ export default function CreateEvent() {
     }
     setBannerPreview(null);
   }, [bannerFile]);
+
+  // Geocode address when address changes
+  useEffect(() => {
+    if (address.trim() && !manualCoordinates) {
+      const timeoutId = setTimeout(async () => {
+        await geocodeAddressOnBlur();
+      }, 1000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [address, manualCoordinates]);
 
   const handleBannerChange = (file: File) => {
     if (file?.type.startsWith("image/")) {
@@ -176,6 +224,67 @@ export default function CreateEvent() {
     setTags(prev => prev.filter(tag => tag !== tagToRemove));
   };
 
+  // Geocode address function
+  const geocodeAddressOnBlur = async () => {
+    if (!address.trim() || manualCoordinates) return;
+    
+    setGeocoding(true);
+    try {
+      const { lat, lng } = await geocodeAddress(address);
+      
+      if (lat !== null && lng !== null) {
+        setLatitude(lat.toString());
+        setLongitude(lng.toString());
+      } else {
+        // Try with venue + city + country if address alone fails
+        const fullAddress = `${venue}, ${city}, ${state}, ${country}`.trim();
+        if (fullAddress !== ', , , ' && fullAddress !== address) {
+          const { lat: lat2, lng: lng2 } = await geocodeAddress(fullAddress);
+          if (lat2 !== null && lng2 !== null) {
+            setLatitude(lat2.toString());
+            setLongitude(lng2.toString());
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Geocoding error:", err);
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  // Manual coordinate toggle
+  const toggleManualCoordinates = () => {
+    setManualCoordinates(!manualCoordinates);
+    if (!manualCoordinates) {
+      // When enabling manual mode, clear auto-generated coordinates
+      setLatitude("");
+      setLongitude("");
+    }
+  };
+
+  // Get current location
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser");
+      return;
+    }
+
+    setGeocoding(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLatitude(position.coords.latitude.toString());
+        setLongitude(position.coords.longitude.toString());
+        setManualCoordinates(true);
+        setGeocoding(false);
+      },
+      (err) => {
+        setError(`Unable to get location: ${err.message}`);
+        setGeocoding(false);
+      }
+    );
+  };
+
   const handleCreateEvent = async () => {
     setError("");
     setSuccess(false);
@@ -191,6 +300,30 @@ export default function CreateEvent() {
     if (invalidTier) {
       setError("All ticket tiers must have a name and quantity");
       return;
+    }
+
+    // Validate coordinates if provided
+    let latNum = null;
+    let lngNum = null;
+    
+    if (latitude.trim() || longitude.trim()) {
+      latNum = parseFloat(latitude);
+      lngNum = parseFloat(longitude);
+      
+      if (isNaN(latNum) || isNaN(lngNum)) {
+        setError("Invalid latitude/longitude values");
+        return;
+      }
+      
+      if (latNum < -90 || latNum > 90) {
+        setError("Latitude must be between -90 and 90");
+        return;
+      }
+      
+      if (lngNum < -180 || lngNum > 180) {
+        setError("Longitude must be between -180 and 180");
+        return;
+      }
     }
 
     setLoading(true);
@@ -253,7 +386,7 @@ export default function CreateEvent() {
         title: title.trim(),
         description: description.trim() || null,
         category_id: categoryId,
-        date: `${date}T${time}:00.000Z`,
+        date: `${date}T${time}:00+01:00`,  // Nigeria is UTC+1
         time: time || "00:00",
         venue: venue.trim(),
         location: venue.trim(),
@@ -270,8 +403,8 @@ export default function CreateEvent() {
         organizer_id: session.user.id,
         slug: uniqueSlug,
         tags: tags.length > 0 ? tags : null,
-        lat: null,
-        lng: null,
+        lat: latNum,
+        lng: lngNum,
         event_type: eventType || "physical",
         virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
         contact_email: contactEmail.trim() || null,
@@ -280,6 +413,7 @@ export default function CreateEvent() {
       };
 
       console.log("📦 Event payload (draft):", JSON.stringify(eventPayload, null, 2));
+      console.log("📍 Coordinates:", { lat: latNum, lng: lngNum });
 
       // Test events table access
       console.log("🔍 Testing events table access...");
@@ -479,46 +613,6 @@ export default function CreateEvent() {
     }
   };
 
-  // Test database connectivity
-  const testDatabase = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert("Please log in first");
-        return;
-      }
-
-      alert("Testing database connectivity...");
-      
-      // Test 1: Check if ticketTiers table exists and is accessible
-      const { data: tiersTest, error: tiersError } = await supabase
-        .from("ticketTiers")
-        .select("id")
-        .limit(1);
-      
-      if (tiersError) {
-        alert(`ticketTiers table error: ${tiersError.message}\n\nThis table must exist for ticket purchases to work.`);
-      } else {
-        alert("✅ ticketTiers table is accessible");
-      }
-      
-      // Test 2: Check if events table is accessible
-      const { data: eventsTest, error: eventsError } = await supabase
-        .from("events")
-        .select("id")
-        .limit(1);
-      
-      if (eventsError) {
-        alert(`Events table error: ${eventsError.message}`);
-      } else {
-        alert("✅ Events table is accessible");
-      }
-      
-    } catch (err: any) {
-      alert(`Database test failed: ${err.message}`);
-    }
-  };
-
   return (
     <div className="flex min-h-screen bg-gray-950">
       {/* Sidebar */}
@@ -554,12 +648,7 @@ export default function CreateEvent() {
                 <p className="text-gray-400">Fill in the details to launch your event</p>
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={testDatabase}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition"
-                >
-                  Test Database
-                </button>
+                
               </div>
             </div>
 
@@ -812,9 +901,78 @@ export default function CreateEvent() {
                       <input
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
+                        onBlur={geocodeAddressOnBlur}
                         placeholder="Plot 1415, Ahmadu Bello Way, Victoria Island"
                         className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500"
                       />
+                      <p className="text-gray-500 text-sm mt-1">
+                        {geocoding ? "Finding coordinates..." : "Address will be used to get coordinates"}
+                      </p>
+                    </div>
+
+                    {/* Coordinates Section */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <label className="text-white font-medium flex items-center gap-2">
+                          <Map size={18} /> Coordinates (Optional)
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={getCurrentLocation}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded-lg text-sm transition"
+                            disabled={geocoding}
+                          >
+                            <Navigation size={14} />
+                            Use My Location
+                          </button>
+                          <label className="flex items-center gap-2 text-sm text-gray-400">
+                            <input
+                              type="checkbox"
+                              checked={manualCoordinates}
+                              onChange={toggleManualCoordinates}
+                              className="w-4 h-4 accent-purple-500"
+                            />
+                            Manual Entry
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-gray-300 text-sm mb-1 block">Latitude</label>
+                          <input
+                            type="number"
+                            value={latitude}
+                            onChange={(e) => setLatitude(e.target.value)}
+                            step="0.000001"
+                            min="-90"
+                            max="90"
+                            placeholder="e.g., 6.5244"
+                            className="w-full px-4 py-3 bg-white/10 border border-white/10 rounded-lg text-white"
+                            disabled={!manualCoordinates}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-gray-300 text-sm mb-1 block">Longitude</label>
+                          <input
+                            type="number"
+                            value={longitude}
+                            onChange={(e) => setLongitude(e.target.value)}
+                            step="0.000001"
+                            min="-180"
+                            max="180"
+                            placeholder="e.g., 3.3792"
+                            className="w-full px-4 py-3 bg-white/10 border border-white/10 rounded-lg text-white"
+                            disabled={!manualCoordinates}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-gray-500 text-sm mt-2">
+                        {manualCoordinates 
+                          ? "Enter coordinates manually (e.g., Lagos: 6.5244, 3.3792)" 
+                          : "Coordinates will be auto-generated from address"}
+                      </p>
                     </div>
 
                     <div>

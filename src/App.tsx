@@ -35,6 +35,7 @@ import AdminUsers from "./pages/admin/Users";
 import AdminEvents from "./pages/admin/Events";
 import AdminTickets from "./pages/admin/Tickets";
 import AdminSettings from "./pages/admin/Settings";
+import OrganizerEventDetails from "./pages/organizer/EventDetails";
 
 function App() {
   return (
@@ -68,11 +69,12 @@ function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<OrganizerDashboard />} />
           <Route path="events" element={<OrganizerMyEvents />} />
+          <Route path="/organizer/my-events" element={<OrganizerMyEvents />} />
           <Route path="create-event" element={<CreateEvent />} />
           <Route path="profile" element={<OrganizerProfile />} />
           <Route path="tickets" element={<OrganizerTickets />} />
           {/* Organizer Event Management Pages */}
-          <Route path="event/:id" element={<EventDetail />} /> {/* Event detail management */}
+          <Route path="/organizer/event/:id" element={<OrganizerEventDetails />} />       
           <Route path="event/:id/edit" element={<EditEvent />} /> {/* Edit event form */}
         </Route>
 
