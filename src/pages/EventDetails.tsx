@@ -614,7 +614,7 @@ const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
 
     // Handle free tickets
     if (totalAmount === 0) {
-const freeRef = `SKT-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+const freeRef = `STH-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
       
       const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
         const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
