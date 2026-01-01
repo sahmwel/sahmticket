@@ -21,6 +21,11 @@ import {
   ChevronLeft,
   ChevronRight,
   LocateFixed,
+  Eye,
+  EyeOff,
+  History,
+  X,
+  Search,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import L from "leaflet";
@@ -61,6 +66,7 @@ interface Event {
   sponsored?: boolean;
   coordinates?: { lat: number; lng: number };
   slug?: string;
+  isPast?: boolean;
 }
 
 interface Category {
@@ -69,49 +75,8 @@ interface Category {
   gradient: string;
 }
 
-// --- Your Date Formatting Functions ---
-const formatDate = (timestamp: string | null) => {
-  if (!timestamp) return "Date not set";
-
-  try {
-    const date = new Date(timestamp);
-    if (isNaN(date.getTime())) return "Invalid date";
-    
-    const datePart = timestamp.split('T')[0];
-    const [year, month, day] = datePart.split('-').map(Number);
-    
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const monthName = monthNames[month - 1];
-    
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const eventDate = new Date(year, month - 1, day);
-    
-    const diffTime = eventDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
-    
-    let hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    const formattedTime = `${hours}:${minutes} ${ampm}`;
-
-    if (diffDays < -1) return `${formattedDate} (Past)`;
-    if (diffDays === -1) return `Yesterday at ${formattedTime}`;
-    if (diffDays === 0) return `Today at ${formattedTime}`;
-    if (diffDays === 1) return `Tomorrow at ${formattedTime}`;
-    if (diffDays <= 7) return `${formattedDate} (in ${diffDays} days)`;
-    
-    return formattedDate;
-  } catch (error) {
-    return "Invalid date";
-  }
-};
-
-const formatDateOnly = (timestamp: string | null) => {
+// --- Date Formatting Functions ---
+const formatDateOnly = (timestamp: string | null): string => {
   if (!timestamp) return "No date";
   try {
     const datePart = timestamp.split('T')[0];
@@ -126,56 +91,49 @@ const formatDateOnly = (timestamp: string | null) => {
   }
 };
 
-// Helper function to combine date and time for formatDate
-const combineDateTime = (dateString: string, timeString: string): string | null => {
-  if (!dateString) return null;
+const formatEventDateShort = (dateString: string): string => {
+  if (!dateString) return "Date TBD";
   
   try {
-    const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const eventDateStr = dateString.split('T')[0];
     
-    let hours = 0, minutes = 0;
-    if (timeString) {
-      const [timeHours, timeMinutes] = timeString.split(':').map(Number);
-      hours = timeHours || 0;
-      minutes = timeMinutes || 0;
+    if (eventDateStr === todayStr) return "Today";
+    
+    const eventDate = new Date(dateString);
+    if (isNaN(eventDate.getTime())) return "Invalid date";
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    
+    if (eventDateStr === tomorrowStr) return "Tomorrow";
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    
+    if (eventDateStr === yesterdayStr) return "Yesterday";
+    
+    // Check if within next 7 days
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays > 0 && diffDays <= 7) {
+      return formatDateOnly(dateString) + ` (in ${diffDays} days)`;
     }
     
-    const date = new Date(year, month - 1, day, hours, minutes);
-    return date.toISOString();
+    if (diffDays < 0) {
+      return formatDateOnly(dateString) + " (Past)";
+    }
+    
+    return formatDateOnly(dateString);
   } catch (error) {
-    console.error("Error combining date and time:", error);
-    return null;
+    return "Date TBD";
   }
 };
 
-// Format date and time together using your formatDate function
-const formatEventDateTime = (dateString: string, timeString: string) => {
-  const combinedDateTime = combineDateTime(dateString, timeString);
-  return formatDate(combinedDateTime);
-};
-
-// Extract just the time part from formatDate output
-const extractTimeFromFormatDate = (formattedDate: string): string => {
-  if (formattedDate.includes(" at ")) {
-    return formattedDate.split(" at ")[1].trim();
-  }
-  return "";
-};
-
-// Format date for event cards (shorter version)
-const formatEventDateShort = (dateString: string): string => {
-  const formatted = formatDate(dateString);
-  // Extract just the date part from your formatDate output
-  if (formatted.includes("(")) {
-    return formatted.split("(")[0].trim();
-  }
-  if (formatted.includes(" at ")) {
-    return formatted.split(" at ")[0].trim();
-  }
-  return formatted;
-};
-
-// Format time for event cards
 const formatEventTime = (dateString: string, timeString?: string): string => {
   if (!dateString) return "Time TBD";
   
@@ -188,21 +146,37 @@ const formatEventTime = (dateString: string, timeString?: string): string => {
       const displayMinutes = minutes ? minutes.toString().padStart(2, '0') : '00';
       return `${displayHours}:${displayMinutes} ${ampm}`;
     } catch {
-      // Fall through to using formatDate
+      // Fall through to extracting from date
     }
   }
   
-  // Use formatDate to get the time
-  const formatted = formatDate(dateString);
-  return extractTimeFromFormatDate(formatted) || "Time TBD";
+  // Extract from date string if it contains time
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Time TBD";
+    
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours}:${minutes} ${ampm}`;
+  } catch {
+    return "Time TBD";
+  }
 };
 
-// --- Leaflet Setup ---
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+const isEventPast = (dateString: string): boolean => {
+  if (!dateString) return false;
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const eventDateStr = dateString.split('T')[0];
+    return eventDateStr < today;
+  } catch {
+    return false;
+  }
+};
 
 // --- Helper Functions ---
 const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
@@ -343,12 +317,13 @@ const LocationMarker: React.FC<{ position: [number, number] }> = ({ position }) 
 };
 
 // --- UI Components ---
-const Badge: React.FC<{ type: "new" | "sponsored" | "featured" | "trending" }> = ({ type }) => {
+const Badge: React.FC<{ type: "new" | "sponsored" | "featured" | "trending" | "past" }> = ({ type }) => {
   const config = {
     new: { icon: Sparkles, color: "from-emerald-500 to-teal-600", text: "New" },
     sponsored: { icon: BadgeCheck, color: "from-blue-500 to-cyan-600", text: "Sponsored" },
     featured: { icon: Star, color: "from-purple-500 to-pink-600", text: "Featured" },
     trending: { icon: Flame, color: "from-orange-500 to-red-600", text: "Trending" },
+    past: { icon: History, color: "from-gray-500 to-gray-700", text: "Past" },
   }[type];
   
   const Icon = config.icon;
@@ -379,6 +354,63 @@ const EventCardSkeleton: React.FC = () => (
   </div>
 );
 
+// --- SearchBar Component ---
+const SearchBar: React.FC<{ 
+  searchTerm: string; 
+  setSearchTerm: (term: string) => void;
+  resultsCount: number;
+  showPast: boolean;
+  setShowPast: (show: boolean) => void;
+}> = ({ searchTerm, setSearchTerm, resultsCount, showPast, setShowPast }) => {
+  const handleClear = useCallback(() => setSearchTerm(""), [setSearchTerm]);
+
+  return (
+    <div className="max-w-2xl mx-auto px-5 mb-12">
+      <div className="relative">
+        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 w-6 h-6" />
+        <input
+          type="text"
+          placeholder="Search events, artists, venues..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="w-full pl-14 pr-10 py-5 rounded-2xl bg-white border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none shadow-lg text-base transition"
+          aria-label="Search events"
+        />
+        {searchTerm && (
+          <button
+            onClick={handleClear}
+            className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label="Clear search"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+      
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+        <p className="text-center text-gray-600">
+          Found {resultsCount} event{resultsCount !== 1 ? 's' : ''}
+          {searchTerm && ` for "${searchTerm}"`}
+        </p>
+        
+        <button
+          onClick={() => setShowPast(!showPast)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105"
+          style={{
+            background: showPast 
+              ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)' 
+              : 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+            color: 'white'
+          }}
+        >
+          {showPast ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          {showPast ? 'Hide Past Events' : 'Show Past Events'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // --- Main Components ---
 const EventCard: React.FC<{ 
   event: Event;
@@ -391,6 +423,7 @@ const EventCard: React.FC<{
   const availableTickets = getAvailableTickets(event.ticketTiers);
   const isLowStock = availableTickets > 0 && availableTickets <= 10;
   const isUnlimited = availableTickets >= 9999;
+  const eventIsPast = isEventPast(event.date);
   
   const handleClick = useCallback(() => {
     onEventClick(event);
@@ -416,8 +449,9 @@ const EventCard: React.FC<{
       onKeyDown={handleKeyDown}
       tabIndex={0}
       role="button"
-      aria-label={`View details for ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+      aria-label={`View details for ${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
       className={`bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all cursor-pointer border overflow-hidden group flex flex-col h-full focus:outline-none focus:ring-4 focus:ring-purple-300 ${
+        eventIsPast ? 'border-gray-200 opacity-80 hover:opacity-100' :
         soldOut ? 'opacity-90 border-gray-200' : 'border-purple-100'
       }`}
     >
@@ -437,7 +471,7 @@ const EventCard: React.FC<{
               width={400}
               height={256}
             />
-            {soldOut && (
+            {soldOut && !eventIsPast && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                 <div className="bg-gradient-to-r from-red-600 to-red-800 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2">
                   <span className="text-lg">SOLD OUT</span>
@@ -448,13 +482,14 @@ const EventCard: React.FC<{
         )}
         
         <div className="absolute top-4 left-4 flex flex-col gap-2">
-          {event.isNew && <Badge type="new" />}
-          {event.sponsored && <Badge type="sponsored" />}
-          {event.featured && <Badge type="featured" />}
-          {event.trending && <Badge type="trending" />}
+          {eventIsPast && <Badge type="past" />}
+          {!eventIsPast && event.isNew && <Badge type="new" />}
+          {!eventIsPast && event.sponsored && <Badge type="sponsored" />}
+          {!eventIsPast && event.featured && <Badge type="featured" />}
+          {!eventIsPast && event.trending && <Badge type="trending" />}
         </div>
         
-        {!soldOut && isLowStock && (
+        {!eventIsPast && !soldOut && isLowStock && (
           <div className="absolute top-4 right-4">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-red-600">
               🔥 {availableTickets} left
@@ -462,7 +497,7 @@ const EventCard: React.FC<{
           </div>
         )}
         
-        {!soldOut && isUnlimited && (
+        {!eventIsPast && !soldOut && isUnlimited && (
           <div className="absolute top-4 right-4">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600">
               ✓ Unlimited
@@ -493,17 +528,24 @@ const EventCard: React.FC<{
 
         <button 
           className={`mt-auto w-full font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-lg hover:shadow-xl active:scale-95 focus:outline-none focus:ring-4 focus:ring-purple-300 ${
-            soldOut 
-              ? 'bg-gray-400 text-white cursor-not-allowed hover:scale-100 hover:shadow-lg' 
-              : isFree 
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:scale-105' 
-                : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
+            eventIsPast
+              ? 'bg-gradient-to-r from-gray-600 to-gray-800 text-white hover:scale-105' 
+              : soldOut 
+                ? 'bg-gray-400 text-white cursor-not-allowed hover:scale-100 hover:shadow-lg' 
+                : isFree 
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:scale-105' 
+                  : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
           }`}
-          aria-label={`${soldOut ? 'Sold Out' : 'Get tickets for'} ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
-          disabled={soldOut}
+          aria-label={`${eventIsPast ? 'View past event: ' : ''}${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+          disabled={soldOut && !eventIsPast}
         >
           <Ticket size={24} aria-hidden="true" />
-          {soldOut ? 'SOLD OUT' : `Get Ticket • ${isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+          {eventIsPast 
+            ? 'View Event Details' 
+            : soldOut 
+              ? 'SOLD OUT' 
+              : `Get Ticket • ${isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`
+          }
         </button>
       </div>
     </motion.div>
@@ -523,6 +565,8 @@ export default function EventsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapZoom, setMapZoom] = useState(11);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showPastEvents, setShowPastEvents] = useState(false);
   
   const navigate = useNavigate();
 
@@ -531,15 +575,50 @@ export default function EventsPage() {
     events.filter((e) => e.featured), [events]
   );
 
-  const filteredEvents = useMemo(() => 
-    selectedCategory === "All" 
-      ? events 
-      : events.filter((e) => e.category_id === selectedCategory), 
-    [events, selectedCategory]
-  );
+  const filteredEvents = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // First filter by search term
+    let filtered = events.filter(
+      e =>
+        e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (e.location && e.location.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+    
+    // Then filter by category
+    filtered = selectedCategory === "All" 
+      ? filtered 
+      : filtered.filter((e) => e.category_id === selectedCategory);
+    
+    // Then filter by past events toggle
+    if (!showPastEvents) {
+      filtered = filtered.filter(event => {
+        const eventDateStr = event.date?.split('T')[0];
+        return eventDateStr && eventDateStr >= today;
+      });
+    }
+    
+    return filtered;
+  }, [events, searchTerm, selectedCategory, showPastEvents]);
+
+  const futureEvents = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return filteredEvents.filter(event => {
+      const eventDateStr = event.date?.split('T')[0];
+      return eventDateStr && eventDateStr >= today;
+    });
+  }, [filteredEvents]);
+
+  const pastEvents = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return filteredEvents.filter(event => {
+      const eventDateStr = event.date?.split('T')[0];
+      return eventDateStr && eventDateStr < today;
+    });
+  }, [filteredEvents]);
 
   const nearYouEvents = useMemo(() => 
-    events.slice(0, 8), [events]
+    futureEvents.slice(0, 8), [futureEvents]
   );
 
   // --- Data Fetching ---
@@ -750,9 +829,18 @@ export default function EventsPage() {
             Discover Events Around You
           </h1>
           <p className="text-xl text-gray-700">
-            Live events across Nigeria • {events.length} events available
+            {showPastEvents ? 'All events including past' : 'Upcoming events only'} • {filteredEvents.length} events available
           </p>
         </motion.header>
+
+        {/* Search Bar */}
+        <SearchBar 
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          resultsCount={filteredEvents.length}
+          showPast={showPastEvents}
+          setShowPast={setShowPastEvents}
+        />
 
         {/* Featured Carousel */}
         <AnimatePresence mode="wait">
@@ -806,13 +894,14 @@ export default function EventsPage() {
                     const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
                     const soldOut = isEventSoldOut(event.ticketTiers);
                     const availableTickets = getAvailableTickets(event.ticketTiers);
+                    const eventIsPast = isEventPast(event.date);
                     
                     return (
                       <div key={event.id} className="w-full flex-shrink-0">
                         <button
                           onClick={() => handleEventClick(event)}
                           className="w-full text-left focus:outline-none focus:ring-4 focus:ring-purple-300 rounded-3xl"
-                          aria-label={`Featured event ${index + 1}: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+                          aria-label={`Featured event ${index + 1}: ${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
                         >
                           <div className="relative h-96 md:h-[560px] bg-black rounded-3xl overflow-hidden group/carousel">
                             <img 
@@ -823,7 +912,7 @@ export default function EventsPage() {
                               width={1200}
                               height={560}
                             />
-                            {soldOut && (
+                            {!eventIsPast && soldOut && (
                               <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
                                 <div className="bg-gradient-to-r from-red-600 to-red-800 text-white px-8 py-4 rounded-full font-bold flex items-center gap-3">
                                   <span className="text-2xl">SOLD OUT</span>
@@ -833,10 +922,11 @@ export default function EventsPage() {
                             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
                             <div className="absolute bottom-8 left-8 right-8 text-white z-20">
                               <div className="flex flex-wrap gap-2 mb-4">
-                                {event.sponsored && <Badge type="sponsored" />}
-                                {event.isNew && <Badge type="new" />}
-                                {event.featured && <Badge type="featured" />}
-                                {event.trending && <Badge type="trending" />}
+                                {eventIsPast && <Badge type="past" />}
+                                {!eventIsPast && event.sponsored && <Badge type="sponsored" />}
+                                {!eventIsPast && event.isNew && <Badge type="new" />}
+                                {!eventIsPast && event.featured && <Badge type="featured" />}
+                                {!eventIsPast && event.trending && <Badge type="trending" />}
                               </div>
                               <h3 className="text-5xl md:text-7xl font-black mt-4 leading-tight">
                                 {event.title}
@@ -844,18 +934,24 @@ export default function EventsPage() {
                               <p className="text-2xl mt-3 flex items-center gap-3">
                                 <Calendar size={28} aria-hidden="true" />
                                 <span className="font-bold">
-                                  {formatEventDateTime(event.date, event.time)}
+                                  {formatEventDateShort(event.date)} at {formatEventTime(event.date, event.time)}
                                 </span>
                               </p>
                               <div className="flex items-center justify-between mt-6">
-                                <p className={`text-3xl font-bold ${soldOut ? 'text-red-400' : isFree ? 'text-emerald-400' : 'text-purple-400'}`}>
-                                  {soldOut ? 'SOLD OUT' : isFree ? 'Free' : formatPriceDisplay(price, isFree)}
+                                <p className={`text-3xl font-bold ${
+                                  eventIsPast ? 'text-gray-400' :
+                                  soldOut ? 'text-red-400' : 
+                                  isFree ? 'text-emerald-400' : 'text-purple-400'
+                                }`}>
+                                  {eventIsPast ? 'PAST EVENT' : 
+                                   soldOut ? 'SOLD OUT' : 
+                                   isFree ? 'Free' : formatPriceDisplay(price, isFree)}
                                 </p>
                                 <span className="text-white/80 text-lg">
                                   {event.location}
                                 </span>
                               </div>
-                              {!soldOut && availableTickets < 9999 && availableTickets > 0 && availableTickets <= 10 && (
+                              {!eventIsPast && !soldOut && availableTickets < 9999 && availableTickets > 0 && availableTickets <= 10 && (
                                 <div className="mt-4 text-center">
                                   <span className="inline-flex items-center gap-2 text-orange-300 font-bold">
                                     🔥 Only {availableTickets} tickets left!
@@ -894,20 +990,20 @@ export default function EventsPage() {
           )}
         </AnimatePresence>
 
-        {/* Near You Section */}
-        <section className="mb-16" aria-label="Events near your location">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <Navigation className="w-10 h-10 text-purple-600" aria-hidden="true" />
-              <h2 className="text-3xl sm:text-4xl font-black">Near You</h2>
+        {/* Near You Section (Future Events Only) */}
+        {!showPastEvents && futureEvents.length > 0 && (
+          <section className="mb-16" aria-label="Events near your location">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <Navigation className="w-10 h-10 text-purple-600" aria-hidden="true" />
+                <h2 className="text-3xl sm:text-4xl font-black">Near You</h2>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Filter size={16} aria-hidden="true" />
+                <span>Based on your location</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Filter size={16} aria-hidden="true" />
-              <span>Based on your location</span>
-            </div>
-          </div>
-          
-          {nearYouEvents.length > 0 ? (
+            
             <motion.div 
               className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
               initial={{ opacity: 0 }}
@@ -922,20 +1018,8 @@ export default function EventsPage() {
                 />
               ))}
             </motion.div>
-          ) : (
-            <div className="text-center py-12">
-              <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" aria-hidden="true" />
-              <p className="text-gray-600 text-xl">No events found near your location</p>
-              <button
-                onClick={() => setViewMode("map")}
-                className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                aria-label="Explore all events on map"
-              >
-                Explore All Events on Map
-              </button>
-            </div>
-          )}
-        </section>
+          </section>
+        )}
 
         {/* View Mode Toggle */}
         <motion.div 
@@ -1000,6 +1084,15 @@ export default function EventsPage() {
               </button>
             </div>
 
+            {/* Past Events Warning */}
+            {showPastEvents && (
+              <div className="absolute top-4 left-4 z-[1000] bg-yellow-500/90 backdrop-blur-sm p-3 rounded-2xl shadow-lg">
+                <p className="text-sm font-semibold text-white flex items-center gap-2">
+                  ⚠️ Showing past events
+                </p>
+              </div>
+            )}
+
             <MapContainer
               center={userLocation}
               zoom={mapZoom}
@@ -1016,13 +1109,14 @@ export default function EventsPage() {
               <LocationMarker position={userLocation} />
               
               {/* Event Markers */}
-              {events
+              {filteredEvents
                 .filter(event => event.coordinates)
                 .map((event) => {
                   const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
                   const soldOut = isEventSoldOut(event.ticketTiers);
                   const availableTickets = getAvailableTickets(event.ticketTiers);
                   const isLowStock = availableTickets > 0 && availableTickets <= 10;
+                  const eventIsPast = isEventPast(event.date);
                   
                   return (
                     <Marker
@@ -1044,40 +1138,53 @@ export default function EventsPage() {
                             height={128}
                           />
                           <h4 className="font-bold text-lg text-purple-700">{event.title}</h4>
-                          {soldOut && (
+                          {eventIsPast && (
+                            <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-bold mt-1">
+                              📅 Past Event
+                            </div>
+                          )}
+                          {!eventIsPast && soldOut && (
                             <div className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold mt-1">
                               SOLD OUT
                             </div>
                           )}
-                          {!soldOut && isLowStock && (
+                          {!eventIsPast && !soldOut && isLowStock && (
                             <div className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold mt-1">
                               🔥 {availableTickets} left
                             </div>
                           )}
                           <p className="text-sm text-gray-600 mt-1">
                             <Calendar size={12} className="inline mr-1" aria-hidden="true" />
-                            {formatEventDateTime(event.date, event.time)}
+                            {formatEventDateShort(event.date)} at {formatEventTime(event.date, event.time)}
                           </p>
                           <p className="text-sm text-gray-600">
                             <MapPin size={12} className="inline mr-1" aria-hidden="true" />
                             {event.location}
                           </p>
-                          <div className={`text-sm font-bold mt-2 ${soldOut ? 'text-red-600' : isFree ? 'text-emerald-600' : 'text-purple-600'}`}>
-                            {soldOut ? 'SOLD OUT' : isFree ? 'Free' : formatPriceDisplay(price, isFree)}
+                          <div className={`text-sm font-bold mt-2 ${
+                            eventIsPast ? 'text-gray-600' :
+                            soldOut ? 'text-red-600' : 
+                            isFree ? 'text-emerald-600' : 'text-purple-600'
+                          }`}>
+                            {eventIsPast ? 'PAST EVENT' : 
+                             soldOut ? 'SOLD OUT' : 
+                             isFree ? 'Free' : formatPriceDisplay(price, isFree)}
                           </div>
                           <button
                             onClick={() => handleEventClick(event)}
                             className={`mt-3 w-full py-2 rounded-lg hover:shadow transition text-sm font-bold focus:outline-none focus:ring-2 focus:ring-purple-600 ${
-                              soldOut 
-                                ? 'bg-gray-400 text-white cursor-not-allowed' 
-                                : isFree
-                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:shadow-lg'
-                                  : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'
+                              eventIsPast
+                                ? 'bg-gradient-to-r from-gray-600 to-gray-800 text-white hover:shadow-lg'
+                                : soldOut 
+                                  ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                  : isFree
+                                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:shadow-lg'
+                                    : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'
                             }`}
-                            disabled={soldOut}
+                            disabled={!eventIsPast && soldOut}
                             aria-label={`View details for ${event.title}`}
                           >
-                            {soldOut ? 'Sold Out' : 'View Details'}
+                            {eventIsPast ? 'View Details' : soldOut ? 'Sold Out' : 'View Details'}
                           </button>
                         </div>
                       </Popup>
@@ -1088,7 +1195,7 @@ export default function EventsPage() {
             
             <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 backdrop-blur-sm p-4 rounded-2xl shadow-lg">
               <p className="text-sm font-semibold text-gray-800">
-                📍 {events.filter(e => e.coordinates).length} events on map
+                📍 {filteredEvents.filter(e => e.coordinates).length} events on map
               </p>
               <p className="text-xs text-gray-600 mt-1">
                 Click on markers for event details
@@ -1111,6 +1218,7 @@ export default function EventsPage() {
                 <h2 className="text-3xl font-black">Browse by Category</h2>
                 <span className="text-gray-600">
                   {filteredEvents.length} events
+                  {showPastEvents && pastEvents.length > 0 && ` (${pastEvents.length} past)`}
                 </span>
               </div>
               
@@ -1127,7 +1235,7 @@ export default function EventsPage() {
                     aria-selected={selectedCategory === "All"}
                     aria-label="All categories"
                   >
-                    All Events ({events.length})
+                    All Events ({filteredEvents.length})
                   </button>
                   {categories.map((cat) => {
                     const count = events.filter((e) => e.category_id === cat.id).length;
@@ -1156,7 +1264,7 @@ export default function EventsPage() {
             <div className="mb-8">
               <h2 className="text-4xl font-black mb-8">
                 {selectedCategory === "All"
-                  ? "All Events"
+                  ? showPastEvents ? "All Events" : "Upcoming Events"
                   : categories.find((c) => c.id === selectedCategory)?.name || "Events"}
                 <span className="text-purple-600 ml-3">({filteredEvents.length})</span>
               </h2>
@@ -1174,19 +1282,33 @@ export default function EventsPage() {
                     No events found
                   </h3>
                   <p className="text-gray-600 max-w-md mx-auto">
-                    {selectedCategory === "All"
-                      ? "Check back soon for new events!"
-                      : `No ${categories.find(c => c.id === selectedCategory)?.name?.toLowerCase()} events available. Try another category.`}
+                    {searchTerm
+                      ? `No events found for "${searchTerm}". Try a different search.`
+                      : selectedCategory === "All"
+                        ? `No ${showPastEvents ? 'events' : 'upcoming events'} found.`
+                        : `No ${categories.find(c => c.id === selectedCategory)?.name?.toLowerCase()} ${showPastEvents ? 'events' : 'upcoming events'} found. Try another category.`}
                   </p>
-                  {selectedCategory !== "All" && (
-                    <button
-                      onClick={() => setSelectedCategory("All")}
-                      className="mt-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-8 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                      aria-label="View all events"
-                    >
-                      View All Events
-                    </button>
-                  )}
+                  <div className="flex flex-wrap gap-4 justify-center mt-6">
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm("")}
+                        className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                        aria-label="Clear search"
+                      >
+                        Clear Search
+                      </button>
+                    )}
+                    {!showPastEvents && pastEvents.length > 0 && (
+                      <button
+                        onClick={() => setShowPastEvents(true)}
+                        className="bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold py-3 px-6 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-600"
+                        aria-label="Show past events"
+                      >
+                        <History className="w-5 h-5 inline mr-2" />
+                        Show Past Events ({pastEvents.length})
+                      </button>
+                    )}
+                  </div>
                 </motion.div>
               ) : (
                 <motion.div
@@ -1205,6 +1327,40 @@ export default function EventsPage() {
                 </motion.div>
               )}
             </div>
+
+            {/* Past Events Section (When toggled on) */}
+            {showPastEvents && pastEvents.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-16 pt-8 border-t border-gray-200"
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-3">
+                    <History className="w-8 h-8 text-gray-600" aria-hidden="true" />
+                    <h2 className="text-3xl font-black text-gray-800">Past Events</h2>
+                  </div>
+                  <span className="text-gray-600">
+                    {pastEvents.length} past events
+                  </span>
+                </div>
+                
+                <motion.div
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ staggerChildren: 0.1 }}
+                >
+                  {pastEvents.map((event) => (
+                    <EventCard 
+                      key={`past-${event.id}`} 
+                      event={event} 
+                      onEventClick={handleEventClick} 
+                    />
+                  ))}
+                </motion.div>
+              </motion.section>
+            )}
 
             {/* Load More */}
             {filteredEvents.length > 0 && filteredEvents.length < events.length && (

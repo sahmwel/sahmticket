@@ -74,16 +74,8 @@ interface EventDetailsType {
   };
 }
 
-interface TicketTierRow {
-  id: string;
-  tier_name: string;
-  is_active?: boolean;
-  quantity_total?: number;
-  quantity_sold?: number;
-}
-
 declare global {
-  interface Window { 
+  interface Window {
     PaystackPop?: any;
     dataLayer?: any[];
   }
@@ -102,11 +94,10 @@ const RIDE_SERVICES = [
     color: 'bg-black hover:bg-gray-800',
     icon: (
       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
       </svg>
     ),
-    getUrl: (lat: number, lng: number, address: string, title: string) => {
-      // Uber web URL that works
+    getUrl: (address: string) => {
       const encodedAddress = encodeURIComponent(`${address}, Nigeria`);
       return `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodedAddress}`;
     }
@@ -117,11 +108,10 @@ const RIDE_SERVICES = [
     color: 'bg-green-600 hover:bg-green-700',
     icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
       </svg>
     ),
-    getUrl: (lat: number, lng: number, address: string) => {
-      // Bolt web URL
+    getUrl: (address: string) => {
       const encodedAddress = encodeURIComponent(address);
       return `https://bolt.eu/ride/?pickup_name=My%20Location&destination_name=${encodedAddress}`;
     }
@@ -132,11 +122,10 @@ const RIDE_SERVICES = [
     color: 'bg-orange-600 hover:bg-orange-700',
     icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
       </svg>
     ),
-    getUrl: (lat: number, lng: number, address: string) => {
-      // inDrive web URL
+    getUrl: (address: string) => {
       const encodedAddress = encodeURIComponent(address);
       return `https://indriver.com/en/ride?address=${encodedAddress}`;
     }
@@ -147,42 +136,159 @@ const RIDE_SERVICES = [
     color: 'bg-blue-600 hover:bg-blue-700',
     icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
       </svg>
     ),
-    getUrl: (lat: number, lng: number, address: string) => {
-      // Google Maps always works
+    getUrl: (address: string) => {
       const encodedAddress = encodeURIComponent(`${address}, Nigeria`);
       return `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
     }
   }
 ];
 
+// --- DATE/TIME FORMATTING FUNCTIONS ---
+const formatEventDate = (dateString: string): string => {
+  if (!dateString) return "Date TBD";
+
+  try {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const eventDateStr = dateString.split('T')[0];
+
+    // Check if same day
+    if (eventDateStr === todayStr) {
+      return "Today";
+    }
+
+    // Check if tomorrow
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    if (eventDateStr === tomorrowStr) {
+      return "Tomorrow";
+    }
+
+    // Check if yesterday
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    if (eventDateStr === yesterdayStr) {
+      return "Yesterday";
+    }
+
+    // Check if within next 7 days
+    const eventDay = new Date(eventDateStr);
+    const diffTime = eventDay.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays > 0 && diffDays <= 7) {
+      return `In ${diffDays} day${diffDays > 1 ? 's' : ''}`;
+    }
+
+    if (diffDays < 0) {
+      return "Past Event";
+    }
+
+    // Format regular date
+    const date = new Date(dateString);
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[date.getMonth()];
+    const day = date.getDate();
+    const year = date.getFullYear();
+
+    return `${monthName} ${day}, ${year}`;
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return "Date TBD";
+  }
+};
+
+const formatTime = (timeStr?: string): string => {
+  if (!timeStr || timeStr.trim() === '') return "Time TBD";
+
+  try {
+    const cleanTime = timeStr.trim();
+
+    // If it already has AM/PM, just format it nicely
+    const upperTime = cleanTime.toUpperCase();
+    if (upperTime.includes('AM') || upperTime.includes('PM')) {
+      // Extract numbers
+      const timeMatch = cleanTime.match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)/i);
+      if (timeMatch) {
+        let hours = parseInt(timeMatch[1]);
+        const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+        const period = timeMatch[3].toUpperCase();
+
+        // Convert to 12-hour format
+        if (period === 'PM' && hours < 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+
+        const displayHour = hours % 12 || 12;
+        const displayMinute = minutes.toString().padStart(2, '0');
+        return `${displayHour}:${displayMinute} ${period}`;
+      }
+      return cleanTime;
+    }
+
+    // Parse HH:MM or HH:MM:SS format
+    const timeParts = cleanTime.split(':').map(Number);
+    if (timeParts.length < 1) return cleanTime;
+
+    let hours = timeParts[0];
+    const minutes = timeParts[1] || 0;
+
+    if (isNaN(hours)) return cleanTime;
+
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHour = hours % 12 || 12;
+    const displayMinute = minutes.toString().padStart(2, '0');
+
+    return `${displayHour}:${displayMinute} ${period}`;
+  } catch (error) {
+    console.error("Error formatting time:", error);
+    return timeStr;
+  }
+};
+
+const formatDateTimeForDisplay = (dateString: string, timeString?: string): string => {
+  const datePart = formatEventDate(dateString);
+  const timePart = formatTime(timeString);
+
+  if (timePart === "Time TBD") {
+    return datePart;
+  }
+
+  return `${datePart} at ${timePart}`;
+};
+
 // --- UTILITY FUNCTIONS ---
 const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
   if (typeof price === 'number') {
     return { amount: price, isFree: price === 0 };
   }
-  
+
   if (typeof price === 'string') {
     const cleaned = price.replace(/[^\d.-]/g, '');
     const amount = parseFloat(cleaned) || 0;
     const lowerPrice = price.toLowerCase();
-    
+
     if (lowerPrice.includes('free') || amount === 0) {
       return { amount: 0, isFree: true };
     }
-    
+
     return { amount, isFree: false };
   }
-  
+
   return { amount: 0, isFree: true };
 };
 
 const isTierSoldOut = (tier: TicketTier): boolean => {
   const available = tier.available ?? tier.quantity_available ?? tier.total_tickets;
   const sold = tier.sold ?? tier.quantity_sold ?? tier.tickets_sold ?? 0;
-  
+
   if (available == null || available === 0) return false;
   return sold >= available;
 };
@@ -190,12 +296,12 @@ const isTierSoldOut = (tier: TicketTier): boolean => {
 const getAvailableTickets = (tier: TicketTier): number => {
   const available = tier.available ?? tier.quantity_available ?? tier.total_tickets;
   const sold = tier.sold ?? tier.quantity_sold ?? tier.tickets_sold ?? 0;
-  
+
   if (available == null || available === 0) {
     const priceInfo = parsePrice(tier.price);
     return priceInfo.isFree ? 100 : 50;
   }
-  
+
   return Math.max(0, available - sold);
 };
 
@@ -209,34 +315,9 @@ const isValidPhone = (phone: string): boolean => {
   return phoneRegex.test(phone.trim());
 };
 
-const formatDate = (dateString: string): string => {
-  try {
-    return new Date(dateString).toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-      year: "numeric"
-    });
-  } catch {
-    return "Date TBD";
-  }
-};
-
-const formatTime = (timeStr?: string): string => {
-  if (!timeStr) return "Time TBD";
-  if (timeStr.includes(" ") || timeStr.toLowerCase().includes("am") || timeStr.toLowerCase().includes("pm")) {
-    return timeStr.trim();
-  }
-  const [hour, minute] = timeStr.split(":").map(Number);
-  if (isNaN(hour)) return timeStr;
-  const period = hour >= 12 ? "PM" : "AM";
-  const displayHour = hour % 12 || 12;
-  return `${displayHour}:${(minute || 0).toString().padStart(2, "0")} ${period}`;
-};
-
 const getTierBadgeColor = (tier: TicketTier): string => {
   const { isFree, amount } = parsePrice(tier.price);
-  
+
   if (isFree) return "bg-gradient-to-r from-emerald-500 to-teal-600";
   if (amount < 2000) return "bg-gradient-to-r from-blue-500 to-cyan-600";
   if (amount < 5000) return "bg-gradient-to-r from-purple-500 to-pink-600";
@@ -246,7 +327,7 @@ const getTierBadgeColor = (tier: TicketTier): string => {
 
 const getTierIcon = (tier: TicketTier): string => {
   const { isFree, amount } = parsePrice(tier.price);
-  
+
   if (isFree) return "🎟️";
   if (amount < 2000) return "🎫";
   if (amount < 5000) return "⭐";
@@ -257,8 +338,6 @@ const getTierIcon = (tier: TicketTier): string => {
 // --- HELPER FUNCTIONS ---
 const insertTicket = async (ticketData: any) => {
   try {
-    console.log("🎫 [INSERT] Starting ticket insertion...");
-
     if (!ticketData.phone || ticketData.phone.trim() === '') {
       throw new Error("Phone number is required");
     }
@@ -288,11 +367,10 @@ const insertTicket = async (ticketData: any) => {
 
     if (error) throw error;
 
-    console.log("✅ [INSERT] Success!");
     return data;
 
   } catch (err: any) {
-    console.error("❌ [INSERT] Failed:", err);
+    console.error("Ticket insertion failed:", err);
     throw err;
   }
 };
@@ -304,19 +382,19 @@ const updateTierQuantity = async (tierId: string, quantity: number) => {
       .select("quantity_sold")
       .eq("id", tierId)
       .single();
-    
+
     if (fetchError) return;
-    
+
     const newQuantitySold = (tier.quantity_sold || 0) + quantity;
     const { error: updateError } = await supabase
       .from("ticketTiers")
       .update({ quantity_sold: newQuantitySold })
       .eq("id", tierId);
-    
+
     if (updateError) {
       console.error("Failed to update tier quantity:", updateError);
     }
-    
+
   } catch (err) {
     console.error("Failed to update tier:", err);
   }
@@ -331,7 +409,7 @@ const sendTicketEmail = async (reference: string, email: string, name: string, e
         to: email,
         name: name,
         eventTitle: event.title,
-        eventDate: event.date,
+        eventDate: formatEventDate(event.date),
         eventTime: formatTime(event.time || ""),
         eventVenue: event.venue || event.location,
         tickets: [{
@@ -361,10 +439,10 @@ export default function EventDetails() {
   const [quantities, setQuantities] = useState<{ [key: string]: number }>({});
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutData, setCheckoutData] = useState<any>(null);
-  const [formData, setFormData] = useState({ 
-    fullName: "", 
-    email: "", 
-    phone: "" 
+  const [formData, setFormData] = useState({
+    fullName: "",
+    email: "",
+    phone: ""
   });
   const [formErrors, setFormErrors] = useState({
     fullName: false,
@@ -388,10 +466,10 @@ export default function EventDetails() {
 
   const formattedTotal = useMemo(() => {
     if (totalAmount === 0) return "FREE";
-    return new Intl.NumberFormat("en-NG", { 
-      style: "currency", 
-      currency: "NGN", 
-      minimumFractionDigits: 0 
+    return new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      minimumFractionDigits: 0
     }).format(totalAmount);
   }, [totalAmount]);
 
@@ -407,8 +485,7 @@ export default function EventDetails() {
       try {
         let eventData;
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
-        
-        // Try slug first, then UUID
+
         const query = supabase
           .from("events")
           .select(`
@@ -460,7 +537,6 @@ export default function EventDetails() {
           is_active: t.is_active ?? true
         }));
 
-        // Set default tier if none found
         const displayTiers = ticketTiers.length > 0 ? ticketTiers : [{
           id: "default-" + eventData.id,
           name: "General Admission",
@@ -477,7 +553,6 @@ export default function EventDetails() {
         });
         setNotFound(false);
 
-        // Initialize quantities
         const initQuantities: { [key: string]: number } = {};
         displayTiers.forEach(tier => {
           if (tier.id) {
@@ -504,7 +579,7 @@ export default function EventDetails() {
     } else if (!loading) {
       document.title = "Event Not Found | SahmTicketHub";
     }
-    
+
     return () => {
       document.title = "SahmTicketHub - Discover Events";
     };
@@ -513,7 +588,7 @@ export default function EventDetails() {
   // Load Paystack script when needed
   useEffect(() => {
     if (!showCheckout || totalAmount === 0) return;
-    
+
     if (window.PaystackPop) return;
 
     const script = document.createElement("script");
@@ -521,9 +596,9 @@ export default function EventDetails() {
     script.async = true;
     script.onload = () => console.log("Paystack script loaded");
     script.onerror = () => console.error("Failed to load Paystack script");
-    
+
     document.body.appendChild(script);
-    
+
     return () => {
       if (document.body.contains(script)) {
         document.body.removeChild(script);
@@ -537,8 +612,6 @@ export default function EventDetails() {
       alert("Event information is not loaded yet.");
       return;
     }
-
-    console.log("🛒 Starting purchase:", { eventId: event.id, tierName: tier.name });
 
     const checkoutInfo = {
       orderId: `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -571,12 +644,12 @@ export default function EventDetails() {
       phone: !isValidPhone(formData.phone)
     };
     setFormErrors(errors);
-    
+
     if (!acceptPrivacy) {
       alert("Please accept the Privacy Policy to continue");
       return false;
     }
-    
+
     return !errors.fullName && !errors.email && !errors.phone;
   }, [formData, acceptPrivacy]);
 
@@ -610,24 +683,18 @@ export default function EventDetails() {
 
   const handleRideServiceClick = useCallback((serviceId: string) => {
     if (!event) return;
-    
+
     const address = event.venue || event.location;
-    const title = event.title;
-    const lat = event.lat || 0;
-    const lng = event.lng || 0;
-    
     const service = RIDE_SERVICES.find(s => s.id === serviceId);
     if (!service) return;
-    
-    const url = service.getUrl(lat, lng, address, title);
-    
-    // Open in new tab
+
+    const url = service.getUrl(address);
     window.open(url, '_blank', 'noopener,noreferrer');
   }, [event]);
 
   const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!checkoutData || !event || !validateForm()) {
       console.error("Checkout validation failed");
       return;
@@ -647,7 +714,6 @@ export default function EventDetails() {
       const orderId = checkoutData.orderId;
       const currentTime = new Date().toISOString();
 
-      // Stock check
       const { data: stockCheck, error: stockError } = await supabase
         .from("ticketTiers")
         .select("quantity_total, quantity_sold")
@@ -655,16 +721,15 @@ export default function EventDetails() {
         .single();
 
       if (stockError || !stockCheck) throw new Error("Unable to verify ticket availability.");
-      
+
       const remaining = (stockCheck.quantity_total || 0) - (stockCheck.quantity_sold || 0);
       if (remaining < quantity) {
         throw new Error(`Sold out! Only ${remaining} tickets left.`);
       }
 
-      // Handle free tickets
       if (totalAmount === 0) {
         const freeRef = `STH-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-        
+
         const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
           const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
           const qr_code_url = await QRCode.toDataURL(qrData);
@@ -696,8 +761,8 @@ export default function EventDetails() {
           title: event.title,
           location: event.location,
           venue: event.venue || event.location,
-          date: event.date,
-          time: event.time || "6:00 PM",
+          date: formatEventDate(event.date),
+          time: formatTime(event.time || ""),
           type: tierName,
           qty: quantity.toString(),
           price: "₦0",
@@ -710,7 +775,6 @@ export default function EventDetails() {
         return;
       }
 
-      // Handle paid tickets with Paystack
       if (!window.PaystackPop) {
         throw new Error("Payment gateway failed to load. Please refresh and try again.");
       }
@@ -723,7 +787,6 @@ export default function EventDetails() {
       const cleanEmail = formData.email.trim().toLowerCase();
       const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
-      // Store references for the callback
       const paymentData = {
         event,
         tierId,
@@ -737,11 +800,9 @@ export default function EventDetails() {
         closeCheckout
       };
 
-      // Create a regular function (not async) for the callback
-      const handlePaymentSuccess = function(response: any) {
+      const handlePaymentSuccess = function (response: any) {
         console.log("💰 Payment successful:", response);
-        
-        // Create an async function to handle the success logic
+
         const processSuccess = async () => {
           try {
             const paidPromises = Array.from({ length: paymentData.quantity }).map(async (_, i) => {
@@ -769,11 +830,11 @@ export default function EventDetails() {
             await Promise.all(paidPromises);
             await updateTierQuantity(paymentData.tierId, paymentData.quantity);
             await sendTicketEmail(
-              response.reference, 
-              paymentData.formData.email, 
-              paymentData.formData.fullName, 
-              paymentData.event, 
-              tier, 
+              response.reference,
+              paymentData.formData.email,
+              paymentData.formData.fullName,
+              paymentData.event,
+              tier,
               paymentData.quantity
             );
 
@@ -783,8 +844,8 @@ export default function EventDetails() {
               title: paymentData.event.title,
               location: paymentData.event.location,
               venue: paymentData.event.venue || paymentData.event.location,
-              date: paymentData.event.date,
-              time: paymentData.event.time || "6:00 PM",
+              date: formatEventDate(paymentData.event.date),
+              time: formatTime(paymentData.event.time || ""),
               type: paymentData.tierName,
               qty: paymentData.quantity.toString(),
               price: `₦${paymentData.totalAmount.toLocaleString()}`,
@@ -799,25 +860,15 @@ export default function EventDetails() {
             alert("Payment successful, but ticket generation failed. Contact support with ref: " + response.reference);
           }
         };
-        
-        // Start processing
+
         processSuccess();
       };
 
-      // For onClose callback
-      const handlePaymentClose = function() {
+      const handlePaymentClose = function () {
         console.log("Payment popup closed");
         setCheckoutLoading(false);
       };
 
-      console.log("Setting up Paystack with:", {
-        key: PAYSTACK_PUBLIC_KEY.trim().substring(0, 10) + "...",
-        email: cleanEmail,
-        amount: amountInKobo,
-        ref: uniqueRef
-      });
-
-      // **FIX: Use regular function syntax, not arrow function**
       const handler = window.PaystackPop.setup({
         key: PAYSTACK_PUBLIC_KEY.trim(),
         email: cleanEmail,
@@ -832,11 +883,10 @@ export default function EventDetails() {
             { display_name: "Order ID", variable_name: "order_id", value: orderId }
           ]
         },
-        callback: handlePaymentSuccess, // Use function reference
-        onClose: handlePaymentClose     // Use function reference
+        callback: handlePaymentSuccess,
+        onClose: handlePaymentClose
       });
 
-      console.log("Opening Paystack iframe...");
       handler.openIframe();
 
     } catch (err: any) {
@@ -864,7 +914,6 @@ export default function EventDetails() {
       }
     }
 
-    // Fallback: copy to clipboard
     try {
       await navigator.clipboard.writeText(window.location.href);
       alert('Event link copied to clipboard!');
@@ -939,7 +988,7 @@ export default function EventDetails() {
               <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
               Back to Events
             </button>
-            
+
             <div className="flex items-center gap-4">
               <button
                 onClick={shareEvent}
@@ -960,7 +1009,7 @@ export default function EventDetails() {
           {/* Left Column */}
           <div className="space-y-8">
             {/* Event Image */}
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="relative rounded-3xl overflow-hidden shadow-2xl"
@@ -973,7 +1022,7 @@ export default function EventDetails() {
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-              
+
               <div className="absolute top-4 left-4 flex flex-wrap gap-2">
                 {event.ticketTiers?.some(t => parsePrice(t.price).isFree) && (
                   <span className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-bold rounded-full flex items-center gap-1">
@@ -988,8 +1037,8 @@ export default function EventDetails() {
               </div>
             </motion.div>
 
-            {/* Event Details */}
-            <motion.div 
+            {/* Event Details - FIXED DATE/TIME/VENUE DISPLAY */}
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
@@ -998,16 +1047,21 @@ export default function EventDetails() {
               <h1 className="text-3xl lg:text-4xl font-black text-gray-900 mb-6">
                 {event.title}
               </h1>
-              
+
               <div className="space-y-4">
+                {/* DATE & TIME - Now shows properly */}
                 <div className="flex items-center gap-3">
                   <Calendar className="w-5 h-5 text-purple-600 flex-shrink-0" />
                   <div>
-                    <p className="font-semibold text-gray-800">{formatDate(event.date)}</p>
-                    <p className="text-gray-600">{formatTime(event.time)}</p>
+                    <p className="font-semibold text-gray-800">
+                      {formatEventDate(event.date)}
+                      {event.time && ` at ${formatTime(event.time)}`}
+                    </p>
+                    {!event.time && <p className="text-gray-600">Time to be announced</p>}
                   </div>
                 </div>
-                
+
+                {/* LOCATION & VENUE - Shows properly */}
                 <div className="flex items-center gap-3">
                   <MapPin className="w-5 h-5 text-purple-600 flex-shrink-0" />
                   <div>
@@ -1028,7 +1082,7 @@ export default function EventDetails() {
             </motion.div>
 
             {/* Map Section */}
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
@@ -1039,7 +1093,7 @@ export default function EventDetails() {
                   <Navigation className="w-5 h-5 text-purple-600" />
                   Event Location
                 </h3>
-                
+
                 <div className="relative">
                   <button
                     onClick={() => setShowRideOptions(!showRideOptions)}
@@ -1051,13 +1105,13 @@ export default function EventDetails() {
                     Get a Ride
                     <ChevronDown className="w-4 h-4" />
                   </button>
-                  
+
                   {showRideOptions && (
                     <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 z-50">
                       <div className="p-4">
                         <div className="flex items-center justify-between mb-3">
                           <span className="font-bold text-gray-900">Ride Services</span>
-                          <button 
+                          <button
                             onClick={() => setShowRideOptions(false)}
                             className="text-gray-400 hover:text-gray-600"
                             aria-label="Close ride options"
@@ -1068,13 +1122,8 @@ export default function EventDetails() {
                         <div className="space-y-2">
                           {RIDE_SERVICES.map((service) => {
                             const location = event.venue || event.location;
-                            const url = service.getUrl(
-                              event.lat || 0, 
-                              event.lng || 0, 
-                              location, 
-                              event.title
-                            );
-                            
+                            const url = service.getUrl(location);
+
                             return (
                               <a
                                 key={service.id}
@@ -1099,13 +1148,13 @@ export default function EventDetails() {
                   )}
                 </div>
               </div>
-              
+
               {event.lat && event.lng ? (
                 <div className="h-64 rounded-2xl overflow-hidden mb-4">
-                  <EventMap 
-                    lat={event.lat} 
-                    lng={event.lng} 
-                    venue={event.venue}
+                  <EventMap
+                    lat={event.lat}
+                    lng={event.lng}
+                    venue={event.venue || event.location}
                     title={event.title}
                   />
                 </div>
@@ -1115,7 +1164,7 @@ export default function EventDetails() {
                     <MapPin className="w-8 h-8 text-purple-600" />
                   </div>
                   <p className="text-gray-700 font-medium mb-2">Map Not Available</p>
-                  <a 
+                  <a
                     href={`https://www.google.com/maps/search/${encodeURIComponent(event.location)}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1125,30 +1174,28 @@ export default function EventDetails() {
                   </a>
                 </div>
               )}
-              
+
               <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
                 {RIDE_SERVICES.map((service) => {
-                  const address = event.venue || event.location;
-                  const url = service.getUrl(
-                    event.lat || 0, 
-                    event.lng || 0, 
-                    address, 
-                    event.title
-                  );
-                  
+                  const location = event.venue || event.location;
+                  const url = service.getUrl(location);
+
                   return (
-                    <button
+                    <a
                       key={service.id}
-                      onClick={() => handleRideServiceClick(service.id)}
-                      className={`flex flex-col items-center justify-center p-3 ${service.color} text-white rounded-xl hover:shadow-lg transition`}
-                      title={`Book ${service.name}`}
-                      aria-label={`Book ${service.name} ride`}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`flex items-center justify-between p-3 ${service.color} text-white rounded-lg hover:shadow-md transition`}
                     >
-                      <div className="w-6 h-6 flex items-center justify-center mb-1">
-                        {service.icon}
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                          {service.icon}
+                        </div>
+                        <span className="font-bold">{service.name}</span>
                       </div>
-                      <span className="text-xs font-medium">{service.name}</span>
-                    </button>
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
                   );
                 })}
               </div>
@@ -1156,7 +1203,7 @@ export default function EventDetails() {
           </div>
 
           {/* Right Column - Ticket Selection */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 }}
@@ -1179,7 +1226,7 @@ export default function EventDetails() {
               <div className="space-y-4">
                 {event.ticketTiers?.map((tier, index) => {
                   if (!tier.id) return null;
-                  
+
                   const { isFree, amount } = parsePrice(tier.price);
                   const soldOut = isTierSoldOut(tier);
                   const available = getAvailableTickets(tier);
@@ -1187,7 +1234,7 @@ export default function EventDetails() {
                   const badgeColor = getTierBadgeColor(tier);
                   const tierIcon = getTierIcon(tier);
                   const isLowStock = available > 0 && available <= 10;
-                  
+
                   return (
                     <motion.div
                       key={tier.id}
@@ -1196,13 +1243,12 @@ export default function EventDetails() {
                       transition={{ delay: index * 0.1 }}
                       whileHover={{ scale: soldOut ? 1 : 1.02 }}
                       onClick={() => !soldOut && handleSelectTier(tier)}
-                      className={`relative p-5 rounded-2xl border-2 cursor-pointer transition-all ${
-                        soldOut 
-                          ? 'bg-gray-50 border-gray-200 opacity-75 cursor-not-allowed' 
+                      className={`relative p-5 rounded-2xl border-2 cursor-pointer transition-all ${soldOut
+                          ? 'bg-gray-50 border-gray-200 opacity-75 cursor-not-allowed'
                           : isSelected
                             ? 'border-purple-500 bg-purple-50'
                             : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50/50'
-                      }`}
+                        }`}
                       role="button"
                       tabIndex={0}
                       aria-pressed={isSelected}
@@ -1221,7 +1267,7 @@ export default function EventDetails() {
                           </span>
                         </div>
                       )}
-                      
+
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
@@ -1233,11 +1279,11 @@ export default function EventDetails() {
                               {isFree ? 'FREE' : `₦${amount.toLocaleString()}`}
                             </span>
                           </div>
-                          
+
                           <p className="text-gray-600 mb-3">
                             {tier.description || "Standard admission ticket"}
                           </p>
-                          
+
                           <div className="flex items-center gap-4 text-sm">
                             {!soldOut && isLowStock && (
                               <span className="flex items-center gap-1 text-orange-600 font-bold">
@@ -1245,7 +1291,7 @@ export default function EventDetails() {
                                 Only {available} left!
                               </span>
                             )}
-                            
+
                             {!soldOut && !isLowStock && available > 10 && (
                               <span className="flex items-center gap-1 text-gray-600">
                                 <Users className="w-4 h-4" />
@@ -1254,7 +1300,7 @@ export default function EventDetails() {
                             )}
                           </div>
                         </div>
-                        
+
                         {isSelected && !soldOut && (
                           <div className="flex items-center gap-3">
                             <button
@@ -1312,7 +1358,7 @@ export default function EventDetails() {
                       </span>
                     </div>
                   </div>
-                  
+
                   <button
                     onClick={() => handleBuyTicket(selectedTier)}
                     className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl hover:shadow-2xl transition-all flex items-center justify-center gap-3"
@@ -1321,7 +1367,7 @@ export default function EventDetails() {
                     <CreditCard className="w-5 h-5" />
                     Get Tickets Now
                   </button>
-                  
+
                   <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
                     <div className="flex items-center gap-2 text-gray-500">
                       <Shield className="w-4 h-4" />
@@ -1351,8 +1397,8 @@ export default function EventDetails() {
           </motion.div>
         </div>
 
-        {/* Trust Signals - Always Visible on All Devices */}
-        <motion.div 
+        {/* Trust Signals */}
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
@@ -1375,7 +1421,7 @@ export default function EventDetails() {
                   <span className="px-3 py-1 bg-white/10 rounded-full text-sm">Real-time Analytics</span>
                 </div>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
@@ -1396,7 +1442,7 @@ export default function EventDetails() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
@@ -1418,7 +1464,7 @@ export default function EventDetails() {
                 </div>
               </div>
             </div>
-            
+
             {/* Ride Services Section */}
             <div className="mt-8 pt-8 border-t border-white/20">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1433,29 +1479,28 @@ export default function EventDetails() {
                     Book transportation directly to the venue with one click
                   </p>
                 </div>
-                
+
                 <div className="flex flex-wrap gap-3">
                   {RIDE_SERVICES.map((service) => {
-                    const address = event.venue || event.location;
-                    const url = service.getUrl(
-                      event.lat || 0, 
-                      event.lng || 0, 
-                      address, 
-                      event.title
-                    );
-                    
+                    const location = event.venue || event.location;
+                    const url = service.getUrl(location);
+
                     return (
-                      <button
+                      <a
                         key={service.id}
-                        onClick={() => handleRideServiceClick(service.id)}
-                        className={`flex items-center gap-2 px-4 py-3 ${service.color} text-white rounded-xl hover:shadow-lg transition min-w-[120px] justify-center`}
-                        aria-label={`Book ${service.name} ride`}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`flex items-center justify-between p-3 ${service.color} text-white rounded-lg hover:shadow-md transition`}
                       >
-                        <div className="w-6 h-6 flex items-center justify-center">
-                          {service.icon}
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                            {service.icon}
+                          </div>
+                          <span className="font-bold">{service.name}</span>
                         </div>
-                        <span className="font-medium">{service.name}</span>
-                      </button>
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
                     );
                   })}
                 </div>
@@ -1505,9 +1550,8 @@ export default function EventDetails() {
                         placeholder="Full Name *"
                         value={formData.fullName}
                         onChange={(e) => handleInputChange('fullName', e.target.value)}
-                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                          formErrors.fullName ? 'border-red-500' : 'border-gray-300'
-                        }`}
+                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${formErrors.fullName ? 'border-red-500' : 'border-gray-300'
+                          }`}
                         required
                         aria-invalid={formErrors.fullName}
                         aria-describedby={formErrors.fullName ? "name-error" : undefined}
@@ -1523,9 +1567,8 @@ export default function EventDetails() {
                         placeholder="Email Address *"
                         value={formData.email}
                         onChange={(e) => handleInputChange('email', e.target.value)}
-                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                          formErrors.email ? 'border-red-500' : 'border-gray-300'
-                        }`}
+                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${formErrors.email ? 'border-red-500' : 'border-gray-300'
+                          }`}
                         required
                         aria-invalid={formErrors.email}
                         aria-describedby={formErrors.email ? "email-error" : undefined}
@@ -1541,9 +1584,8 @@ export default function EventDetails() {
                         placeholder="Phone Number *"
                         value={formData.phone}
                         onChange={(e) => handleInputChange('phone', e.target.value)}
-                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                          formErrors.phone ? 'border-red-500' : 'border-gray-300'
-                        }`}
+                        className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${formErrors.phone ? 'border-red-500' : 'border-gray-300'
+                          }`}
                         required
                         aria-invalid={formErrors.phone}
                         aria-describedby={formErrors.phone ? "phone-error" : undefined}
@@ -1671,7 +1713,7 @@ export default function EventDetails() {
                 <div>
                   <h3 className="text-2xl font-bold text-gray-900 mb-4">Data Collection & Usage</h3>
                   <p className="text-gray-700 mb-4">
-                    At SahmTicketHub, we are committed to protecting your privacy and personal information. 
+                    At SahmTicketHub, we are committed to protecting your privacy and personal information.
                     This policy outlines how we collect, use, and protect your data.
                   </p>
                 </div>

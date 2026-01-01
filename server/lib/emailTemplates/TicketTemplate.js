@@ -1,13 +1,102 @@
 // src/lib/emailTemplates/TicketTemplate.js
+
+/**
+ * Formats a date string to a readable format
+ * @param {string} dateString - ISO date string or date object
+ * @param {boolean} includeTime - Whether to include time in the output
+ * @returns {string} Formatted date string
+ */
+function formatDate(dateString, includeTime = false) {
+  if (!dateString || dateString === 'TBD') return 'TBD';
+  
+  try {
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return dateString;
+    
+    const options = {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      ...(includeTime && {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+    };
+    
+    return date.toLocaleDateString('en-US', options);
+  } catch (error) {
+    return dateString;
+  }
+}
+
+/**
+ * Extracts and formats time from a date string
+ * @param {string} dateString - ISO date string or date object
+ * @returns {string} Formatted time string
+ */
+function formatTime(dateString) {
+  if (!dateString || dateString === 'TBD') return 'TBD';
+  
+  try {
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return dateString;
+    
+    const options = {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZoneName: 'short'
+    };
+    
+    return date.toLocaleTimeString('en-US', options);
+  } catch (error) {
+    return dateString;
+  }
+}
+
+/**
+ * Checks if an event has passed
+ * @param {string} dateString - Event date
+ * @returns {boolean} True if event has passed
+ */
+function isEventPassed(dateString) {
+  if (!dateString) return false;
+  
+  try {
+    const eventDate = new Date(dateString);
+    const now = new Date();
+    return eventDate < now;
+  } catch (error) {
+    return false;
+  }
+}
+
 export function TicketTemplate({
   name = "Customer",
   eventTitle = "Your Event",
   eventDate = "TBD",
-  eventTime = "TBD",
+  eventTime = "TBD", // This can be separate time string or will be extracted from eventDate
   eventVenue = "TBD",
   eventPosterUrl,
-  tickets = [], // Ensure tickets is always an array
+  tickets = [],
+  timezone = "UTC", // Optional timezone parameter
 }) {
+  // Determine if we should extract time from eventDate
+  const hasFullDateTime = eventDate && eventDate !== 'TBD' && !isNaN(new Date(eventDate).getTime());
+  
+  // Format the display date and time
+  const displayDate = formatDate(eventDate, false);
+  const displayTime = eventTime !== 'TBD' ? eventTime : (hasFullDateTime ? formatTime(eventDate) : 'TBD');
+  
+  // Check if event has passed
+  const eventPassed = isEventPassed(eventDate);
+  
   // Sanitize tickets and provide defaults
   const safeTickets = Array.isArray(tickets)
     ? tickets.map(t => ({
@@ -52,10 +141,10 @@ export function TicketTemplate({
             <td style="background:linear-gradient(135deg,#7c3aed 0%,#ec4899 100%);padding:48px 32px;text-align:center;">
               <img src="https://sahmtickethub.online/logo-white.png" alt="Sahm Ticket Hub" width="180" style="display:block;margin:0 auto 24px;">
               <h1 style="font-size:28px;font-weight:700;color:#ffffff;margin:0;letter-spacing:-0.5px;">
-                Your Ticket${totalTickets > 1 ? 's are' : ' is'} Confirmed! 🎉
+                ${eventPassed ? 'Event Recap' : 'Your Ticket' + (totalTickets > 1 ? 's are' : ' is') + ' Confirmed!'} 🎉
               </h1>
               <p style="font-size:16px;color:rgba(255,255,255,0.9);margin:12px 0 0;line-height:1.5;">
-                Get ready for an unforgettable experience
+                ${eventPassed ? 'Thanks for attending!' : 'Get ready for an unforgettable experience'}
               </p>
             </td>
           </tr>
@@ -67,7 +156,10 @@ export function TicketTemplate({
                 Hi <strong style="color:#1e293b;">${name}</strong>,
               </p>
               <p style="font-size:16px;color:#475569;margin:0 0 32px;line-height:1.6;text-align:center;">
-                Thank you for your purchase! Your ticket${totalTickets > 1 ? 's' : ''} for the event are ready. Scroll down to view them.
+                ${eventPassed 
+                  ? 'Thank you for attending the event! Here are your ticket details for your records.' 
+                  : `Thank you for your purchase! Your ticket${totalTickets > 1 ? 's' : ''} for the event are ready. Scroll down to view them.`
+                }
               </p>
 
               <!-- Event Poster -->
@@ -82,9 +174,35 @@ export function TicketTemplate({
                   ${eventTitle}
                 </h2>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                  <tr><td style="padding-bottom:16px;font-size:15px;color:#64748b;width:30px;vertical-align:top;">📅</td><td style="padding-bottom:16px;font-size:15px;color:#1e293b;"><strong>Date</strong></td><td style="padding-bottom:16px;font-size:15px;color:#334155;">${eventDate}</td></tr>
-                  <tr><td style="padding-bottom:16px;font-size:15px;color:#64748b;vertical-align:top;">⏰</td><td style="padding-bottom:16px;font-size:15px;color:#1e293b;"><strong>Time</strong></td><td style="padding-bottom:16px;font-size:15px;color:#334155;">${eventTime}</td></tr>
-                  <tr><td style="font-size:15px;color:#64748b;vertical-align:top;">📍</td><td style="font-size:15px;color:#1e293b;"><strong>Venue</strong></td><td style="font-size:15px;color:#334155;">${eventVenue}</td></tr>
+                  <tr>
+                    <td style="padding-bottom:16px;font-size:15px;color:#64748b;width:30px;vertical-align:top;">📅</td>
+                    <td style="padding-bottom:16px;font-size:15px;color:#1e293b;"><strong>Date</strong></td>
+                    <td style="padding-bottom:16px;font-size:15px;color:#334155;">${displayDate}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding-bottom:16px;font-size:15px;color:#64748b;vertical-align:top;">⏰</td>
+                    <td style="padding-bottom:16px;font-size:15px;color:#1e293b;"><strong>Time</strong></td>
+                    <td style="padding-bottom:16px;font-size:15px;color:#334155;">${displayTime}</td>
+                  </tr>
+                  ${timezone && timezone !== 'UTC' ? `
+                  <tr>
+                    <td style="padding-bottom:16px;font-size:15px;color:#64748b;vertical-align:top;">🌐</td>
+                    <td style="padding-bottom:16px;font-size:15px;color:#1e293b;"><strong>Timezone</strong></td>
+                    <td style="padding-bottom:16px;font-size:15px;color:#334155;">${timezone}</td>
+                  </tr>
+                  ` : ''}
+                  <tr>
+                    <td style="font-size:15px;color:#64748b;vertical-align:top;">📍</td>
+                    <td style="font-size:15px;color:#1e293b;"><strong>Venue</strong></td>
+                    <td style="font-size:15px;color:#334155;">${eventVenue}</td>
+                  </tr>
+                  ${eventPassed ? `
+                  <tr>
+                    <td style="padding-top:16px;font-size:15px;color:#64748b;vertical-align:top;">✅</td>
+                    <td style="padding-top:16px;font-size:15px;color:#1e293b;"><strong>Status</strong></td>
+                    <td style="padding-top:16px;font-size:15px;color:#10b981;font-weight:600;">Event Completed</td>
+                  </tr>
+                  ` : ''}
                 </table>
               </div>
 
@@ -117,7 +235,7 @@ export function TicketTemplate({
               <!-- Quick View Tickets -->
               <div style="margin-top:40px;">
                 <h3 style="text-align:center;font-size:18px;color:#1e293b;margin:0 0 32px;">
-                  Quick View: Your Ticket${totalTickets > 1 ? 's' : ''}
+                  ${eventPassed ? 'Your Ticket Details' : 'Quick View: Your Ticket' + (totalTickets > 1 ? 's' : '')}
                 </h3>
 
                 ${(safeTickets.flatMap(ticket => (ticket.codes || []).map((code, idx) => {
@@ -145,7 +263,10 @@ export function TicketTemplate({
                       <br>
                       <img src="${qrUrl}" alt="QR Code for ${code}" style="width:200px;height:200px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
                       <p style="margin:20px 0 0;font-size:14px;color:#64748b;">
-                        Scan this QR code or show the ticket code at the entrance
+                        ${eventPassed 
+                          ? 'This ticket was scanned at the event' 
+                          : 'Scan this QR code or show the ticket code at the entrance'
+                        }
                       </p>
                     </div>
                   </div>`;
@@ -153,7 +274,10 @@ export function TicketTemplate({
               </div>
 
               <p style="font-size:15px;color:#64748b;margin:40px 0 0;line-height:1.6;text-align:center;">
-                Tickets are non-transferable ∙ Please arrive on time ∙ Bring valid ID if required
+                ${eventPassed 
+                  ? 'Thank you for being part of this event!' 
+                  : 'Tickets are non-transferable ∙ Please arrive on time ∙ Bring valid ID if required'
+                }
               </p>
             </td>
           </tr>
@@ -165,7 +289,7 @@ export function TicketTemplate({
                 Questions? Contact us at <a href="mailto:info@sahmtickethub.online" style="color:#7c3aed;text-decoration:none;font-weight:500;">info@sahmtickethub.online</a>
               </p>
               <p style="font-size:13px;color:#94a3b8;margin:0;">
-                © 2025 Sahm Ticket Hub. All rights reserved.
+                © ${new Date().getFullYear()} Sahm Ticket Hub. All rights reserved.
               </p>
             </td>
           </tr>

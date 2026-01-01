@@ -19,6 +19,9 @@ import {
   X,
   AlertCircle,
   ExternalLink,
+  History,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -49,9 +52,10 @@ export interface Event {
     description?: string;
   }[];
   slug?: string;
+  isPast?: boolean;
 }
 
-// --- Your Date Formatting Functions ---
+// --- Date Formatting Functions ---
 const formatDate = (timestamp: string | null) => {
   if (!timestamp) return "Date not set";
 
@@ -74,17 +78,18 @@ const formatDate = (timestamp: string | null) => {
     
     const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
     
-    let hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    const formattedTime = `${hours}:${minutes} ${ampm}`;
+    // REMOVE THE TIME EXTRACTION FROM HERE
+    // let hours = date.getHours();
+    // const minutes = date.getMinutes().toString().padStart(2, '0');
+    // const ampm = hours >= 12 ? 'PM' : 'AM';
+    // hours = hours % 12;
+    // hours = hours ? hours : 12;
+    // const formattedTime = `${hours}:${minutes} ${ampm}`;
 
     if (diffDays < -1) return `${formattedDate} (Past)`;
-    if (diffDays === -1) return `Yesterday at ${formattedTime}`;
-    if (diffDays === 0) return `Today at ${formattedTime}`;
-    if (diffDays === 1) return `Tomorrow at ${formattedTime}`;
+    if (diffDays === -1) return `Yesterday`; // REMOVE "at ${formattedTime}"
+    if (diffDays === 0) return `Today`; // REMOVE "at ${formattedTime}"
+    if (diffDays === 1) return `Tomorrow`; // REMOVE "at ${formattedTime}"
     if (diffDays <= 7) return `${formattedDate} (in ${diffDays} days)`;
     
     return formattedDate;
@@ -130,7 +135,6 @@ const parsePrice = (price: string | number): { amount: number; isFree: boolean }
   return { amount: 0, isFree: true };
 };
 
-// Helper functions that don't use hooks
 const getLowestPriceFromTiers = (event: Event): { price: number; isFree: boolean } => {
   if (!event.ticketTiers || !Array.isArray(event.ticketTiers) || event.ticketTiers.length === 0) {
     return { price: 0, isFree: true };
@@ -210,28 +214,10 @@ const formatPriceDisplay = (price: number, isFree: boolean): string => {
   return `₦${price.toLocaleString('en-NG')}`;
 };
 
-// Updated formatEventDateShort to use your formatDate function
-const formatEventDateShort = (iso: string): string => {
-  const formatted = formatDate(iso);
-  // Extract just the date part from your formatDate output
-  if (formatted.includes("(")) {
-    return formatted.split("(")[0].trim();
-  }
-  if (formatted.includes(" at ")) {
-    return formatted.split(" at ")[0].trim();
-  }
-  return formatted;
-};
-
-// Updated formatEventTime to extract time from your formatDate function
 const formatEventTime = (eventDate: string, eventTime?: string): string => {
-  // First try to use the event.time if available
   if (eventTime) {
-    // Try to parse and format the time string
     try {
       const [hours, minutes] = eventTime.split(':').map(Number);
-      const date = new Date();
-      date.setHours(hours, minutes || 0, 0);
       let hoursFormatted = hours % 12 || 12;
       const ampm = hours >= 12 ? 'PM' : 'AM';
       const minutesFormatted = minutes ? minutes.toString().padStart(2, '0') : '00';
@@ -241,13 +227,6 @@ const formatEventTime = (eventDate: string, eventTime?: string): string => {
     }
   }
   
-  // If no event.time, try to extract time from formatDate output
-  const formatted = formatDate(eventDate);
-  if (formatted.includes(" at ")) {
-    return formatted.split(" at ")[1].trim();
-  }
-  
-  // Fallback to time from ISO string
   try {
     const date = new Date(eventDate);
     if (isNaN(date.getTime())) return "Time TBD";
@@ -296,6 +275,7 @@ const badgeConfig = {
   trending: { gradient: "from-orange-500 to-red-600", icon: Flame, text: "Hot" },
   new: { gradient: "from-emerald-500 to-teal-600", icon: Sparkles, text: "New" },
   sponsored: { gradient: "from-blue-500 to-cyan-600", icon: BadgeCheck, text: "Sponsored" },
+  past: { gradient: "from-gray-500 to-gray-700", icon: History, text: "Past" },
 } as const;
 
 type BadgeVariant = keyof typeof badgeConfig;
@@ -311,62 +291,79 @@ const Badge = ({ variant }: { variant: BadgeVariant }) => {
 };
 
 // --- TimelineSchedule Component ---
-const TimelineSchedule = ({ events }: { events: Event[] }) => {
+const TimelineSchedule = ({ events, showPast = false }: { events: Event[]; showPast?: boolean }) => {
   const navigate = useNavigate();
   
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const nextDay = new Date(today);
-  nextDay.setDate(today.getDate() + 2);
+  const getDateString = useCallback((offset: number = 0): string => {
+    const date = new Date();
+    date.setDate(date.getDate() + offset);
+    return date.toISOString().split('T')[0];
+  }, []);
 
-  // Helper function to check if event is on a specific date
-  const isEventOnDate = useCallback((event: Event, targetDate: Date): boolean => {
-    if (!event.date) return false;
-    
+  const getEventDateString = useCallback((eventDate: string): string | null => {
+    if (!eventDate) return null;
     try {
-      const eventDate = new Date(event.date);
-      if (isNaN(eventDate.getTime())) return false;
-      
-      const eventDateOnly = new Date(
-        eventDate.getFullYear(),
-        eventDate.getMonth(),
-        eventDate.getDate()
-      );
-      const targetDateOnly = new Date(
-        targetDate.getFullYear(),
-        targetDate.getMonth(),
-        targetDate.getDate()
-      );
-      
-      return eventDateOnly.getTime() === targetDateOnly.getTime();
+      const date = new Date(eventDate);
+      if (isNaN(date.getTime())) return null;
+      return date.toISOString().split('T')[0];
     } catch {
-      return false;
+      return null;
     }
   }, []);
 
-  const eventsToday = useMemo(() => events.filter(
-    (e) => isEventOnDate(e, today)
-  ), [events, today, isEventOnDate]);
+  // Get today's date for comparison
+  const todayStr = getDateString(0);
+  
+  // Filter events: if showPast is false, only show future events
+  const filteredEvents = useMemo(() => {
+    if (showPast) return events;
+    
+    return events.filter(event => {
+      const eventDateStr = getEventDateString(event.date);
+      return eventDateStr && eventDateStr >= todayStr;
+    });
+  }, [events, showPast, getEventDateString, todayStr]);
 
-  const eventsTomorrow = useMemo(() => events.filter(
-    (e) => isEventOnDate(e, tomorrow)
-  ), [events, tomorrow, isEventOnDate]);
+  // Separate past events
+  const pastEvents = useMemo(() => {
+    return events.filter(event => {
+      const eventDateStr = getEventDateString(event.date);
+      return eventDateStr && eventDateStr < todayStr;
+    });
+  }, [events, getEventDateString, todayStr]);
 
-  const eventsNext = useMemo(() => events.filter(
-    (e) => isEventOnDate(e, nextDay)
-  ), [events, nextDay, isEventOnDate]);
+  // Group events by date
+  const eventsToday = useMemo(() => {
+    const todayStr = getDateString(0);
+    return filteredEvents.filter(event => {
+      const eventDateStr = getEventDateString(event.date);
+      return eventDateStr === todayStr;
+    });
+  }, [filteredEvents, getDateString, getEventDateString]);
+
+  const eventsTomorrow = useMemo(() => {
+    const tomorrowStr = getDateString(1);
+    return filteredEvents.filter(event => {
+      const eventDateStr = getEventDateString(event.date);
+      return eventDateStr === tomorrowStr;
+    });
+  }, [filteredEvents, getDateString, getEventDateString]);
+
+  const eventsNext = useMemo(() => {
+    const nextDayStr = getDateString(2);
+    return filteredEvents.filter(event => {
+      const eventDateStr = getEventDateString(event.date);
+      return eventDateStr === nextDayStr;
+    });
+  }, [filteredEvents, getDateString, getEventDateString]);
 
   const handleEventClick = useCallback((event: Event) => {
     const path = event.slug ? `/event/${event.slug}` : `/event/${event.id}`;
     navigate(path);
   }, [navigate]);
 
-  const renderEvents = useCallback((eventList: Event[], label: string) => {
+  const renderEvents = useCallback((eventList: Event[], label: string, isPast = false) => {
     if (!eventList || eventList.length === 0) return null;
-
-    const firstEventWithDate = eventList.find((e) => e.date);
-    if (!firstEventWithDate?.date) return null;
 
     return (
       <motion.section
@@ -376,25 +373,41 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
         exit={{ opacity: 0, y: 50 }}
         transition={{ duration: 0.7, ease: "easeOut" }}
         viewport={{ once: false, amount: 0.2 }}
-        className="py-16 md:py-24 bg-gradient-to-br from-purple-900 via-pink-900 to-rose-900"
+        className={`py-16 md:py-24 ${isPast ? 'bg-gradient-to-br from-gray-800 via-gray-900 to-black' : 'bg-gradient-to-br from-purple-900 via-pink-900 to-rose-900'}`}
       >
         <div className="max-w-7xl mx-auto px-5 md:px-6">
-          <motion.h2
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            className="text-4xl md:text-6xl font-black text-white text-center mb-4"
-          >
-            {label}
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-center text-pink-200 text-lg mb-10"
-          >
-            {/* Use formatDate to show relative date */}
-            {firstEventWithDate.date ? formatDate(firstEventWithDate.date) : "Date TBD"}
-          </motion.p>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            {isPast && <History className="w-8 h-8 text-gray-400" />}
+            <motion.h2
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              className={`text-4xl md:text-6xl font-black text-center ${isPast ? 'text-gray-300' : 'text-white'}`}
+            >
+              {label}
+            </motion.h2>
+          </div>
+          
+          {label !== "Today" && label !== "Tomorrow" && !isPast && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-center text-pink-200 text-lg mb-10"
+            >
+              {label === "Next" ? getDateString(2).replace(/-/g, '/') : formatDateOnly(eventList[0].date)}
+            </motion.p>
+          )}
+
+          {isPast && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-center text-gray-400 text-lg mb-10"
+            >
+              Relive the memories from past events
+            </motion.p>
+          )}
 
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {eventList.map((event, i) => {
@@ -412,7 +425,11 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                   transition={{ delay: i * 0.15, duration: 0.6 }}
                   whileHover={{ scale: 1.03 }}
                   className={`group relative backdrop-blur-xl rounded-3xl p-6 border overflow-hidden cursor-pointer ${
-                    soldOut ? 'bg-gray-800/30 border-gray-700/50' : 'bg-white/12 border-white/10'
+                    isPast 
+                      ? 'bg-gray-800/30 border-gray-700/50 hover:bg-gray-800/50' 
+                      : soldOut 
+                        ? 'bg-gray-800/30 border-gray-700/50' 
+                        : 'bg-white/12 border-white/10'
                   }`}
                   onClick={() => handleEventClick(event)}
                   role="button"
@@ -420,7 +437,13 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                   onKeyDown={(e) => e.key === 'Enter' && handleEventClick(event)}
                   aria-label={`View ${event.title} event`}
                 >
-                  {soldOut && (
+                  {isPast && (
+                    <div className="absolute top-3 right-3">
+                      <Badge variant="past" />
+                    </div>
+                  )}
+                  
+                  {soldOut && !isPast && (
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10">
                       <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-lg font-bold text-white bg-gradient-to-r from-red-600 to-red-800">
                         <Ticket className="w-5 h-5" />
@@ -429,15 +452,21 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                     </div>
                   )}
                   
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className={`absolute inset-0 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity ${
+                    isPast 
+                      ? 'bg-gradient-to-r from-gray-600/20 via-gray-700/20 to-gray-800/20' 
+                      : 'bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20'
+                  }`} />
 
                   <h3 className={`text-xl md:text-2xl font-bold line-clamp-2 mb-3 group-hover:text-pink-300 transition ${
+                    isPast ? 'text-gray-300 group-hover:text-gray-200' : 
                     soldOut ? 'text-gray-300' : 'text-white'
                   }`}>
                     {event.title || "Untitled Event"}
                   </h3>
 
                   <div className={`flex flex-col gap-2 text-sm mb-6 ${
+                    isPast ? 'text-gray-400' : 
                     soldOut ? 'text-gray-400' : 'text-pink-100'
                   }`}>
                     <span className="flex items-center gap-2">
@@ -446,19 +475,19 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                     <span className="flex items-center gap-2">
                       <MapPin className="w-4 h-4" /> {event.location || "Location TBD"}
                     </span>
-                    {!soldOut && isLowStock && (
+                    {!isPast && !soldOut && isLowStock && (
                       <span className="flex items-center gap-2 text-orange-300 font-bold">
                         🔥 Only {availableTickets} tickets left!
                       </span>
                     )}
-                    {!soldOut && availableTickets >= 9999 && (
+                    {!isPast && !soldOut && availableTickets >= 9999 && (
                       <span className="flex items-center gap-2 text-green-300 font-bold">
                         ✓ Unlimited tickets available
                       </span>
                     )}
                   </div>
 
-                  {!soldOut && (
+                  {!isPast && !soldOut && (
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
@@ -477,6 +506,22 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
                       Get Ticket • {priceDisplay}
                     </motion.button>
                   )}
+
+                  {isPast && (
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="w-full bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-gray-500/50 transition-all duration-300 flex items-center justify-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEventClick(event);
+                      }}
+                      aria-label={`View ${event.title} event details`}
+                    >
+                      <Eye className="w-4 h-4" />
+                      View Event Details
+                    </motion.button>
+                  )}
                 </motion.div>
               );
             })}
@@ -484,13 +529,14 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
         </div>
       </motion.section>
     );
-  }, [handleEventClick]);
+  }, [handleEventClick, getDateString]);
 
   return (
     <AnimatePresence mode="wait">
-      {renderEvents(eventsToday, "Today")}
-      {renderEvents(eventsTomorrow, "Tomorrow")}
-      {renderEvents(eventsNext, "Next")}
+      {eventsToday.length > 0 && renderEvents(eventsToday, "Today")}
+      {eventsTomorrow.length > 0 && renderEvents(eventsTomorrow, "Tomorrow")}
+      {eventsNext.length > 0 && renderEvents(eventsNext, "Next")}
+      {showPast && pastEvents.length > 0 && renderEvents(pastEvents, "Past Events", true)}
     </AnimatePresence>
   );
 };
@@ -499,7 +545,7 @@ const TimelineSchedule = ({ events }: { events: Event[] }) => {
 const containerVariants = { hidden: { opacity: 1 }, visible: { transition: { staggerChildren: 0.08 } } };
 const itemVariants = { hidden: { y: 30, opacity: 0 }, visible: { y: 0, opacity: 1 } };
 
-const EventCard = ({ event }: { event: Event }) => {
+const EventCard = ({ event, isPast = false }: { event: Event; isPast?: boolean }) => {
   const navigate = useNavigate();
   const { price, isFree } = getLowestPriceFromTiers(event);
   const priceDisplay = formatPriceDisplay(price, isFree);
@@ -516,6 +562,11 @@ const EventCard = ({ event }: { event: Event }) => {
     e.currentTarget.src = PLACEHOLDER_IMAGE;
   }, []);
 
+  // Check if event is past
+  const todayStr = new Date().toISOString().split('T')[0];
+  const eventDateStr = event.date?.split('T')[0];
+  const isEventPast = isPast || (eventDateStr && eventDateStr < todayStr);
+
   return (
     <motion.article
       layout
@@ -524,8 +575,9 @@ const EventCard = ({ event }: { event: Event }) => {
       whileHover={{ y: -16, scale: 1.04 }}
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className={`group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-500 border border-gray-100 cursor-pointer ${
-        soldOut ? 'opacity-90' : ''
+      className={`group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-500 border cursor-pointer ${
+        isEventPast ? 'border-gray-200 opacity-80 hover:opacity-100' : 
+        soldOut ? 'border-gray-100 opacity-90' : 'border-gray-100'
       }`}
       onClick={handleEventClick}
       role="button"
@@ -533,7 +585,11 @@ const EventCard = ({ event }: { event: Event }) => {
       onKeyDown={(e) => e.key === 'Enter' && handleEventClick()}
       aria-label={`View ${event.title} event details`}
     >
-      <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20 blur-3xl -z-10 opacity-0 group-hover:opacity-100" />
+      <div className={`absolute inset-0 blur-3xl -z-10 opacity-0 group-hover:opacity-100 ${
+        isEventPast ? 'bg-gradient-to-r from-gray-200/20 via-gray-300/20 to-gray-400/20' :
+        'bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20'
+      }`} />
+      
       <div className="relative aspect-[3/2] bg-gray-50 overflow-hidden">
         <img
           src={event.image || PLACEHOLDER_IMAGE}
@@ -545,7 +601,13 @@ const EventCard = ({ event }: { event: Event }) => {
           height={200}
         />
         
-        {soldOut && (
+        {isEventPast && (
+          <div className="absolute top-3 right-3">
+            <Badge variant="past" />
+          </div>
+        )}
+        
+        {!isEventPast && soldOut && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
             <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-lg font-bold text-white bg-gradient-to-r from-red-600 to-red-800">
               <Ticket className="w-5 h-5" />
@@ -555,13 +617,13 @@ const EventCard = ({ event }: { event: Event }) => {
         )}
         
         <div className="absolute top-3 left-3 flex flex-col gap-2">
-          {event.trending && <Badge variant="trending" />}
-          {event.featured && <Badge variant="featured" />}
-          {event.isNew && <Badge variant="new" />}
-          {event.sponsored && <Badge variant="sponsored" />}
+          {event.trending && !isEventPast && <Badge variant="trending" />}
+          {event.featured && !isEventPast && <Badge variant="featured" />}
+          {event.isNew && !isEventPast && <Badge variant="new" />}
+          {event.sponsored && !isEventPast && <Badge variant="sponsored" />}
         </div>
         
-        {!soldOut && isLowStock && (
+        {!isEventPast && !soldOut && isLowStock && (
           <div className="absolute top-3 right-3">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-red-600">
               🔥 {availableTickets} left
@@ -569,7 +631,7 @@ const EventCard = ({ event }: { event: Event }) => {
           </div>
         )}
         
-        {!soldOut && availableTickets >= 9999 && (
+        {!isEventPast && !soldOut && availableTickets >= 9999 && (
           <div className="absolute top-3 right-3">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600">
               ✓ Unlimited
@@ -579,28 +641,50 @@ const EventCard = ({ event }: { event: Event }) => {
         
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       </div>
+      
       <div className="p-4 pb-6">
-        <h3 className="font-bold text-sm line-clamp-2 text-gray-900 group-hover:text-purple-600 transition-colors duration-300">
+        <h3 className={`font-bold text-sm line-clamp-2 group-hover:text-purple-600 transition-colors duration-300 ${
+          isEventPast ? 'text-gray-700' : 'text-gray-900'
+        }`}>
           {event.title || "Untitled Event"}
         </h3>
-        <div className="mt-3 space-y-2 text-xs text-gray-600">
+        
+        <div className="mt-3 space-y-2 text-xs">
           <div className="flex items-center gap-2">
-            <Calendar size={13} className="text-purple-600" />
-            <span>{event.date ? formatDate(event.date) : "Date not set"}</span>
+            <Calendar size={13} className={isEventPast ? "text-gray-500" : "text-purple-600"} />
+            <span className={isEventPast ? "text-gray-600" : "text-gray-700"}>
+              {formatDate(event.date)}
+            </span>
           </div>
           <div className="flex items-center gap-2">
-            <Clock size={13} className="text-purple-600" />
-            <span className="font-semibold">
+            <Clock size={13} className={isEventPast ? "text-gray-500" : "text-purple-600"} />
+            <span className={`font-semibold ${isEventPast ? "text-gray-600" : "text-gray-700"}`}>
               {formatEventTime(event.date, event.time)}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <MapPin size={13} className="text-purple-600" />
-            <span className="truncate">{event.location || "Location TBD"}</span>
+            <MapPin size={13} className={isEventPast ? "text-gray-500" : "text-purple-600"} />
+            <span className={`truncate ${isEventPast ? "text-gray-600" : "text-gray-700"}`}>
+              {event.location || "Location TBD"}
+            </span>
           </div>
         </div>
         
-        {soldOut ? (
+        {isEventPast ? (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="w-full bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg transition-transform mt-4 hover:shadow-gray-500/50 hover:scale-105"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEventClick();
+            }}
+            aria-label={`View ${event.title} event details`}
+          >
+            <Eye className="w-5 h-5" />
+            View Event Details
+          </motion.button>
+        ) : soldOut ? (
           <div className="w-full bg-gray-400 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-md mt-4 cursor-not-allowed">
             <Ticket size={24} />
             Sold Out
@@ -609,10 +693,10 @@ const EventCard = ({ event }: { event: Event }) => {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className={`w-full text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg transition-transform mt-4 ${
+            className={`w-full text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg transition-transform mt-4 hover:scale-105 ${
               isFree 
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:shadow-emerald-500/50 hover:scale-105' 
-                : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-purple-500/50 hover:scale-105'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:shadow-emerald-500/50' 
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-purple-500/50'
             }`}
             onClick={(e) => {
               e.stopPropagation();
@@ -629,19 +713,23 @@ const EventCard = ({ event }: { event: Event }) => {
   );
 };
 
-const EventSection = ({ title, events }: { title: string; events: Event[] }) => {
+const EventSection = ({ title, events, isPast = false }: { title: string; events: Event[]; isPast?: boolean }) => {
   if (!events.length) return null;
   
   return (
     <section className="px-4 md:px-6 mb-20">
-      <motion.h2
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        className="text-3xl md:text-4xl font-black text-center mb-10 md:mb-14 text-gray-900"
-      >
-        {title}
-      </motion.h2>
+      <div className="flex items-center justify-center gap-3 mb-10 md:mb-14">
+        {isPast && <History className="w-8 h-8 text-gray-500" />}
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className={`text-3xl md:text-4xl font-black text-center ${isPast ? 'text-gray-700' : 'text-gray-900'}`}
+        >
+          {title}
+        </motion.h2>
+      </div>
+      
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -651,7 +739,7 @@ const EventSection = ({ title, events }: { title: string; events: Event[] }) => 
       >
         {events.map((event, i) => (
           <motion.div key={`${event.id || i}-${i}`} variants={itemVariants}>
-            <EventCard event={event} />
+            <EventCard event={event} isPast={isPast} />
           </motion.div>
         ))}
       </motion.div>
@@ -663,11 +751,15 @@ const EventSection = ({ title, events }: { title: string; events: Event[] }) => 
 const SearchBar = ({ 
   searchTerm, 
   setSearchTerm,
-  resultsCount 
+  resultsCount,
+  showPast,
+  setShowPast 
 }: { 
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   resultsCount: number;
+  showPast: boolean;
+  setShowPast: (show: boolean) => void;
 }) => {
   const handleClear = useCallback(() => setSearchTerm(""), [setSearchTerm]);
 
@@ -693,10 +785,27 @@ const SearchBar = ({
           </button>
         )}
       </div>
-      <p className="text-center text-gray-600 mt-4">
-        Found {resultsCount} event{resultsCount !== 1 ? 's' : ''}
-        {searchTerm && ` for "${searchTerm}"`}
-      </p>
+      
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+        <p className="text-center text-gray-600">
+          Found {resultsCount} event{resultsCount !== 1 ? 's' : ''}
+          {searchTerm && ` for "${searchTerm}"`}
+        </p>
+        
+        <button
+          onClick={() => setShowPast(!showPast)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105"
+          style={{
+            background: showPast 
+              ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)' 
+              : 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+            color: 'white'
+          }}
+        >
+          {showPast ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          {showPast ? 'Hide Past Events' : 'Show Past Events'}
+        </button>
+      </div>
     </div>
   );
 };
@@ -705,6 +814,7 @@ const SearchBar = ({
 export default function Home() {
   const [eventsList, setEventsList] = useState<Event[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showPastEvents, setShowPastEvents] = useState(false);
   const [newEventNotification, setNewEventNotification] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -873,20 +983,54 @@ export default function Home() {
     };
   }, []);
 
+  // Filter events based on search and past events toggle
   const filteredEvents = useMemo(
-    () =>
-      eventsList.filter(
+    () => {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // First filter by search term
+      const searched = eventsList.filter(
         e =>
           e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
           (e.location && e.location.toLowerCase().includes(searchTerm.toLowerCase()))
-      ),
-    [eventsList, searchTerm]
+      );
+      
+      // Then filter by date if not showing past events
+      if (!showPastEvents) {
+        return searched.filter(event => {
+          const eventDateStr = event.date?.split('T')[0];
+          return eventDateStr && eventDateStr >= today;
+        });
+      }
+      
+      return searched;
+    },
+    [eventsList, searchTerm, showPastEvents]
   );
 
-  const trendingEvents = useMemo(() => filteredEvents.filter(e => e.trending), [filteredEvents]);
-  const featuredEvents = useMemo(() => filteredEvents.filter(e => e.featured), [filteredEvents]);
-  const newEvents = useMemo(() => filteredEvents.filter(e => e.isNew), [filteredEvents]);
-  const sponsoredEvents = useMemo(() => filteredEvents.filter(e => e.sponsored), [filteredEvents]);
+  // Separate past events for special display
+  const pastEvents = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return filteredEvents.filter(event => {
+      const eventDateStr = event.date?.split('T')[0];
+      return eventDateStr && eventDateStr < today;
+    });
+  }, [filteredEvents]);
+
+  // Future events (for regular sections)
+  const futureEvents = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return filteredEvents.filter(event => {
+      const eventDateStr = event.date?.split('T')[0];
+      return eventDateStr && eventDateStr >= today;
+    });
+  }, [filteredEvents]);
+
+  // Filter sections
+  const trendingEvents = useMemo(() => futureEvents.filter(e => e.trending), [futureEvents]);
+  const featuredEvents = useMemo(() => futureEvents.filter(e => e.featured), [futureEvents]);
+  const newEvents = useMemo(() => futureEvents.filter(e => e.isNew), [futureEvents]);
+  const sponsoredEvents = useMemo(() => futureEvents.filter(e => e.sponsored), [futureEvents]);
 
   const handleNotificationClick = useCallback((event: Event) => {
     const path = event.slug ? `/event/${event.slug}` : `/event/${event.id}`;
@@ -933,6 +1077,8 @@ export default function Home() {
   }
 
   const hasEvents = eventsList.length > 0;
+  const hasFutureEvents = futureEvents.length > 0;
+  const hasPastEvents = pastEvents.length > 0;
   const hasSearchResults = filteredEvents.length > 0;
 
   return (
@@ -1017,39 +1163,58 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* Timeline */}
-      {hasEvents && <TimelineSchedule events={filteredEvents} />}
+      {/* Timeline - Only shows future events by default */}
+      {hasFutureEvents && <TimelineSchedule events={futureEvents} showPast={showPastEvents} />}
 
-      {/* Search */}
+      {/* Search Bar with Past Events Toggle */}
       <SearchBar 
         searchTerm={searchTerm} 
         setSearchTerm={setSearchTerm}
         resultsCount={filteredEvents.length}
+        showPast={showPastEvents}
+        setShowPast={setShowPastEvents}
       />
 
       {/* Event Sections */}
       <div className="space-y-20 pb-28">
-        {hasEvents ? (
+        {hasFutureEvents ? (
           <>
-            {trendingEvents.length > 0 && <EventSection title=" Trending Now" events={trendingEvents} />}
-            {featuredEvents.length > 0 && <EventSection title=" Featured Events" events={featuredEvents} />}
-            {newEvents.length > 0 && <EventSection title=" Fresh Drops" events={newEvents} />}
-            {sponsoredEvents.length > 0 && <EventSection title=" Sponsored Picks" events={sponsoredEvents} />}
+            {trendingEvents.length > 0 && <EventSection title="Trending Now" events={trendingEvents} />}
+            {featuredEvents.length > 0 && <EventSection title="Featured Events" events={featuredEvents} />}
+            {newEvents.length > 0 && <EventSection title="Fresh Drops" events={newEvents} />}
+            {sponsoredEvents.length > 0 && <EventSection title="Sponsored Picks" events={sponsoredEvents} />}
           </>
-        ) : (
+        ) : !showPastEvents && !searchTerm ? (
           <div className="text-center py-20">
             <div className="w-24 h-24 bg-gradient-to-r from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Calendar className="w-12 h-12 text-purple-600" />
             </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-3">No events available yet</h3>
-            <p className="text-gray-600 mb-8">Be the first to create an amazing event!</p>
-            <Link 
-              to="/teaser"
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
-            >
-              <Plus className="w-5 h-5" /> Create First Event
-            </Link>
+            <h3 className="text-2xl font-bold text-gray-900 mb-3">No upcoming events</h3>
+            <p className="text-gray-600 mb-8">Check back soon or create your own event!</p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link 
+                to="/teaser"
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
+              >
+                <Plus className="w-5 h-5" /> Create Event
+              </Link>
+              <button
+                onClick={() => setShowPastEvents(true)}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
+              >
+                <History className="w-5 h-5" /> View Past Events
+              </button>
+            </div>
           </div>
+        ) : null}
+
+        {/* Show Past Events Section if toggled */}
+        {showPastEvents && hasPastEvents && (
+          <EventSection 
+            title="Past Events" 
+            events={pastEvents} 
+            isPast={true}
+          />
         )}
 
         {!hasSearchResults && searchTerm && (
@@ -1059,19 +1224,29 @@ export default function Home() {
             </div>
             <h3 className="text-2xl font-bold text-gray-900 mb-3">No events found</h3>
             <p className="text-gray-600 mb-8">Try a different search term or browse all events</p>
-            <Link 
-              to="/events"
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
-            >
-              Browse All Events
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={() => setSearchTerm("")}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
+              >
+                Clear Search
+              </button>
+              {hasPastEvents && !showPastEvents && (
+                <button
+                  onClick={() => setShowPastEvents(true)}
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200"
+                >
+                  <History className="w-5 h-5" /> Search Past Events
+                </button>
+              )}
+            </div>
           </div>
         )}
 
-        {hasSearchResults && !searchTerm && filteredEvents.length > 0 && (
+        {hasSearchResults && !searchTerm && hasFutureEvents && !showPastEvents && (
           <EventSection 
-            title="All Events" 
-            events={filteredEvents.slice(0, 8)}
+            title="All Upcoming Events" 
+            events={futureEvents.slice(0, 8)}
           />
         )}
       </div>

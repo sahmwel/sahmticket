@@ -404,6 +404,7 @@ export default function OrganizerEventDetails() {
       <div className="flex-1 flex flex-col">
         {/* Mobile Header */}
 
+
         <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-900 via-purple-900/5 to-gray-900">
           <main className="p-6 lg:p-10 max-w-7xl mx-auto">
             {/* Header */}
