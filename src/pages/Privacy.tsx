@@ -53,7 +53,7 @@ export default function Privacy() {
             Your Privacy Matters
           </h1>
           <p className="text-xl md:text-2xl text-gray-600 font-medium">
-            Last updated: November 2025
+            Last updated: January 2026
           </p>
         </motion.div>
 

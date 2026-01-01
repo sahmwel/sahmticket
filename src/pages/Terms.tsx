@@ -63,7 +63,7 @@ export default function Terms() {
             House Rules
           </h1>
           <p className="text-2xl md:text-3xl font-bold text-gray-700">
-            The Vibe Code • Last updated: November 2025
+            The Vibe Code • Last updated: January 2026
           </p>
         </motion.div>
 

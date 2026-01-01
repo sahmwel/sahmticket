@@ -1,4 +1,4 @@
-// src/pages/EventDetails.tsx - PRODUCTION READY VERSION
+// src/pages/EventDetails.tsx - COMPLETE UPDATED VERSION
 'use client';
 
 import { useNavigate, useParams, Link } from "react-router-dom";
@@ -31,7 +31,8 @@ import {
   Globe,
   Phone,
   Mail,
-  Download
+  Lock,
+  FileText
 } from "lucide-react";
 import EventMap from "../components/EventMap";
 import { supabase } from "../lib/supabaseClient";
@@ -53,7 +54,7 @@ interface TicketTier {
   is_active?: boolean;
 }
 
-interface EventType {
+interface EventDetailsType {
   id: string;
   title: string;
   date: string;
@@ -93,7 +94,7 @@ const PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1540575467063-178a5
 const API_URL = import.meta.env.VITE_API_URL || 'https://api.sahmtickethub.online';
 const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_KEY || '';
 
-// Ride-hailing services
+// Ride-hailing services with working URLs
 const RIDE_SERVICES = [
   {
     id: 'uber',
@@ -104,8 +105,11 @@ const RIDE_SERVICES = [
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
       </svg>
     ),
-    getUrl: (lat: number, lng: number, address: string, title: string) => 
-      `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(address)}&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodeURIComponent(title)}`
+    getUrl: (lat: number, lng: number, address: string, title: string) => {
+      // Uber web URL that works
+      const encodedAddress = encodeURIComponent(`${address}, Nigeria`);
+      return `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodedAddress}`;
+    }
   },
   {
     id: 'bolt',
@@ -116,8 +120,11 @@ const RIDE_SERVICES = [
         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
       </svg>
     ),
-    getUrl: (lat: number, lng: number, address: string) =>
-      `https://bolt.eu/en-ng/ride/?pickup=Current%20Location&destination=${encodeURIComponent(address)}&destination_lat=${lat}&destination_lng=${lng}`
+    getUrl: (lat: number, lng: number, address: string) => {
+      // Bolt web URL
+      const encodedAddress = encodeURIComponent(address);
+      return `https://bolt.eu/ride/?pickup_name=My%20Location&destination_name=${encodedAddress}`;
+    }
   },
   {
     id: 'indrive',
@@ -128,8 +135,26 @@ const RIDE_SERVICES = [
         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
       </svg>
     ),
-    getUrl: (lat: number, lng: number, address: string) =>
-      `https://indriver.com/en/ride/?address=${encodeURIComponent(address)}&lat=${lat}&lng=${lng}`
+    getUrl: (lat: number, lng: number, address: string) => {
+      // inDrive web URL
+      const encodedAddress = encodeURIComponent(address);
+      return `https://indriver.com/en/ride?address=${encodedAddress}`;
+    }
+  },
+  {
+    id: 'google-maps',
+    name: 'Google Maps',
+    color: 'bg-blue-600 hover:bg-blue-700',
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+      </svg>
+    ),
+    getUrl: (lat: number, lng: number, address: string) => {
+      // Google Maps always works
+      const encodedAddress = encodeURIComponent(`${address}, Nigeria`);
+      return `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+    }
   }
 ];
 
@@ -297,7 +322,7 @@ const updateTierQuantity = async (tierId: string, quantity: number) => {
   }
 };
 
-const sendTicketEmail = async (reference: string, email: string, name: string, event: EventType, tier: TicketTier, quantity: number) => {
+const sendTicketEmail = async (reference: string, email: string, name: string, event: EventDetailsType, tier: TicketTier, quantity: number) => {
   try {
     const response = await fetch(`${API_URL}/api/tickets/send-with-pdf`, {
       method: "POST",
@@ -331,7 +356,7 @@ const sendTicketEmail = async (reference: string, email: string, name: string, e
 export default function EventDetails() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
-  const [event, setEvent] = useState<EventType | null>(null);
+  const [event, setEvent] = useState<EventDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantities, setQuantities] = useState<{ [key: string]: number }>({});
   const [showCheckout, setShowCheckout] = useState(false);
@@ -351,6 +376,8 @@ export default function EventDetails() {
   const [selectedTier, setSelectedTier] = useState<TicketTier | null>(null);
   const [showRideOptions, setShowRideOptions] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // --- MEMOIZED VALUES ---
   const totalAmount = useMemo(() => {
@@ -534,6 +561,7 @@ export default function EventDetails() {
     setFormData({ fullName: "", email: "", phone: "" });
     setFormErrors({ fullName: false, email: false, phone: false });
     setCheckoutLoading(false);
+    setAcceptPrivacy(false);
   }, []);
 
   const validateForm = useCallback((): boolean => {
@@ -543,8 +571,14 @@ export default function EventDetails() {
       phone: !isValidPhone(formData.phone)
     };
     setFormErrors(errors);
+    
+    if (!acceptPrivacy) {
+      alert("Please accept the Privacy Policy to continue");
+      return false;
+    }
+    
     return !errors.fullName && !errors.email && !errors.phone;
-  }, [formData]);
+  }, [formData, acceptPrivacy]);
 
   const handleInputChange = useCallback((field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -574,228 +608,243 @@ export default function EventDetails() {
     });
   }, [event]);
 
-// Replace your handleCheckoutSubmit function with this:
-
-const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
-  e.preventDefault();
-  
-  if (!checkoutData || !event || !validateForm()) {
-    console.error("Checkout validation failed");
-    return;
-  }
-
-  setCheckoutLoading(true);
-
-  try {
-    const tier = event.ticketTiers?.find(t => t.id === checkoutData.tier.id);
-    if (!tier || !tier.id) {
-      throw new Error("Invalid ticket tier selection");
-    }
-
-    const tierId = tier.id;
-    const tierName = tier.name;
-    const quantity = checkoutData.quantity || 1;
-    const orderId = checkoutData.orderId;
-    const currentTime = new Date().toISOString();
-
-    // Stock check
-    const { data: stockCheck, error: stockError } = await supabase
-      .from("ticketTiers")
-      .select("quantity_total, quantity_sold")
-      .eq("id", tierId)
-      .single();
-
-    if (stockError || !stockCheck) throw new Error("Unable to verify ticket availability.");
+  const handleRideServiceClick = useCallback((serviceId: string) => {
+    if (!event) return;
     
-    const remaining = (stockCheck.quantity_total || 0) - (stockCheck.quantity_sold || 0);
-    if (remaining < quantity) {
-      throw new Error(`Sold out! Only ${remaining} tickets left.`);
-    }
+    const address = event.venue || event.location;
+    const title = event.title;
+    const lat = event.lat || 0;
+    const lng = event.lng || 0;
+    
+    const service = RIDE_SERVICES.find(s => s.id === serviceId);
+    if (!service) return;
+    
+    const url = service.getUrl(lat, lng, address, title);
+    
+    // Open in new tab
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [event]);
 
-    // Handle free tickets
-    if (totalAmount === 0) {
-const freeRef = `STH-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      
-      const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
-        const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
-        const qr_code_url = await QRCode.toDataURL(qrData);
-
-        return insertTicket({
-          event_id: event.id,
-          tier_id: tierId,
-          tier_name: tierName,
-          full_name: formData.fullName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
-          ticket_type: tierName,
-          price: 0,
-          qr_code_url,
-          reference: freeRef,
-          order_id: orderId,
-          purchased_at: currentTime,
-          buyer_email: formData.email.trim(),
-          created_at: currentTime,
-        });
-      });
-
-      await Promise.all(insertPromises);
-      await updateTierQuantity(tierId, quantity);
-      await sendTicketEmail(freeRef, formData.email, formData.fullName, event, tier, quantity);
-
-      const params = new URLSearchParams({
-        free: "true",
-        title: event.title,
-        location: event.location,
-        venue: event.venue || event.location,
-        date: event.date,
-        time: event.time || "6:00 PM",
-        type: tierName,
-        qty: quantity.toString(),
-        price: "₦0",
-        lat: event.lat?.toString() || "0",
-        lng: event.lng?.toString() || "0"
-      }).toString();
-
-      closeCheckout();
-      navigate(`/bag/${orderId}?${params}`);
+  const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!checkoutData || !event || !validateForm()) {
+      console.error("Checkout validation failed");
       return;
     }
 
-    // Handle paid tickets with Paystack
-    if (!window.PaystackPop) {
-      throw new Error("Payment gateway failed to load. Please refresh and try again.");
-    }
+    setCheckoutLoading(true);
 
-    if (!PAYSTACK_PUBLIC_KEY || !PAYSTACK_PUBLIC_KEY.startsWith('pk_')) {
-      throw new Error("Payment configuration error. Please contact support.");
-    }
+    try {
+      const tier = event.ticketTiers?.find(t => t.id === checkoutData.tier.id);
+      if (!tier || !tier.id) {
+        throw new Error("Invalid ticket tier selection");
+      }
 
-    const amountInKobo = Math.round(totalAmount * 100);
-    const cleanEmail = formData.email.trim().toLowerCase();
-const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+      const tierId = tier.id;
+      const tierName = tier.name;
+      const quantity = checkoutData.quantity || 1;
+      const orderId = checkoutData.orderId;
+      const currentTime = new Date().toISOString();
 
-    // Store references for the callback
-    const paymentData = {
-      event,
-      tierId,
-      tierName,
-      quantity,
-      orderId,
-      currentTime,
-      totalAmount,
-      formData: { ...formData },
-      navigate,
-      closeCheckout
-    };
+      // Stock check
+      const { data: stockCheck, error: stockError } = await supabase
+        .from("ticketTiers")
+        .select("quantity_total, quantity_sold")
+        .eq("id", tierId)
+        .single();
 
-    // Create a regular function (not async) for the callback
-    const handlePaymentSuccess = function(response: any) {
-      console.log("💰 Payment successful:", response);
+      if (stockError || !stockCheck) throw new Error("Unable to verify ticket availability.");
       
-      // Create an async function to handle the success logic
-      const processSuccess = async () => {
-        try {
-          const paidPromises = Array.from({ length: paymentData.quantity }).map(async (_, i) => {
-            const qrData = `${paymentData.event.id}|${paymentData.tierId}|${response.reference}|${i}`;
-            const qr_code_url = await QRCode.toDataURL(qrData);
+      const remaining = (stockCheck.quantity_total || 0) - (stockCheck.quantity_sold || 0);
+      if (remaining < quantity) {
+        throw new Error(`Sold out! Only ${remaining} tickets left.`);
+      }
 
-            return insertTicket({
-              event_id: paymentData.event.id,
-              tier_id: paymentData.tierId,
-              tier_name: paymentData.tierName,
-              full_name: paymentData.formData.fullName.trim(),
-              email: paymentData.formData.email.trim(),
-              phone: paymentData.formData.phone.trim(),
-              ticket_type: paymentData.tierName,
-              price: paymentData.totalAmount / paymentData.quantity,
-              qr_code_url,
-              reference: response.reference,
-              order_id: paymentData.orderId,
-              purchased_at: paymentData.currentTime,
-              buyer_email: paymentData.formData.email.trim(),
-              created_at: paymentData.currentTime,
-            });
+      // Handle free tickets
+      if (totalAmount === 0) {
+        const freeRef = `STH-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+        
+        const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
+          const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
+          const qr_code_url = await QRCode.toDataURL(qrData);
+
+          return insertTicket({
+            event_id: event.id,
+            tier_id: tierId,
+            tier_name: tierName,
+            full_name: formData.fullName.trim(),
+            email: formData.email.trim(),
+            phone: formData.phone.trim(),
+            ticket_type: tierName,
+            price: 0,
+            qr_code_url,
+            reference: freeRef,
+            order_id: orderId,
+            purchased_at: currentTime,
+            buyer_email: formData.email.trim(),
+            created_at: currentTime,
           });
+        });
 
-          await Promise.all(paidPromises);
-          await updateTierQuantity(paymentData.tierId, paymentData.quantity);
-          await sendTicketEmail(
-            response.reference, 
-            paymentData.formData.email, 
-            paymentData.formData.fullName, 
-            paymentData.event, 
-            tier, 
-            paymentData.quantity
-          );
+        await Promise.all(insertPromises);
+        await updateTierQuantity(tierId, quantity);
+        await sendTicketEmail(freeRef, formData.email, formData.fullName, event, tier, quantity);
 
-          const params = new URLSearchParams({
-            paid: "true",
-            ref: response.reference,
-            title: paymentData.event.title,
-            location: paymentData.event.location,
-            venue: paymentData.event.venue || paymentData.event.location,
-            date: paymentData.event.date,
-            time: paymentData.event.time || "6:00 PM",
-            type: paymentData.tierName,
-            qty: paymentData.quantity.toString(),
-            price: `₦${paymentData.totalAmount.toLocaleString()}`,
-            lat: paymentData.event.lat?.toString() || "0",
-            lng: paymentData.event.lng?.toString() || "0"
-          }).toString();
+        const params = new URLSearchParams({
+          free: "true",
+          title: event.title,
+          location: event.location,
+          venue: event.venue || event.location,
+          date: event.date,
+          time: event.time || "6:00 PM",
+          type: tierName,
+          qty: quantity.toString(),
+          price: "₦0",
+          lat: event.lat?.toString() || "0",
+          lng: event.lng?.toString() || "0"
+        }).toString();
 
-          paymentData.closeCheckout();
-          paymentData.navigate(`/bag/${paymentData.orderId}?${params}`);
-        } catch (innerErr) {
-          console.error("Database Insert Error:", innerErr);
-          alert("Payment successful, but ticket generation failed. Contact support with ref: " + response.reference);
-        }
+        closeCheckout();
+        navigate(`/bag/${orderId}?${params}`);
+        return;
+      }
+
+      // Handle paid tickets with Paystack
+      if (!window.PaystackPop) {
+        throw new Error("Payment gateway failed to load. Please refresh and try again.");
+      }
+
+      if (!PAYSTACK_PUBLIC_KEY || !PAYSTACK_PUBLIC_KEY.startsWith('pk_')) {
+        throw new Error("Payment configuration error. Please contact support.");
+      }
+
+      const amountInKobo = Math.round(totalAmount * 100);
+      const cleanEmail = formData.email.trim().toLowerCase();
+      const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+
+      // Store references for the callback
+      const paymentData = {
+        event,
+        tierId,
+        tierName,
+        quantity,
+        orderId,
+        currentTime,
+        totalAmount,
+        formData: { ...formData },
+        navigate,
+        closeCheckout
       };
-      
-      // Start processing
-      processSuccess();
-    };
 
-    // For onClose callback
-    const handlePaymentClose = function() {
-      console.log("Payment popup closed");
+      // Create a regular function (not async) for the callback
+      const handlePaymentSuccess = function(response: any) {
+        console.log("💰 Payment successful:", response);
+        
+        // Create an async function to handle the success logic
+        const processSuccess = async () => {
+          try {
+            const paidPromises = Array.from({ length: paymentData.quantity }).map(async (_, i) => {
+              const qrData = `${paymentData.event.id}|${paymentData.tierId}|${response.reference}|${i}`;
+              const qr_code_url = await QRCode.toDataURL(qrData);
+
+              return insertTicket({
+                event_id: paymentData.event.id,
+                tier_id: paymentData.tierId,
+                tier_name: paymentData.tierName,
+                full_name: paymentData.formData.fullName.trim(),
+                email: paymentData.formData.email.trim(),
+                phone: paymentData.formData.phone.trim(),
+                ticket_type: paymentData.tierName,
+                price: paymentData.totalAmount / paymentData.quantity,
+                qr_code_url,
+                reference: response.reference,
+                order_id: paymentData.orderId,
+                purchased_at: paymentData.currentTime,
+                buyer_email: paymentData.formData.email.trim(),
+                created_at: paymentData.currentTime,
+              });
+            });
+
+            await Promise.all(paidPromises);
+            await updateTierQuantity(paymentData.tierId, paymentData.quantity);
+            await sendTicketEmail(
+              response.reference, 
+              paymentData.formData.email, 
+              paymentData.formData.fullName, 
+              paymentData.event, 
+              tier, 
+              paymentData.quantity
+            );
+
+            const params = new URLSearchParams({
+              paid: "true",
+              ref: response.reference,
+              title: paymentData.event.title,
+              location: paymentData.event.location,
+              venue: paymentData.event.venue || paymentData.event.location,
+              date: paymentData.event.date,
+              time: paymentData.event.time || "6:00 PM",
+              type: paymentData.tierName,
+              qty: paymentData.quantity.toString(),
+              price: `₦${paymentData.totalAmount.toLocaleString()}`,
+              lat: paymentData.event.lat?.toString() || "0",
+              lng: paymentData.event.lng?.toString() || "0"
+            }).toString();
+
+            paymentData.closeCheckout();
+            paymentData.navigate(`/bag/${paymentData.orderId}?${params}`);
+          } catch (innerErr) {
+            console.error("Database Insert Error:", innerErr);
+            alert("Payment successful, but ticket generation failed. Contact support with ref: " + response.reference);
+          }
+        };
+        
+        // Start processing
+        processSuccess();
+      };
+
+      // For onClose callback
+      const handlePaymentClose = function() {
+        console.log("Payment popup closed");
+        setCheckoutLoading(false);
+      };
+
+      console.log("Setting up Paystack with:", {
+        key: PAYSTACK_PUBLIC_KEY.trim().substring(0, 10) + "...",
+        email: cleanEmail,
+        amount: amountInKobo,
+        ref: uniqueRef
+      });
+
+      // **FIX: Use regular function syntax, not arrow function**
+      const handler = window.PaystackPop.setup({
+        key: PAYSTACK_PUBLIC_KEY.trim(),
+        email: cleanEmail,
+        amount: amountInKobo,
+        currency: 'NGN',
+        ref: uniqueRef,
+        metadata: {
+          custom_fields: [
+            { display_name: "Event", variable_name: "event_name", value: event.title },
+            { display_name: "Tier", variable_name: "tier_name", value: tierName },
+            { display_name: "Quantity", variable_name: "quantity", value: quantity.toString() },
+            { display_name: "Order ID", variable_name: "order_id", value: orderId }
+          ]
+        },
+        callback: handlePaymentSuccess, // Use function reference
+        onClose: handlePaymentClose     // Use function reference
+      });
+
+      console.log("Opening Paystack iframe...");
+      handler.openIframe();
+
+    } catch (err: any) {
+      console.error("Checkout Failure:", err);
+      alert(err.message || "An unexpected error occurred during checkout.");
       setCheckoutLoading(false);
-    };
-
-    console.log("Setting up Paystack with:", {
-      key: PAYSTACK_PUBLIC_KEY.trim().substring(0, 10) + "...",
-      email: cleanEmail,
-      amount: amountInKobo,
-      ref: uniqueRef
-    });
-
-    // **FIX: Use regular function syntax, not arrow function**
-    const handler = window.PaystackPop.setup({
-      key: PAYSTACK_PUBLIC_KEY.trim(),
-      email: cleanEmail,
-      amount: amountInKobo,
-      currency: 'NGN',
-      ref: uniqueRef,
-      metadata: {
-        custom_fields: [
-          { display_name: "Event", variable_name: "event_name", value: event.title },
-          { display_name: "Tier", variable_name: "tier_name", value: tierName },
-          { display_name: "Quantity", variable_name: "quantity", value: quantity.toString() },
-          { display_name: "Order ID", variable_name: "order_id", value: orderId }
-        ]
-      },
-      callback: handlePaymentSuccess, // Use function reference
-      onClose: handlePaymentClose     // Use function reference
-    });
-
-    console.log("Opening Paystack iframe...");
-    handler.openIframe();
-
-  } catch (err: any) {
-    console.error("Checkout Failure:", err);
-    alert(err.message || "An unexpected error occurred during checkout.");
-    setCheckoutLoading(false);
-  }
-}, [checkoutData, event, formData, totalAmount, validateForm, closeCheckout, navigate]);
+    }
+  }, [checkoutData, event, formData, totalAmount, validateForm, closeCheckout, navigate]);
 
   const shareEvent = useCallback(async () => {
     if (!event) return;
@@ -1019,9 +1068,12 @@ const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
                         <div className="space-y-2">
                           {RIDE_SERVICES.map((service) => {
                             const location = event.venue || event.location;
-                            const url = event.lat && event.lng 
-                              ? service.getUrl(event.lat, event.lng, location, event.title)
-                              : service.getUrl(0, 0, location, event.title);
+                            const url = service.getUrl(
+                              event.lat || 0, 
+                              event.lng || 0, 
+                              location, 
+                              event.title
+                            );
                             
                             return (
                               <a
@@ -1074,25 +1126,29 @@ const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
                 </div>
               )}
               
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
                 {RIDE_SERVICES.map((service) => {
                   const address = event.venue || event.location;
-                  const url = event.lat && event.lng 
-                    ? service.getUrl(event.lat, event.lng, address, event.title)
-                    : service.getUrl(0, 0, address, event.title);
+                  const url = service.getUrl(
+                    event.lat || 0, 
+                    event.lng || 0, 
+                    address, 
+                    event.title
+                  );
                   
                   return (
-                    <a
+                    <button
                       key={service.id}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      onClick={() => handleRideServiceClick(service.id)}
                       className={`flex flex-col items-center justify-center p-3 ${service.color} text-white rounded-xl hover:shadow-lg transition`}
                       title={`Book ${service.name}`}
+                      aria-label={`Book ${service.name} ride`}
                     >
-                      {service.icon}
-                      <span className="text-xs mt-1 font-medium">{service.name}</span>
-                    </a>
+                      <div className="w-6 h-6 flex items-center justify-center mb-1">
+                        {service.icon}
+                      </div>
+                      <span className="text-xs font-medium">{service.name}</span>
+                    </button>
                   );
                 })}
               </div>
@@ -1292,82 +1348,121 @@ const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
                 </div>
               )}
             </div>
-
-            {/* Trust Signals */}
-            <div className="bg-gradient-to-br from-purple-900 to-pink-900 rounded-3xl p-6 text-white">
-              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Heart className="w-5 h-5 text-pink-300" />
-                Why Choose SahmTicketHub?
-              </h3>
-              <ul className="space-y-3">
-                <li className="flex items-center gap-3">
-                  <Shield className="w-5 h-5 text-emerald-300 flex-shrink-0" />
-                  <span>Zero fake tickets - 100% authentic tickets only</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <Zap className="w-5 h-5 text-emerald-300 flex-shrink-0" />
-                  <span>Instant payouts to event organizers</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-emerald-300 flex-shrink-0" />
-                  <span>QR code entry - fast & secure check-in</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <Globe className="w-5 h-5 text-emerald-300 flex-shrink-0" />
-                  <span>Real-time analytics for event insights</span>
-                </li>
-              </ul>
-              
-              <div className="mt-6 pt-6 border-t border-white/20">
-                <h4 className="font-bold mb-3 flex items-center gap-2">
-                  <Car className="w-4 h-4" />
-                  Need a ride to the event?
-                </h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {RIDE_SERVICES.map((service) => (
-                    <div key={service.id} className="flex items-center gap-2">
-                      <div className={`w-6 h-6 ${service.color.split(' ')[0]} rounded flex items-center justify-center`}>
-                        {service.icon}
-                      </div>
-                      <span className="text-sm">{service.name}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs opacity-75 mt-3">
-                  Click "Get a Ride" button above to book transportation
-                </p>
-              </div>
-            </div>
-
-            {/* Contact Support */}
-            <div className="bg-white rounded-3xl p-6 shadow-xl">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Need Help?</h3>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <Phone className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <p className="font-medium text-gray-800">Call Support</p>
-                    <p className="text-gray-600">+234 900 000 0000</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Mail className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <p className="font-medium text-gray-800">Email Support</p>
-                    <p className="text-gray-600">support@sahmtickethub.online</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Clock className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <p className="font-medium text-gray-800">Support Hours</p>
-                    <p className="text-gray-600">24/7 via email, 8AM-8PM via phone</p>
-                  </div>
-                </div>
-              </div>
-            </div>
           </motion.div>
         </div>
+
+        {/* Trust Signals - Always Visible on All Devices */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="mt-12"
+        >
+          <div className="bg-gradient-to-br from-purple-900 to-pink-900 rounded-3xl p-6 lg:p-8 text-white">
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+              <div className="lg:col-span-2">
+                <h3 className="text-2xl lg:text-3xl font-bold mb-4 flex items-center gap-3">
+                  <Heart className="w-7 h-7 text-pink-300" />
+                  Why Choose SahmTicketHub?
+                </h3>
+                <p className="text-lg text-purple-200 mb-2">
+                  Your trusted partner for authentic event tickets with seamless experience
+                </p>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  <span className="px-3 py-1 bg-white/10 rounded-full text-sm">Zero Fake Tickets</span>
+                  <span className="px-3 py-1 bg-white/10 rounded-full text-sm">Instant Payouts</span>
+                  <span className="px-3 py-1 bg-white/10 rounded-full text-sm">QR Code Entry</span>
+                  <span className="px-3 py-1 bg-white/10 rounded-full text-sm">Real-time Analytics</span>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Shield className="w-5 h-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-lg">Zero Fake Tickets</h4>
+                    <p className="text-sm text-purple-200">100% authentic tickets only with verified QR codes</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Zap className="w-5 h-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-lg">Instant Payouts</h4>
+                    <p className="text-sm text-purple-200">Direct bank transfers to event organizers</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <CheckCircle className="w-5 h-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-lg">QR Code Entry</h4>
+                    <p className="text-sm text-purple-200">Fast & secure check-in with unique QR codes</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Globe className="w-5 h-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-lg">Real-time Analytics</h4>
+                    <p className="text-sm text-purple-200">Valuable insights for event organizers</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Ride Services Section */}
+            <div className="mt-8 pt-8 border-t border-white/20">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-lg mb-2 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center">
+                      <Car className="w-5 h-5" />
+                    </div>
+                    <span>Need a ride to the event?</span>
+                  </h4>
+                  <p className="text-sm text-purple-200">
+                    Book transportation directly to the venue with one click
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap gap-3">
+                  {RIDE_SERVICES.map((service) => {
+                    const address = event.venue || event.location;
+                    const url = service.getUrl(
+                      event.lat || 0, 
+                      event.lng || 0, 
+                      address, 
+                      event.title
+                    );
+                    
+                    return (
+                      <button
+                        key={service.id}
+                        onClick={() => handleRideServiceClick(service.id)}
+                        className={`flex items-center gap-2 px-4 py-3 ${service.color} text-white rounded-xl hover:shadow-lg transition min-w-[120px] justify-center`}
+                        aria-label={`Book ${service.name} ride`}
+                      >
+                        <div className="w-6 h-6 flex items-center justify-center">
+                          {service.icon}
+                        </div>
+                        <span className="font-medium">{service.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
       </div>
 
       {/* Checkout Modal */}
@@ -1459,6 +1554,34 @@ const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
                     </div>
                   </div>
 
+                  {/* Privacy Policy Checkbox */}
+                  <div className="mt-6 p-4 bg-purple-50 rounded-xl">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        id="privacy-policy"
+                        checked={acceptPrivacy}
+                        onChange={(e) => setAcceptPrivacy(e.target.checked)}
+                        className="mt-1 w-5 h-5 text-purple-600 rounded focus:ring-purple-500"
+                        required
+                      />
+                      <div>
+                        <label htmlFor="privacy-policy" className="text-gray-700 font-medium">
+                          I agree to the Privacy Policy and Terms of Service
+                        </label>
+                        <p className="text-sm text-gray-600 mt-1">
+                          By checking this box, you agree to our data collection and usage practices as outlined in our privacy policy.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowPrivacyModal(true)}
+                          className="mt-2 text-purple-600 hover:text-purple-800 font-medium text-sm flex items-center gap-1"
+                        >
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="mt-8 p-6 bg-gray-50 rounded-2xl space-y-4">
                     <h3 className="text-2xl font-bold text-gray-800">Order Summary</h3>
                     <div className="flex justify-between">
@@ -1494,7 +1617,7 @@ const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
 
                   <button
                     type="submit"
-                    disabled={checkoutLoading}
+                    disabled={checkoutLoading || !acceptPrivacy}
                     className="mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black text-xl py-5 rounded-3xl flex justify-center items-center gap-2 hover:shadow-xl transition disabled:opacity-70 disabled:cursor-not-allowed"
                   >
                     {checkoutLoading ? (
@@ -1506,6 +1629,114 @@ const uniqueRef = `STH-${Math.random().toString(36).substr(2, 8).toUpperCase()}`
                     )}
                   </button>
                 </form>
+              </div>
+            </motion.div>
+          </motion.div>
+        </Modal>
+      )}
+
+      {/* Privacy Policy Modal */}
+      {showPrivacyModal && (
+        <Modal>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4"
+            onClick={() => setShowPrivacyModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="bg-white rounded-3xl max-w-2xl w-full max-h-[95vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-black flex items-center gap-2">
+                    <Lock className="w-8 h-8" />
+                    Privacy Policy
+                  </h2>
+                  <p className="text-xl opacity-90">How we protect your data</p>
+                </div>
+                <button
+                  onClick={() => setShowPrivacyModal(false)}
+                  className="p-2 hover:bg-white/20 rounded-xl"
+                  aria-label="Close privacy policy"
+                >
+                  <X className="w-8 h-8" />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-4">Data Collection & Usage</h3>
+                  <p className="text-gray-700 mb-4">
+                    At SahmTicketHub, we are committed to protecting your privacy and personal information. 
+                    This policy outlines how we collect, use, and protect your data.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xl font-bold text-gray-900 mb-2">Information We Collect</h4>
+                    <ul className="list-disc pl-5 text-gray-700 space-y-2">
+                      <li><strong>Personal Information:</strong> Name, email address, phone number for ticket delivery</li>
+                      <li><strong>Payment Information:</strong> Processed securely through Paystack (we never store card details)</li>
+                      <li><strong>Event Information:</strong> Ticket type, quantity, and purchase history</li>
+                      <li><strong>Device Information:</strong> IP address, browser type for security purposes</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xl font-bold text-gray-900 mb-2">How We Use Your Information</h4>
+                    <ul className="list-disc pl-5 text-gray-700 space-y-2">
+                      <li>Process ticket purchases and send confirmation emails</li>
+                      <li>Generate unique QR codes for event entry</li>
+                      <li>Provide customer support and resolve issues</li>
+                      <li>Send important updates about event changes</li>
+                      <li>Improve our services and user experience</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xl font-bold text-gray-900 mb-2">Data Protection</h4>
+                    <ul className="list-disc pl-5 text-gray-700 space-y-2">
+                      <li>All data is encrypted using industry-standard SSL/TLS encryption</li>
+                      <li>Payment processing handled by PCI-DSS compliant providers</li>
+                      <li>Regular security audits and vulnerability assessments</li>
+                      <li>Limited access to personal data for authorized personnel only</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xl font-bold text-gray-900 mb-2">Third-Party Services</h4>
+                    <p className="text-gray-700 mb-2">
+                      We use trusted third-party services for:
+                    </p>
+                    <ul className="list-disc pl-5 text-gray-700 space-y-2">
+                      <li><strong>Paystack:</strong> Secure payment processing</li>
+                      <li><strong>Supabase:</strong> Database and authentication</li>
+                      <li><strong>Email Services:</strong> Ticket delivery and notifications</li>
+                    </ul>
+                  </div>
+
+                  <div className="p-4 bg-purple-50 rounded-xl">
+                    <p className="text-gray-700">
+                      <strong>By proceeding with your purchase, you agree to our data practices as described above.</strong>
+                      If you have any questions about our privacy policy, please contact us at privacy@sahmtickethub.online
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowPrivacyModal(false);
+                    setAcceptPrivacy(true);
+                  }}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-2xl hover:shadow-xl transition"
+                >
+                  I Accept & Continue
+                </button>
               </div>
             </motion.div>
           </motion.div>

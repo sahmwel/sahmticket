@@ -17,7 +17,7 @@ export default function Contact() {
             We’re Here For You
           </h1>
           <p className="text-2xl text-gray-700">
-            Got a question? Need help? We reply fast—usually under 30 mins
+            Got a question? Need help? We reply fast. Usually under 30 mins
           </p>
         </motion.div>
 
