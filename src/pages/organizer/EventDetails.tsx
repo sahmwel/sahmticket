@@ -398,33 +398,11 @@ export default function OrganizerEventDetails() {
 
   return (
     <div className="flex min-h-screen bg-gray-950">
-      <Toaster position="top-right" />
-      
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ease-in-out ${
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
-      } md:translate-x-0 md:static md:z-auto`}>
-        <Sidebar role="organizer" />
-      </div>
 
-      {/* Overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Mobile Header */}
-        <div className="md:hidden flex items-center justify-between p-4 bg-gray-900/90 backdrop-blur-xl border-b border-white/10">
-          <button 
-            onClick={() => setSidebarOpen(true)} 
-            className="text-white p-2 rounded-lg hover:bg-white/10"
-          >
-            <Menu size={24} />
-          </button>
-          <h1 className="text-xl font-bold text-white">Event Details</h1>
-          <div className="w-10" />
-        </div>
 
         <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-900 via-purple-900/5 to-gray-900">
           <main className="p-6 lg:p-10 max-w-7xl mx-auto">
@@ -961,7 +939,7 @@ export default function OrganizerEventDetails() {
                   />
                 ) : (
                   <QRCode 
-                    value={`https://tickethub.com/ticket/${selectedPurchase.reference}`}
+                    value={`https://sahmtickethub.online/${selectedPurchase.reference}`}
                     size={256}
                     level="H"
                   />

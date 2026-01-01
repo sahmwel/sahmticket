@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import {
   TrendingUp,
   Users,
-  MessageSquare,
   Wallet,
   Zap,
   Shield,
@@ -12,11 +11,9 @@ import {
   Clock,
   ArrowRight,
   Plus,
-  BarChart3,
   Ticket,
   Smartphone,
   Award,
-  Sparkles,
   CheckCircle,
   DollarSign,
   Calendar,
@@ -53,104 +50,36 @@ const eventTypes = [
 
 export default function OrganizerTeaser() {
   const [showAuth, setShowAuth] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isOrganizer, setIsOrganizer] = useState(false);
   const navigate = useNavigate();
 
-  // Check if user is logged in and is an organizer
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          setIsLoggedIn(true);
-          
-          // Check if user is organizer
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", session.user.id)
-            .single();
-            
-          setIsOrganizer(profile?.role === "organizer" || profile?.role === "admin");
-        } else {
-          setIsLoggedIn(false);
-          setIsOrganizer(false);
-        }
-      } catch (error) {
-        console.error("Auth check error:", error);
-        setIsLoggedIn(false);
-        setIsOrganizer(false);
-      }
-    };
-    
-    checkAuth();
-    
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      checkAuth();
-    });
-    
-    return () => subscription.unsubscribe();
-  }, []);
+  // SIMPLE: Always open auth modal
+  const handleGetStarted = () => {
+    setShowAuth(true);
+  };
 
-  const handleCreateEvent = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        // User not logged in - show auth modal
-        setShowAuth(true);
-        return;
-      }
-      
-      // Check if user is organizer
+  // After successful auth, redirect based on role
+  const handleAuthSuccess = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session) {
+      // Check user role
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", session.user.id)
-        .single();
-        
-      if (!profile || (profile.role !== "organizer" && profile.role !== "admin")) {
-        // User is not an organizer - show upgrade modal or redirect
-        const confirmUpgrade = window.confirm(
-          "You need organizer permissions to create events.\n\n" +
-          "Would you like to upgrade to an organizer account?"
-        );
-        
-        if (confirmUpgrade) {
-          navigate("/upgrade-organizer");
-        }
-        return;
+        .maybeSingle();
+      
+      if (profile?.role === "admin") {
+        navigate("/admin/dashboard");
+      } else if (profile?.role === "organizer") {
+        navigate("/organizer/dashboard");
+      } else {
+        // If somehow a non-organizer/admin logs in, show error
+        alert("Access denied. This platform is for organizers and administrators only.");
+        await supabase.auth.signOut();
+        setShowAuth(true); // Reopen auth modal
       }
-      
-      // User is logged in and is an organizer - go to create event
-      navigate("/create-event");
-      
-    } catch (error) {
-      console.error("Error checking auth:", error);
-      // Fallback: show auth modal
-      setShowAuth(true);
     }
-  };
-
-  const handleAuthSuccess = () => {
-    // After successful login/signup, check organizer status
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .single()
-         .then(({ data: profile }: { data: { role: string } | null }) => {
-  if (profile?.role === 'organizer' || profile?.role === 'admin') {
-    navigate('/create-event')
-  }
-          });
-      }
-    });
   };
 
   const handleBrowseEvents = () => {
@@ -159,7 +88,7 @@ export default function OrganizerTeaser() {
 
   return (
     <>
-      {/* Sticky Header */}
+      {/* Sticky Header - SIMPLIFIED */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/80 via-black/40 to-transparent backdrop-blur-xl border-b border-white/10">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="relative group">
@@ -187,18 +116,19 @@ export default function OrganizerTeaser() {
             >
               Browse Events
             </button>
+            {/* Always opens AuthModal */}
             <button
-              onClick={handleCreateEvent}
+              onClick={handleGetStarted}
               className="inline-flex items-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold px-6 py-3.5 sm:px-8 sm:py-4 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 text-sm sm:text-base"
             >
               <Plus className="w-5 h-5" />
-              {isLoggedIn && isOrganizer ? "Create Event" : "Get Started"}
+              Get Started
             </button>
           </div>
         </div>
       </header>
 
-      {/* AuthModal - Updated with onSuccess */}
+      {/* AuthModal */}
       {showAuth && (
         <AuthModal 
           onClose={() => setShowAuth(false)} 
@@ -266,16 +196,15 @@ export default function OrganizerTeaser() {
                 })}
               </div>
 
-              {/* CTA Buttons */}
+              {/* CTA Buttons - SIMPLIFIED */}
               <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center">
+                {/* Always opens AuthModal */}
                 <button
-                  onClick={handleCreateEvent}
+                  onClick={handleGetStarted}
                   className="group inline-flex items-center justify-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-lg px-8 py-5 rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
                 >
                   <Plus className="w-5 h-5" />
-                  {isLoggedIn && isOrganizer 
-                    ? "Create Your First Event" 
-                    : "Get Started Free"}
+                  Get Started Free
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition" />
                 </button>
                 <button
@@ -359,7 +288,7 @@ export default function OrganizerTeaser() {
           </div>
         </section>
 
-        {/* Final CTA */}
+        {/* Final CTA - SIMPLIFIED */}
         <section className="relative z-10 mt-32 pb-32">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="bg-gradient-to-r from-purple-900/50 to-pink-900/50 backdrop-blur-xl rounded-3xl p-8 sm:p-12 border border-white/10">
@@ -377,13 +306,12 @@ export default function OrganizerTeaser() {
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  {/* Always opens AuthModal */}
                   <button
-                    onClick={handleCreateEvent}
+                    onClick={handleGetStarted}
                     className="inline-flex items-center justify-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-lg px-10 py-5 rounded-full hover:scale-105 transition-all shadow-2xl"
                   >
-                    {isLoggedIn && isOrganizer 
-                      ? "Create Your First Event" 
-                      : "Get Started Free"}
+                    Get Started Free
                     <ArrowRight className="w-5 h-5" />
                   </button>
                   

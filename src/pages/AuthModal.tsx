@@ -7,7 +7,7 @@ import { X, Mail, Lock, User, Phone, Eye, EyeOff, ArrowLeft } from "lucide-react
 
 interface AuthModalProps {
   onClose: () => void;
-  onSuccess?: () => void; // Add this prop
+  onSuccess?: () => void;
 }
 
 export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
@@ -31,9 +31,22 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
   // Helper function to handle auth success
   const handleAuthSuccess = () => {
     if (onSuccess) {
-      onSuccess(); // Call the success callback if provided
+      onSuccess();
     }
+    onClose();
+  };
+
+  // Handle X button click - navigate to home and close modal
+  const handleCloseModal = () => {
+    navigate("/"); // Navigate to home page
     onClose(); // Close the modal
+  };
+
+  // Handle overlay click - same behavior as X button
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      handleCloseModal();
+    }
   };
 
   // ===== SIGN UP =====
@@ -54,11 +67,11 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
       return setMessage("Passwords do not match.");
     }
 
-    // Validate phone format (basic Nigerian phone validation)
+    // Validate phone format
     const phoneRegex = /^(\+234|0)[789][01]\d{8}$/;
     const cleanedPhone = phone.replace(/\s+/g, '');
     if (!phoneRegex.test(cleanedPhone)) {
-      return setMessage("Please enter a valid Nigerian phone number (e.g., 08012345678 or +2348012345678)");
+      return setMessage("Please enter a valid Nigerian phone number");
     }
 
     try {
@@ -73,7 +86,6 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
           data: {
             full_name: fullName,
             phone: cleanedPhone,
-            role: "organizer" // All signups are organizers
           }
         },
       });
@@ -81,20 +93,52 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
       if (error) throw error;
       if (!data.user?.id) throw new Error("Signup failed");
 
-      // Save to profiles table (all users are organizers)
-      const { error: profileError } = await supabase.from("profiles").upsert({ 
-        id: data.user.id, 
-        email, 
+      // IMPORTANT: Check if email column exists before inserting
+      // Get table structure first
+      const { data: tableInfo } = await supabase
+        .from('profiles')
+        .select('*')
+        .limit(1);
+
+      // Create profile object with only existing columns
+      const profileData: any = {
+        id: data.user.id,
         full_name: fullName,
         phone: cleanedPhone,
-        role: "organizer", // Always organizer for signups
-        created_at: new Date().toISOString()
-      });
+        role: "organizer",
+        created_at: new Date().toISOString(),
+        // Check if email column exists by looking at the table info
+        ...(tableInfo && tableInfo.length > 0 && 'email' in tableInfo[0] 
+          ? { email: email } 
+          : {})
+      };
 
-      if (profileError) throw profileError;
+      // Save to profiles table
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert(profileData);
+
+      if (profileError) {
+        // If email column doesn't exist, try without it
+        if (profileError.message.includes('email')) {
+          const { error: retryError } = await supabase
+            .from("profiles")
+            .upsert({
+              id: data.user.id,
+              full_name: fullName,
+              phone: cleanedPhone,
+              role: "organizer",
+              created_at: new Date().toISOString(),
+            });
+          
+          if (retryError) throw retryError;
+        } else {
+          throw profileError;
+        }
+      }
 
       // Success message
-      setMessage("Account created successfully! Welcome organizer!");
+      setMessage("🎉 Account created successfully! Welcome organizer!");
       
       // Automatically log in after signup
       const { error: loginError } = await supabase.auth.signInWithPassword({ 
@@ -104,15 +148,15 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
       
       if (!loginError) {
         handleAuthSuccess();
+        navigate("/organizer/dashboard");
       } else {
-        // If auto-login fails, switch to login tab
         setIsLogin(true);
         setMessage("Account created! Please log in.");
       }
       
     } catch (err: any) {
       console.error("Signup error:", err);
-      setMessage(err.message || "Failed to create account. Please try again.");
+      setMessage(err.message || "Failed to create account.");
     } finally {
       setLoading(false);
     }
@@ -142,7 +186,7 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
         .from("profiles")
         .select("role")
         .eq("id", data.user.id)
-        .single();
+        .maybeSingle(); // Changed from .single() to .maybeSingle()
 
       const userRole = profile?.role || "organizer";
       
@@ -153,7 +197,6 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
       if (userRole === "admin") {
         navigate("/admin/dashboard");
       } else {
-        // All other users (organizers) go to organizer dashboard
         navigate("/organizer/dashboard");
       }
       
@@ -182,7 +225,7 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
       if (error) throw error;
 
-      setMessage("Check your email for password reset link.");
+      setMessage("📧 Check your email for password reset link.");
       setTimeout(() => {
         setShowForgot(false);
         setMessage(null);
@@ -198,10 +241,8 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
   // Format phone number as user types
   const formatPhoneNumber = (value: string) => {
-    // Remove all non-digit characters
     const digits = value.replace(/\D/g, '');
     
-    // Format based on length
     if (digits.length <= 3) {
       return digits;
     } else if (digits.length <= 6) {
@@ -215,18 +256,15 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
   // Handle phone input change
   const handlePhoneChange = (value: string) => {
-    // Remove any existing formatting
     const unformatted = value.replace(/\s+/g, '');
     
-    // Check if user is typing +234
     if (unformatted.startsWith('+234')) {
-      setPhone(formatPhoneNumber(unformatted.slice(1))); // Remove + for formatting
+      setPhone(formatPhoneNumber(unformatted.slice(1)));
     } else if (unformatted.startsWith('234')) {
       setPhone(formatPhoneNumber(unformatted));
     } else if (unformatted.startsWith('0')) {
       setPhone(formatPhoneNumber(unformatted));
     } else {
-      // If no prefix, assume it's a local number and add 0
       const formatted = unformatted ? `0${formatPhoneNumber(unformatted)}` : '';
       setPhone(formatted);
     }
@@ -241,9 +279,7 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
           initial={{ opacity: 0 }} 
           animate={{ opacity: 1 }} 
           exit={{ opacity: 0 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
+          onClick={handleOverlayClick} // Updated to use new handler
         >
           <motion.div 
             className="bg-gradient-to-br from-purple-900/95 via-pink-900/95 to-rose-900/95 backdrop-blur-3xl border border-white/20 rounded-3xl w-full max-w-[400px] shadow-3xl overflow-hidden mx-2"
@@ -251,9 +287,11 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
             animate={{ scale: 1, opacity: 1 }} 
             exit={{ scale: 0.9, opacity: 0 }}
           >
+            {/* X Button - Now navigates to home */}
             <button 
-              onClick={onClose} 
-              className="absolute top-3 right-3 text-white/70 hover:text-white z-20"
+              onClick={handleCloseModal} // Updated to use new handler
+              className="absolute top-3 right-3 text-white/70 hover:text-white z-20 transition-colors hover:scale-110"
+              title="Close and go to home"
             >
               <X size={24} />
             </button>
@@ -287,7 +325,7 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
 
             {message && (
               <div className={`mx-4 mb-3 p-3 rounded-lg text-sm ${
-                message.includes("success") || message.includes("created") 
+                message.includes("success") || message.includes("created") || message.includes("🎉")
                   ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" 
                   : "bg-red-500/20 text-red-300 border border-red-500/30"
               }`}>
@@ -419,9 +457,7 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
         // FORGOT PASSWORD MODAL
         <motion.div 
           className="fixed inset-0 bg-black/80 backdrop-blur-xl z-50 flex items-center justify-center p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowForgot(false);
-          }}
+          onClick={handleOverlayClick} // Updated to use new handler
         >
           <motion.div 
             className="bg-gradient-to-br from-purple-900/95 via-pink-900/95 to-rose-900/95 backdrop-blur-3xl border border-white/20 rounded-3xl w-full max-w-[400px] mx-2 p-6 relative"
@@ -429,11 +465,13 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
             animate={{ scale: 1, opacity: 1 }} 
             exit={{ scale: 0.9, opacity: 0 }}
           >
+            {/* Back button - navigates to home */}
             <button 
-              onClick={() => setShowForgot(false)} 
-              className="absolute top-3 left-3 text-white/70 hover:text-white"
+              onClick={handleCloseModal} // Updated to use new handler
+              className="absolute top-3 left-3 text-white/70 hover:text-white transition-colors hover:scale-110"
+              title="Close and go to home"
             >
-              <ArrowLeft size={24} />
+              <X size={24} />
             </button>
             
             <h2 className="text-white font-bold text-xl mb-2 text-center">Reset Password</h2>

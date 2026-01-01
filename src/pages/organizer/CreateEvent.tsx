@@ -615,10 +615,6 @@ export default function CreateEvent() {
 
   return (
     <div className="flex min-h-screen bg-gray-950">
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:static md:z-auto`}>
-        <Sidebar role="organizer" />
-      </div>
 
       {/* Overlay */}
       {sidebarOpen && (
@@ -628,17 +624,6 @@ export default function CreateEvent() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Mobile Header */}
-        <div className="md:hidden flex items-center justify-between p-4 bg-gray-900/90 backdrop-blur-xl border-b border-white/10">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="text-white p-2 rounded-lg hover:bg-white/10"
-          >
-            <Menu size={24} />
-          </button>
-          <h1 className="text-xl font-bold text-white">Create Event</h1>
-          <div className="w-10" />
-        </div>
-
         <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-900 via-purple-900/5 to-gray-900">
 
           <main className="p-6 lg:p-10 max-w-6xl mx-auto">
