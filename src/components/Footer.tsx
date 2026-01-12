@@ -143,7 +143,7 @@ export default function Footer() {
         {/* Copyright */}
         <div className="mt-20 pt-10 border-t border-white/10 text-center">
           <p className="text-pink-200 text-sm md:text-base font-medium">
-            © 2025 <span className="text-white font-bold">SahmTicketHub</span> • Made with love in Kaduna, Nigeria
+            © 2026 <span className="text-white font-bold">SahmTicketHub</span> • Made with love in Kaduna, Nigeria
           </p>
         </div>
       </div>

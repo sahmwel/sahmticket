@@ -216,4 +216,4 @@ app.listen(PORT, () => {
   if (STELLAR_ACCOUNT) {
     console.log(`Stellar polling enabled for account: ${STELLAR_ACCOUNT}`);
   }
-});
+});''

@@ -711,7 +711,22 @@ export default function EventDetails() {
       const tierId = tier.id;
       const tierName = tier.name;
       const quantity = checkoutData.quantity || 1;
-      const orderId = checkoutData.orderId;
+      
+      // DEBUG: Check orderId
+      console.log("🔍 Original checkoutData.orderId:", checkoutData.orderId);
+      console.log("🔍 Type of orderId:", typeof checkoutData.orderId);
+      
+      // FIX: Generate orderId if it's undefined or invalid
+      let orderId = checkoutData.orderId;
+      if (!orderId || orderId === "undefined" || orderId === "null") {
+        orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+        console.log("🔧 Generated new orderId:", orderId);
+        // Update checkoutData for consistency
+        checkoutData.orderId = orderId;
+      }
+      
+      console.log("✅ Final orderId to use:", orderId);
+      
       const currentTime = new Date().toISOString();
 
       const { data: stockCheck, error: stockError } = await supabase
@@ -730,11 +745,15 @@ export default function EventDetails() {
       if (totalAmount === 0) {
         const freeRef = `STH-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
+        console.log("🆓 FREE TICKET FLOW STARTED");
+        console.log("🆓 Order ID for free tickets:", orderId);
+        console.log("🆓 Free reference:", freeRef);
+
         const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
           const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
           const qr_code_url = await QRCode.toDataURL(qrData);
 
-          return insertTicket({
+          const ticketData = {
             event_id: event.id,
             tier_id: tierId,
             tier_name: tierName,
@@ -745,14 +764,39 @@ export default function EventDetails() {
             price: 0,
             qr_code_url,
             reference: freeRef,
-            order_id: orderId,
+            order_id: orderId, // This is critical
             purchased_at: currentTime,
             buyer_email: formData.email.trim(),
             created_at: currentTime,
-          });
+            quantity: 1,
+            tier_description: tier?.description || tierName
+          };
+
+          console.log(`🆓 Inserting free ticket ${i + 1} with order_id:`, ticketData.order_id);
+          
+          const result = await insertTicket(ticketData);
+          console.log(`🆓 Ticket ${i + 1} inserted:`, result);
+          return result;
         });
 
         await Promise.all(insertPromises);
+        
+        // VERIFY: Check if tickets were actually inserted
+        console.log("🆓 Verifying database insertion...");
+        const { data: verifyTickets, error: verifyError } = await supabase
+          .from("tickets")
+          .select("id, order_id, reference, email")
+          .eq("order_id", orderId);
+
+        console.log("🆓 Verification result:", { verifyTickets, verifyError });
+        
+        if (!verifyTickets || verifyTickets.length === 0) {
+          console.error("❌ CRITICAL: No tickets found after free ticket insert!");
+          throw new Error("Failed to create tickets. Please contact support.");
+        }
+        
+        console.log(`✅ ${verifyTickets.length} free tickets verified in database`);
+
         await updateTierQuantity(tierId, quantity);
         await sendTicketEmail(freeRef, formData.email, formData.fullName, event, tier, quantity);
 
@@ -767,9 +811,16 @@ export default function EventDetails() {
           qty: quantity.toString(),
           price: "₦0",
           lat: event.lat?.toString() || "0",
-          lng: event.lng?.toString() || "0"
+          lng: event.lng?.toString() || "0",
+          orderId: orderId // Add orderId to params for debugging
         }).toString();
 
+        // Add delay to ensure database commit
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        console.log("🔗 Redirecting to bag with orderId:", orderId);
+        console.log("🔗 Full redirect URL:", `/bag/${orderId}?${params}`);
+        
         closeCheckout();
         navigate(`/bag/${orderId}?${params}`);
         return;
@@ -792,7 +843,7 @@ export default function EventDetails() {
         tierId,
         tierName,
         quantity,
-        orderId,
+        orderId, // Use the fixed orderId
         currentTime,
         totalAmount,
         formData: { ...formData },
@@ -800,8 +851,13 @@ export default function EventDetails() {
         closeCheckout
       };
 
+      console.log("💰 PAID TICKET FLOW STARTED");
+      console.log("💰 Order ID for paid tickets:", orderId);
+      console.log("💰 Payment reference will be:", uniqueRef);
+
       const handlePaymentSuccess = function (response: any) {
         console.log("💰 Payment successful:", response);
+        console.log("💰 Payment orderId:", paymentData.orderId);
 
         const processSuccess = async () => {
           try {
@@ -809,7 +865,7 @@ export default function EventDetails() {
               const qrData = `${paymentData.event.id}|${paymentData.tierId}|${response.reference}|${i}`;
               const qr_code_url = await QRCode.toDataURL(qrData);
 
-              return insertTicket({
+              const ticketData = {
                 event_id: paymentData.event.id,
                 tier_id: paymentData.tierId,
                 tier_name: paymentData.tierName,
@@ -820,14 +876,39 @@ export default function EventDetails() {
                 price: paymentData.totalAmount / paymentData.quantity,
                 qr_code_url,
                 reference: response.reference,
-                order_id: paymentData.orderId,
+                order_id: paymentData.orderId, // This is critical
                 purchased_at: paymentData.currentTime,
                 buyer_email: paymentData.formData.email.trim(),
                 created_at: paymentData.currentTime,
-              });
+                quantity: 1,
+                tier_description: tier?.description || paymentData.tierName
+              };
+
+              console.log(`💰 Inserting paid ticket ${i + 1} with order_id:`, ticketData.order_id);
+              
+              const result = await insertTicket(ticketData);
+              console.log(`💰 Ticket ${i + 1} inserted:`, result);
+              return result;
             });
 
             await Promise.all(paidPromises);
+            
+            // VERIFY: Check if tickets were actually inserted
+            console.log("💰 Verifying paid ticket insertion...");
+            const { data: paidVerify, error: paidVerifyError } = await supabase
+              .from("tickets")
+              .select("id, order_id, reference, email")
+              .eq("order_id", paymentData.orderId);
+
+            console.log("💰 Paid verification result:", { paidVerify, paidVerifyError });
+            
+            if (!paidVerify || paidVerify.length === 0) {
+              console.error("❌ CRITICAL: No tickets found after paid ticket insert!");
+              throw new Error("Failed to create tickets after payment. Please contact support with ref: " + response.reference);
+            }
+            
+            console.log(`✅ ${paidVerify.length} paid tickets verified in database`);
+
             await updateTierQuantity(paymentData.tierId, paymentData.quantity);
             await sendTicketEmail(
               response.reference,
@@ -850,14 +931,22 @@ export default function EventDetails() {
               qty: paymentData.quantity.toString(),
               price: `₦${paymentData.totalAmount.toLocaleString()}`,
               lat: paymentData.event.lat?.toString() || "0",
-              lng: paymentData.event.lng?.toString() || "0"
+              lng: paymentData.event.lng?.toString() || "0",
+              orderId: paymentData.orderId // Add orderId to params for debugging
             }).toString();
 
+            // Add delay to ensure database commit
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            console.log("🔗 Redirecting to bag with orderId:", paymentData.orderId);
+            console.log("🔗 Full redirect URL:", `/bag/${paymentData.orderId}?${params}`);
+            
             paymentData.closeCheckout();
             paymentData.navigate(`/bag/${paymentData.orderId}?${params}`);
           } catch (innerErr) {
             console.error("Database Insert Error:", innerErr);
             alert("Payment successful, but ticket generation failed. Contact support with ref: " + response.reference);
+            setCheckoutLoading(false);
           }
         };
 

@@ -21,7 +21,8 @@ import {
   ExternalLink,
   History,
   Eye,
-  EyeOff
+  EyeOff,
+  Loader2
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -290,255 +291,563 @@ const Badge = ({ variant }: { variant: BadgeVariant }) => {
   );
 };
 
-// --- TimelineSchedule Component ---
+// --- Enhanced TimelineSchedule Component ---
 const TimelineSchedule = ({ events, showPast = false }: { events: Event[]; showPast?: boolean }) => {
   const navigate = useNavigate();
   
-  const getDateString = useCallback((offset: number = 0): string => {
-    const date = new Date();
-    date.setDate(date.getDate() + offset);
-    return date.toISOString().split('T')[0];
-  }, []);
+  // FIXED: Get date group function - only uses date comparisons, not formatted dates
+  const getDateGroup = useCallback((dateStr: string): string => {
+  if (!dateStr) return "No Date";
+  
+  try {
+    const now = new Date();
+    const eventDate = new Date(dateStr);
+    
+    // Calculate the difference in days
+    const diffMs = eventDate.getTime() - now.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    // Check if event is within the next 24 hours for "Today"
+    const isWithin24Hours = diffMs >= 0 && diffMs < (1000 * 60 * 60 * 24);
+    
+    if (isWithin24Hours) return "Today";
+    if (diffDays === 1) return "Tomorrow";
+    if (diffDays > 1 && diffDays <= 7) return "This Week";
+    if (diffDays > 7 && diffDays <= 14) return "Next Week";
+    if (diffDays > 14 && diffDays <= 30) return "This Month";
+    if (diffDays > 30 && diffDays <= 60) return "Next Month";
+    if (diffDays > 60) return "Future Events";
+    if (diffDays < 0 && diffDays >= -7) return "Last Week";
+    if (diffDays < -7 && diffDays >= -30) return "Last Month";
+    return "Long Ago";
+  } catch {
+    return "Unknown Date";
+  }
+}, []);
 
-  const getEventDateString = useCallback((eventDate: string): string | null => {
-    if (!eventDate) return null;
+  // FIXED: New function specifically for timeline display - shows clean dates
+  const formatTimelineDate = useCallback((dateStr: string): string => {
+    if (!dateStr) return "";
+    
     try {
-      const date = new Date(eventDate);
-      if (isNaN(date.getTime())) return null;
-      return date.toISOString().split('T')[0];
-    } catch {
-      return null;
+      const datePart = dateStr.split('T')[0];
+      const [year, month, day] = datePart.split('-').map(Number);
+      
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthName = monthNames[month - 1];
+      
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const eventDate = new Date(year, month - 1, day);
+      
+      const diffTime = eventDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
+      
+      if (diffDays === 0) return `Today, ${formattedDate}`;
+      if (diffDays === 1) return `Tomorrow, ${formattedDate}`;
+      
+      return formattedDate;
+    } catch (error) {
+      return "Invalid date";
     }
   }, []);
 
-  // Get today's date for comparison
-  const todayStr = getDateString(0);
-  
-  // Filter events: if showPast is false, only show future events
-  const filteredEvents = useMemo(() => {
-    if (showPast) return events;
+  // FIXED: New function for event card date display
+  const formatEventCardDate = useCallback((dateStr: string): string => {
+    if (!dateStr) return "";
     
-    return events.filter(event => {
-      const eventDateStr = getEventDateString(event.date);
-      return eventDateStr && eventDateStr >= todayStr;
-    });
-  }, [events, showPast, getEventDateString, todayStr]);
+    try {
+      const datePart = dateStr.split('T')[0];
+      const [year, month, day] = datePart.split('-').map(Number);
+      
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthName = monthNames[month - 1];
+      
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const eventDate = new Date(year, month - 1, day);
+      
+      const diffTime = eventDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const formattedDate = `${monthName} ${day}`;
+      
+      if (diffDays === 0) return `Today`;
+      if (diffDays === 1) return `Tomorrow`;
+      if (diffDays < 7 && diffDays > 1) return `${formattedDate} (in ${diffDays} days)`;
+      
+      return formattedDate;
+    } catch (error) {
+      return "";
+    }
+  }, []);
 
-  // Separate past events
-  const pastEvents = useMemo(() => {
-    return events.filter(event => {
-      const eventDateStr = getEventDateString(event.date);
-      return eventDateStr && eventDateStr < todayStr;
+  // Group events by timeline category
+  const groupedEvents = useMemo(() => {
+    const groups: Record<string, Event[]> = {};
+    
+    events.forEach(event => {
+      const group = getDateGroup(event.date);
+      if (!groups[group]) {
+        groups[group] = [];
+      }
+      groups[group].push(event);
     });
-  }, [events, getEventDateString, todayStr]);
+    
+    // Define display order
+    const order = [
+      "Today", "Tomorrow", "This Week", "Next Week", 
+      "This Month", "Next Month", "Future Events",
+      "Last Week", "Last Month", "Long Ago"
+    ];
+    
+    // Sort events within each group by date
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateA - dateB;
+      });
+    });
+    
+    // Sort groups according to order
+    const sortedGroups: Record<string, Event[]> = {};
+    order.forEach(key => {
+      if (groups[key] && groups[key].length > 0) {
+        sortedGroups[key] = groups[key];
+      }
+    });
+    
+    return sortedGroups;
+  }, [events, getDateGroup]);
 
-  // Group events by date
-  const eventsToday = useMemo(() => {
-    const todayStr = getDateString(0);
-    return filteredEvents.filter(event => {
-      const eventDateStr = getEventDateString(event.date);
-      return eventDateStr === todayStr;
-    });
-  }, [filteredEvents, getDateString, getEventDateString]);
+  const getGroupIcon = useCallback((groupName: string) => {
+    switch (groupName) {
+      case "Today":
+        return <Clock className="w-6 h-6 text-emerald-500" />;
+      case "Tomorrow":
+        return <Sparkles className="w-6 h-6 text-blue-500" />;
+      case "This Week":
+        return <Flame className="w-6 h-6 text-orange-500" />;
+      case "Next Week":
+        return <Calendar className="w-6 h-6 text-purple-500" />;
+      case "This Month":
+        return <Star className="w-6 h-6 text-yellow-500" />;
+      case "Next Month":
+        return <Calendar className="w-6 h-6 text-indigo-500" />;
+      case "Future Events":
+        return <Sparkles className="w-6 h-6 text-pink-500" />;
+      case "Last Week":
+      case "Last Month":
+      case "Long Ago":
+        return <History className="w-6 h-6 text-gray-500" />;
+      default:
+        return <Calendar className="w-6 h-6 text-gray-500" />;
+    }
+  }, []);
 
-  const eventsTomorrow = useMemo(() => {
-    const tomorrowStr = getDateString(1);
-    return filteredEvents.filter(event => {
-      const eventDateStr = getEventDateString(event.date);
-      return eventDateStr === tomorrowStr;
-    });
-  }, [filteredEvents, getDateString, getEventDateString]);
-
-  const eventsNext = useMemo(() => {
-    const nextDayStr = getDateString(2);
-    return filteredEvents.filter(event => {
-      const eventDateStr = getEventDateString(event.date);
-      return eventDateStr === nextDayStr;
-    });
-  }, [filteredEvents, getDateString, getEventDateString]);
+  const getGroupGradient = useCallback((groupName: string, isPast: boolean) => {
+    if (isPast) {
+      return "from-gray-800 via-gray-900 to-black";
+    }
+    
+    switch (groupName) {
+      case "Today":
+        return "from-emerald-900 via-emerald-800 to-teal-900";
+      case "Tomorrow":
+        return "from-blue-900 via-indigo-900 to-purple-900";
+      case "This Week":
+        return "from-orange-900 via-amber-900 to-yellow-900";
+      case "Next Week":
+        return "from-purple-900 via-violet-900 to-fuchsia-900";
+      case "This Month":
+        return "from-rose-900 via-pink-900 to-rose-800";
+      case "Next Month":
+        return "from-indigo-900 via-purple-900 to-violet-900";
+      case "Future Events":
+        return "from-pink-900 via-rose-900 to-red-900";
+      default:
+        return "from-purple-900 via-pink-900 to-rose-900";
+    }
+  }, []);
 
   const handleEventClick = useCallback((event: Event) => {
     const path = event.slug ? `/event/${event.slug}` : `/event/${event.id}`;
     navigate(path);
   }, [navigate]);
 
-  const renderEvents = useCallback((eventList: Event[], label: string, isPast = false) => {
-    if (!eventList || eventList.length === 0) return null;
-
+  const renderEventCard = useCallback((event: Event, index: number, groupName: string) => {
+    const { price, isFree } = getLowestPriceFromTiers(event);
+    const priceDisplay = formatPriceDisplay(price, isFree);
+    const soldOut = isEventSoldOut(event);
+    const availableTickets = getAvailableTickets(event);
+    const isLowStock = availableTickets > 0 && availableTickets <= 10;
+    const isPastGroup = groupName.includes("Last") || groupName === "Long Ago";
+    
+    // FIXED: Use the new function for event card dates
+    const eventDate = formatEventCardDate(event.date);
+    
     return (
-      <motion.section
-        key={label}
-        initial={{ opacity: 0, y: 80 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 50 }}
-        transition={{ duration: 0.7, ease: "easeOut" }}
-        viewport={{ once: false, amount: 0.2 }}
-        className={`py-16 md:py-24 ${isPast ? 'bg-gradient-to-br from-gray-800 via-gray-900 to-black' : 'bg-gradient-to-br from-purple-900 via-pink-900 to-rose-900'}`}
+      <motion.div
+        key={`${event.id}-${index}`}
+        initial={{ opacity: 0, x: -20 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        transition={{ delay: index * 0.1, duration: 0.5 }}
+        whileHover={{ scale: 1.02, y: -4 }}
+        className={`relative backdrop-blur-lg rounded-2xl p-5 border overflow-hidden cursor-pointer transition-all duration-300 ${
+          isPastGroup 
+            ? 'bg-gray-800/40 border-gray-700/60 hover:bg-gray-800/60' 
+            : soldOut 
+              ? 'bg-gray-800/30 border-gray-700/50' 
+              : 'bg-white/10 border-white/20 hover:bg-white/20'
+        }`}
+        onClick={() => handleEventClick(event)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && handleEventClick(event)}
+        aria-label={`View ${event.title} event`}
       >
-        <div className="max-w-7xl mx-auto px-5 md:px-6">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            {isPast && <History className="w-8 h-8 text-gray-400" />}
-            <motion.h2
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              className={`text-4xl md:text-6xl font-black text-center ${isPast ? 'text-gray-300' : 'text-white'}`}
-            >
-              {label}
-            </motion.h2>
+        {/* Time indicator */}
+        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+          isPastGroup 
+            ? 'bg-gray-600' 
+            : soldOut 
+              ? 'bg-gray-500' 
+              : isFree 
+                ? 'bg-emerald-500' 
+                : 'bg-purple-500'
+        }`} />
+        
+        <div className="ml-4">
+          {/* Event header */}
+          <div className="flex items-start justify-between mb-3">
+            <h3 className={`text-lg font-bold line-clamp-2 ${
+              isPastGroup 
+                ? 'text-gray-300 group-hover:text-gray-200' 
+                : soldOut 
+                  ? 'text-gray-300' 
+                  : 'text-white'
+            }`}>
+              {event.title || "Untitled Event"}
+            </h3>
+            
+            {isPastGroup && (
+              <Badge variant="past" />
+            )}
           </div>
           
-          {label !== "Today" && label !== "Tomorrow" && !isPast && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="text-center text-pink-200 text-lg mb-10"
-            >
-              {label === "Next" ? getDateString(2).replace(/-/g, '/') : formatDateOnly(eventList[0].date)}
-            </motion.p>
-          )}
-
-          {isPast && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="text-center text-gray-400 text-lg mb-10"
-            >
-              Relive the memories from past events
-            </motion.p>
-          )}
-
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {eventList.map((event, i) => {
-              const { price, isFree } = getLowestPriceFromTiers(event);
-              const priceDisplay = formatPriceDisplay(price, isFree);
-              const soldOut = isEventSoldOut(event);
-              const availableTickets = getAvailableTickets(event);
-              const isLowStock = availableTickets > 0 && availableTickets <= 10;
-              
-              return (
-                <motion.div
-                  key={`${event.id}-${i}-${label}`}
-                  initial={{ opacity: 0, x: -100 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.15, duration: 0.6 }}
-                  whileHover={{ scale: 1.03 }}
-                  className={`group relative backdrop-blur-xl rounded-3xl p-6 border overflow-hidden cursor-pointer ${
-                    isPast 
-                      ? 'bg-gray-800/30 border-gray-700/50 hover:bg-gray-800/50' 
-                      : soldOut 
-                        ? 'bg-gray-800/30 border-gray-700/50' 
-                        : 'bg-white/12 border-white/10'
-                  }`}
-                  onClick={() => handleEventClick(event)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && handleEventClick(event)}
-                  aria-label={`View ${event.title} event`}
-                >
-                  {isPast && (
-                    <div className="absolute top-3 right-3">
-                      <Badge variant="past" />
-                    </div>
-                  )}
-                  
-                  {soldOut && !isPast && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10">
-                      <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-lg font-bold text-white bg-gradient-to-r from-red-600 to-red-800">
-                        <Ticket className="w-5 h-5" />
-                        SOLD OUT
-                      </span>
-                    </div>
-                  )}
-                  
-                  <div className={`absolute inset-0 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity ${
-                    isPast 
-                      ? 'bg-gradient-to-r from-gray-600/20 via-gray-700/20 to-gray-800/20' 
-                      : 'bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20'
-                  }`} />
-
-                  <h3 className={`text-xl md:text-2xl font-bold line-clamp-2 mb-3 group-hover:text-pink-300 transition ${
-                    isPast ? 'text-gray-300 group-hover:text-gray-200' : 
-                    soldOut ? 'text-gray-300' : 'text-white'
-                  }`}>
-                    {event.title || "Untitled Event"}
-                  </h3>
-
-                  <div className={`flex flex-col gap-2 text-sm mb-6 ${
-                    isPast ? 'text-gray-400' : 
-                    soldOut ? 'text-gray-400' : 'text-pink-100'
-                  }`}>
-                    <span className="flex items-center gap-2">
-                      <Clock className="w-4 h-4" /> {formatEventTime(event.date, event.time)}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4" /> {event.location || "Location TBD"}
-                    </span>
-                    {!isPast && !soldOut && isLowStock && (
-                      <span className="flex items-center gap-2 text-orange-300 font-bold">
-                        🔥 Only {availableTickets} tickets left!
-                      </span>
-                    )}
-                    {!isPast && !soldOut && availableTickets >= 9999 && (
-                      <span className="flex items-center gap-2 text-green-300 font-bold">
-                        ✓ Unlimited tickets available
-                      </span>
-                    )}
+          {/* Event details */}
+          <div className={`space-y-2 text-sm mb-4 ${
+            isPastGroup 
+              ? 'text-gray-400' 
+              : soldOut 
+                ? 'text-gray-400' 
+                : 'text-gray-200'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4" />
+                <span>{eventDate}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4" />
+                <span>{formatEventTime(event.date, event.time)}</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <MapPin className="w-4 h-4" />
+              <span className="truncate">{event.location || "Location TBD"}</span>
+            </div>
+            
+            {!isPastGroup && !soldOut && (
+              <>
+                {isLowStock && (
+                  <div className="flex items-center gap-1.5 text-orange-300 font-semibold">
+                    <Flame className="w-4 h-4" />
+                    <span>Only {availableTickets} tickets left!</span>
                   </div>
-
-                  {!isPast && !soldOut && (
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className={`w-full text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-purple-500/50 transition-all duration-300 flex items-center justify-center gap-2 ${
-                        isFree 
-                          ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:shadow-emerald-500/50' 
-                          : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-purple-500/50'
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEventClick(event);
-                      }}
-                      aria-label={`Get ticket for ${event.title} for ${priceDisplay}`}
-                    >
-                      <Ticket className="w-4 h-4" />
-                      Get Ticket • {priceDisplay}
-                    </motion.button>
-                  )}
-
-                  {isPast && (
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="w-full bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-gray-500/50 transition-all duration-300 flex items-center justify-center gap-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEventClick(event);
-                      }}
-                      aria-label={`View ${event.title} event details`}
-                    >
-                      <Eye className="w-4 h-4" />
-                      View Event Details
-                    </motion.button>
-                  )}
-                </motion.div>
-              );
-            })}
+                )}
+                
+                {availableTickets >= 9999 && (
+                  <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
+                    <BadgeCheck className="w-4 h-4" />
+                    <span>Unlimited tickets available</span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
+          
+          {/* Action button */}
+          {!soldOut && !isPastGroup ? (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`w-full text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 ${
+                isFree 
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:shadow-emerald-500/30' 
+                  : 'bg-gradient-to-r from-purple-600 to-pink-700 hover:shadow-purple-500/30'
+              } shadow-lg hover:shadow-xl transition-all duration-300`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEventClick(event);
+              }}
+              aria-label={`Get ticket for ${event.title} for ${priceDisplay}`}
+            >
+              <Ticket className="w-4 h-4" />
+              Get Ticket • {priceDisplay}
+            </motion.button>
+          ) : isPastGroup ? (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="w-full bg-gradient-to-r from-gray-700 to-gray-900 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg hover:shadow-gray-500/30 hover:shadow-xl transition-all duration-300"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEventClick(event);
+              }}
+              aria-label={`View ${event.title} event details`}
+            >
+              <Eye className="w-4 h-4" />
+              View Details
+            </motion.button>
+          ) : (
+            <div className="w-full bg-gray-700 text-gray-300 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 shadow-md">
+              <Ticket className="w-4 h-4" />
+              Sold Out
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  }, [handleEventClick, getLowestPriceFromTiers, isEventSoldOut, getAvailableTickets, formatEventCardDate, formatEventTime]);
+
+  // FIXED: Use formatTimelineDate for group header date range
+  const renderTimelineGroup = useCallback((groupName: string, events: Event[], index: number) => {
+    const isPastGroup = groupName.includes("Last") || groupName === "Long Ago";
+    const groupGradient = getGroupGradient(groupName, isPastGroup);
+    const groupIcon = getGroupIcon(groupName);
+    const eventCount = events.length;
+    
+    // Get date range for the group - FIXED with new function
+    const getGroupDateRange = () => {
+      if (eventCount === 0) return "";
+      
+      const firstDate = events[0].date;
+      const lastDate = events[events.length - 1].date;
+      
+      // For single-day groups, show formatted date
+      if (groupName === "Today") {
+        return formatTimelineDate(firstDate);
+      }
+      
+      if (groupName === "Tomorrow") {
+        return formatTimelineDate(firstDate);
+      }
+      
+      if (groupName === "This Week") {
+        const firstFormatted = formatTimelineDate(firstDate);
+        const lastFormatted = formatTimelineDate(lastDate);
+        // Check if all events are on the same day
+        if (firstFormatted === lastFormatted) {
+          return firstFormatted;
+        }
+        return `${firstFormatted} - ${lastFormatted}`;
+      }
+      
+      if (groupName === "Next Week") {
+        const firstFormatted = formatTimelineDate(firstDate);
+        const lastFormatted = formatTimelineDate(lastDate);
+        if (firstFormatted === lastFormatted) {
+          return firstFormatted;
+        }
+        return `${firstFormatted} - ${lastFormatted}`;
+      }
+      
+      if (groupName === "This Month") {
+        const firstFormatted = formatTimelineDate(firstDate);
+        const lastFormatted = formatTimelineDate(lastDate);
+        if (firstFormatted === lastFormatted) {
+          return firstFormatted;
+        }
+        return `${firstFormatted} - ${lastFormatted}`;
+      }
+      
+      if (groupName === "Next Month") {
+        const firstFormatted = formatTimelineDate(firstDate);
+        const lastFormatted = formatTimelineDate(lastDate);
+        if (firstFormatted === lastFormatted) {
+          return firstFormatted;
+        }
+        return `${firstFormatted} - ${lastFormatted}`;
+      }
+      
+      if (groupName === "Future Events") {
+        return `${formatTimelineDate(firstDate)} onward`;
+      }
+      
+      return "";
+    };
+    
+    // Get date range text
+    const dateRangeText = getGroupDateRange();
+    
+    return (
+      <motion.section
+        key={groupName}
+        initial={{ opacity: 0, y: 50 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: false, amount: 0.1 }}
+        transition={{ duration: 0.6, delay: index * 0.1 }}
+        className={`py-12 md:py-16 bg-gradient-to-br ${groupGradient}`}
+      >
+        <div className="max-w-6xl mx-auto px-5 md:px-6">
+          {/* Group header */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <motion.div
+                initial={{ scale: 0 }}
+                whileInView={{ scale: 1 }}
+                transition={{ delay: 0.2 }}
+                className="p-3 rounded-2xl bg-white/10 backdrop-blur-sm"
+              >
+                {groupIcon}
+              </motion.div>
+              
+              <div>
+                <motion.h2
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className={`text-2xl md:text-3xl font-bold ${
+                    isPastGroup ? 'text-gray-300' : 'text-white'
+                  }`}
+                >
+                  {groupName}
+                </motion.h2>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className={`text-sm ${
+                    isPastGroup ? 'text-gray-400' : 'text-gray-200'
+                  }`}
+                >
+                  {eventCount} event{eventCount !== 1 ? 's' : ''}
+                </motion.p>
+              </div>
+            </div>
+            
+            {!isPastGroup && dateRangeText && (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4 }}
+                className="hidden md:block text-right"
+              >
+                <p className={`text-lg font-semibold ${
+                  isPastGroup ? 'text-gray-400' : 'text-gray-200'
+                }`}>
+                  {dateRangeText}
+                </p>
+                {(groupName === "This Week" || groupName === "Next Week" || 
+                 groupName === "This Month" || groupName === "Next Month") && 
+                 eventCount > 1 ? (
+                  <p className={`text-xs ${
+                    isPastGroup ? 'text-gray-500' : 'text-gray-300'
+                  }`}>
+                    {eventCount} events in this period
+                  </p>
+                ) : null}
+              </motion.div>
+            )}
+          </div>
+          
+          {/* Events grid */}
+          {eventCount <= 3 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {events.map((event, i) => renderEventCard(event, i, groupName))}
+            </div>
+          ) : (
+            <div className="relative">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {events.slice(0, 6).map((event, i) => renderEventCard(event, i, groupName))}
+              </div>
+              
+              {eventCount > 6 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  className="mt-8 text-center"
+                >
+                  <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
+                    isPastGroup 
+                      ? 'bg-gray-700/50 text-gray-300' 
+                      : 'bg-white/10 text-white'
+                  }`}>
+                    +{eventCount - 6} more events in {groupName}
+                  </span>
+                </motion.div>
+              )}
+            </div>
+          )}
         </div>
       </motion.section>
     );
-  }, [handleEventClick, getDateString]);
+  }, [renderEventCard, getGroupGradient, getGroupIcon, formatTimelineDate]);
+
+  // Filter groups based on showPast toggle
+  const visibleGroups = useMemo(() => {
+    const allGroups = Object.entries(groupedEvents);
+    
+    if (!showPast) {
+      return allGroups.filter(([groupName]) => 
+        !groupName.includes("Last") && groupName !== "Long Ago"
+      );
+    }
+    
+    return allGroups;
+  }, [groupedEvents, showPast]);
+
+  if (visibleGroups.length === 0) {
+    return (
+      <div className="py-20 text-center">
+        <div className="w-24 h-24 bg-gradient-to-r from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Calendar className="w-12 h-12 text-purple-600" />
+        </div>
+        <h3 className="text-2xl font-bold text-gray-900 mb-3">
+          {showPast ? "No events found" : "No upcoming events"}
+        </h3>
+        <p className="text-gray-600 mb-8">
+          {showPast 
+            ? "No past events available" 
+            : "Check back soon for new events!"}
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <AnimatePresence mode="wait">
-      {eventsToday.length > 0 && renderEvents(eventsToday, "Today")}
-      {eventsTomorrow.length > 0 && renderEvents(eventsTomorrow, "Tomorrow")}
-      {eventsNext.length > 0 && renderEvents(eventsNext, "Next")}
-      {showPast && pastEvents.length > 0 && renderEvents(pastEvents, "Past Events", true)}
-    </AnimatePresence>
+    <div className="space-y-1">
+      {visibleGroups.map(([groupName, groupEvents], index) => 
+        renderTimelineGroup(groupName, groupEvents, index)
+      )}
+    </div>
   );
+};
+
+// Also add this new helper function if not already present:
+const getDaySuffix = (day: number): string => {
+  if (day >= 11 && day <= 13) return 'th';
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
 };
 
 // --- EventCard Component ---
@@ -1009,22 +1318,41 @@ export default function Home() {
   );
 
   // Separate past events for special display
-  const pastEvents = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return filteredEvents.filter(event => {
-      const eventDateStr = event.date?.split('T')[0];
-      return eventDateStr && eventDateStr < today;
-    });
-  }, [filteredEvents]);
+ const pastEvents = useMemo(() => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  return filteredEvents.filter(event => {
+    if (!event.date) return false;
+    
+    try {
+      const eventDate = new Date(event.date);
+      eventDate.setHours(0, 0, 0, 0);
+      return eventDate.getTime() < today.getTime();
+    } catch {
+      return false;
+    }
+  });
+}, [filteredEvents]);
 
   // Future events (for regular sections)
-  const futureEvents = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return filteredEvents.filter(event => {
-      const eventDateStr = event.date?.split('T')[0];
-      return eventDateStr && eventDateStr >= today;
-    });
-  }, [filteredEvents]);
+const futureEvents = useMemo(() => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Start of today
+  
+  return filteredEvents.filter(event => {
+    if (!event.date) return false;
+    
+    try {
+      const eventDate = new Date(event.date);
+      eventDate.setHours(0, 0, 0, 0); // Start of event day
+      
+      return eventDate >= today;
+    } catch {
+      return false;
+    }
+  });
+}, [filteredEvents]);
 
   // Filter sections
   const trendingEvents = useMemo(() => futureEvents.filter(e => e.trending), [futureEvents]);
@@ -1043,38 +1371,45 @@ export default function Home() {
     window.location.reload();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50">
-        <div className="pt-28 pb-16 text-center px-5">
-          <div className="h-12 bg-gray-200 rounded w-64 mx-auto mb-6 animate-pulse" />
-          <div className="h-6 bg-gray-200 rounded w-48 mx-auto mb-10 animate-pulse" />
-        </div>
-        <EventSectionSkeleton />
-        <EventSectionSkeleton />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex items-center justify-center p-4">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md w-full">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-8 h-8 text-red-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Events</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <button 
-            onClick={handleRetry}
-            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-6 rounded-full hover:scale-105 transition-transform duration-200 w-full"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
+ // --- Loading State ---
+   if (loading) {
+     return (
+       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex flex-col items-center justify-center p-4">
+         <motion.div
+           initial={{ opacity: 0 }}
+           animate={{ opacity: 1 }}
+           className="text-center space-y-6"
+         >
+           <Loader2 className="w-16 h-16 text-purple-600 animate-spin mx-auto" aria-hidden="true" />
+           <h2 className="text-3xl font-bold text-gray-800">Loading Events...</h2>
+           <p className="text-gray-600">Discovering amazing experiences for you</p>
+         </motion.div>
+       </div>
+     );
+   }
+ 
+   // --- Error State ---
+   if (error) {
+     return (
+       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex flex-col items-center justify-center p-8">
+         <motion.div
+           initial={{ scale: 0.9, opacity: 0 }}
+           animate={{ scale: 1, opacity: 1 }}
+           className="max-w-md text-center space-y-6"
+         >
+           <AlertCircle className="w-20 h-20 text-red-500 mx-auto" aria-hidden="true" />
+           <h2 className="text-3xl font-bold text-gray-800">Oops! Something went wrong</h2>
+           <button
+             onClick={handleRetry}
+             className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 px-8 rounded-2xl hover:shadow-xl transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-600"
+             aria-label="Try loading events again"
+           >
+             Try Again
+           </button>
+         </motion.div>
+       </div>
+     );
+   }
 
   const hasEvents = eventsList.length > 0;
   const hasFutureEvents = futureEvents.length > 0;

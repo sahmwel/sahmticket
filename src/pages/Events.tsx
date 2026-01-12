@@ -91,44 +91,36 @@ const formatDateOnly = (timestamp: string | null): string => {
   }
 };
 
+// FIXED: Updated to match Home page formatting
 const formatEventDateShort = (dateString: string): string => {
   if (!dateString) return "Date TBD";
   
   try {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const eventDateStr = dateString.split('T')[0];
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid date";
     
-    if (eventDateStr === todayStr) return "Today";
+    const datePart = dateString.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
     
-    const eventDate = new Date(dateString);
-    if (isNaN(eventDate.getTime())) return "Invalid date";
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[month - 1];
     
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const eventDate = new Date(year, month - 1, day);
     
-    if (eventDateStr === tomorrowStr) return "Tomorrow";
-    
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-    
-    if (eventDateStr === yesterdayStr) return "Yesterday";
-    
-    // Check if within next 7 days
     const diffTime = eventDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    if (diffDays > 0 && diffDays <= 7) {
-      return formatDateOnly(dateString) + ` (in ${diffDays} days)`;
-    }
+    const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
     
-    if (diffDays < 0) {
-      return formatDateOnly(dateString) + " (Past)";
-    }
+    if (diffDays < -1) return `${formattedDate} (Past)`;
+    if (diffDays === -1) return `Yesterday`;
+    if (diffDays === 0) return `Today`;
+    if (diffDays === 1) return `Tomorrow`;
+    if (diffDays <= 7) return `${formattedDate} (in ${diffDays} days)`;
     
-    return formatDateOnly(dateString);
+    return formattedDate;
   } catch (error) {
     return "Date TBD";
   }
@@ -571,13 +563,19 @@ export default function EventsPage() {
   const navigate = useNavigate();
 
   // --- Memoized Values ---
-  const featuredEvents = useMemo(() => 
-    events.filter((e) => e.featured), [events]
-  );
+  const today = new Date().toISOString().split('T')[0];
+  
+  // FIXED: Featured events should NOT show past events
+  const featuredEvents = useMemo(() => {
+    return events
+      .filter((e) => e.featured)
+      .filter(event => {
+        const eventDateStr = event.date?.split('T')[0];
+        return eventDateStr && eventDateStr >= today; // Only future/present events
+      });
+  }, [events, today]);
 
   const filteredEvents = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    
     // First filter by search term
     let filtered = events.filter(
       e =>
@@ -599,23 +597,21 @@ export default function EventsPage() {
     }
     
     return filtered;
-  }, [events, searchTerm, selectedCategory, showPastEvents]);
+  }, [events, searchTerm, selectedCategory, showPastEvents, today]);
 
   const futureEvents = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
     return filteredEvents.filter(event => {
       const eventDateStr = event.date?.split('T')[0];
       return eventDateStr && eventDateStr >= today;
     });
-  }, [filteredEvents]);
+  }, [filteredEvents, today]);
 
   const pastEvents = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
     return filteredEvents.filter(event => {
       const eventDateStr = event.date?.split('T')[0];
       return eventDateStr && eventDateStr < today;
     });
-  }, [filteredEvents]);
+  }, [filteredEvents, today]);
 
   const nearYouEvents = useMemo(() => 
     futureEvents.slice(0, 8), [futureEvents]
@@ -842,7 +838,7 @@ export default function EventsPage() {
           setShowPast={setShowPastEvents}
         />
 
-        {/* Featured Carousel */}
+        {/* Featured Carousel - Only shows future featured events */}
         <AnimatePresence mode="wait">
           {featuredEvents.length > 0 && (
             <motion.section
@@ -901,7 +897,7 @@ export default function EventsPage() {
                         <button
                           onClick={() => handleEventClick(event)}
                           className="w-full text-left focus:outline-none focus:ring-4 focus:ring-purple-300 rounded-3xl"
-                          aria-label={`Featured event ${index + 1}: ${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+                          aria-label={`Featured event ${index + 1}: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
                         >
                           <div className="relative h-96 md:h-[560px] bg-black rounded-3xl overflow-hidden group/carousel">
                             <img 
@@ -912,7 +908,7 @@ export default function EventsPage() {
                               width={1200}
                               height={560}
                             />
-                            {!eventIsPast && soldOut && (
+                            {soldOut && (
                               <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
                                 <div className="bg-gradient-to-r from-red-600 to-red-800 text-white px-8 py-4 rounded-full font-bold flex items-center gap-3">
                                   <span className="text-2xl">SOLD OUT</span>
@@ -922,11 +918,10 @@ export default function EventsPage() {
                             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
                             <div className="absolute bottom-8 left-8 right-8 text-white z-20">
                               <div className="flex flex-wrap gap-2 mb-4">
-                                {eventIsPast && <Badge type="past" />}
-                                {!eventIsPast && event.sponsored && <Badge type="sponsored" />}
-                                {!eventIsPast && event.isNew && <Badge type="new" />}
-                                {!eventIsPast && event.featured && <Badge type="featured" />}
-                                {!eventIsPast && event.trending && <Badge type="trending" />}
+                                {event.sponsored && <Badge type="sponsored" />}
+                                {event.isNew && <Badge type="new" />}
+                                {event.featured && <Badge type="featured" />}
+                                {event.trending && <Badge type="trending" />}
                               </div>
                               <h3 className="text-5xl md:text-7xl font-black mt-4 leading-tight">
                                 {event.title}
@@ -939,19 +934,17 @@ export default function EventsPage() {
                               </p>
                               <div className="flex items-center justify-between mt-6">
                                 <p className={`text-3xl font-bold ${
-                                  eventIsPast ? 'text-gray-400' :
                                   soldOut ? 'text-red-400' : 
                                   isFree ? 'text-emerald-400' : 'text-purple-400'
                                 }`}>
-                                  {eventIsPast ? 'PAST EVENT' : 
-                                   soldOut ? 'SOLD OUT' : 
+                                  {soldOut ? 'SOLD OUT' : 
                                    isFree ? 'Free' : formatPriceDisplay(price, isFree)}
                                 </p>
                                 <span className="text-white/80 text-lg">
                                   {event.location}
                                 </span>
                               </div>
-                              {!eventIsPast && !soldOut && availableTickets < 9999 && availableTickets > 0 && availableTickets <= 10 && (
+                              {!soldOut && availableTickets < 9999 && availableTickets > 0 && availableTickets <= 10 && (
                                 <div className="mt-4 text-center">
                                   <span className="inline-flex items-center gap-2 text-orange-300 font-bold">
                                     🔥 Only {availableTickets} tickets left!

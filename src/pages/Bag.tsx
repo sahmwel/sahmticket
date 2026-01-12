@@ -94,45 +94,44 @@ export default function Bag() {
         }
 
         // Fetch event details for each unique event
-        // Fetch event details for each unique event
-const eventIds = [...new Set(ticketsData.map((t: any) => t.event_id).filter(Boolean))] as string[];
+        const eventIds = [...new Set(ticketsData.map((t: any) => t.event_id).filter(Boolean))] as string[];
 
-if (eventIds.length > 0) {
-  const { data: eventsData, error: eventsError } = await supabase
-    .from("events")
-    .select(`
-      id,
-      title,
-      date,
-      time,
-      location,
-      venue,
-      lat,
-      lng,
-      image
-    `)
-    .in("id", eventIds);
+        if (eventIds.length > 0) {
+          const { data: eventsData, error: eventsError } = await supabase
+            .from("events")
+            .select(`
+              id,
+              title,
+              date,
+              time,
+              location,
+              venue,
+              lat,
+              lng,
+              image
+            `)
+            .in("id", eventIds);
 
-  if (eventsError) throw eventsError;
+          if (eventsError) throw eventsError;
 
-  // Combine ticket and event data
-  const ticketsWithEvents: Ticket[] = ticketsData.map((ticket: any) => {
-    const event = eventsData?.find((e: any) => e.id === ticket.event_id) || null;
-    return {
-      ...ticket,
-      event
-    };
-  });
+          // Combine ticket and event data
+          const ticketsWithEvents: Ticket[] = ticketsData.map((ticket: any) => {
+            const event = eventsData?.find((e: any) => e.id === ticket.event_id) || null;
+            return {
+              ...ticket,
+              event
+            };
+          });
 
-  setTickets(ticketsWithEvents);
-} else {
-  // If no event found (shouldn't happen, but just in case)
-  const ticketsWithNullEvents: Ticket[] = ticketsData.map((ticket: any) => ({
-    ...ticket,
-    event: null
-  }));
-  setTickets(ticketsWithNullEvents);
-}
+          setTickets(ticketsWithEvents);
+        } else {
+          // If no event found (shouldn't happen, but just in case)
+          const ticketsWithNullEvents: Ticket[] = ticketsData.map((ticket: any) => ({
+            ...ticket,
+            event: null
+          }));
+          setTickets(ticketsWithNullEvents);
+        }
 
       } catch (err: any) {
         console.error("Error fetching tickets:", err);
@@ -151,59 +150,112 @@ if (eventIds.length > 0) {
   const firstTicket = tickets[0];
   const event = firstTicket?.event;
 
-  // Format date
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "Date TBD";
+  // Parse date directly from YYYY-MM-DD string (NO TIMEZONE ISSUES)
+  const parseDateString = (dateString: string): { year: number; month: number; day: number; dayOfWeek: string } | null => {
+    if (!dateString) return null;
+    
     try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return "Invalid date";
+      // Remove time part if present
+      const dateOnly = dateString.split('T')[0];
+      const [yearStr, monthStr, dayStr] = dateOnly.split('-');
       
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
-      const eventDateStr = dateString.split('T')[0];
+      if (!yearStr || !monthStr || !dayStr) return null;
       
-      if (eventDateStr === todayStr) return "Today";
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10); // 1-12
+      const day = parseInt(dayStr, 10);
       
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
-                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      const monthName = monthNames[date.getMonth()];
-      const day = date.getDate();
-      const year = date.getFullYear();
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
       
-      return `${monthName} ${day}, ${year}`;
+      // Calculate day of week using Zeller's Congruence
+      const getDayOfWeek = (y: number, m: number, d: number): string => {
+        if (m < 3) {
+          m += 12;
+          y -= 1;
+        }
+        const K = y % 100;
+        const J = Math.floor(y / 100);
+        const h = (d + Math.floor((13 * (m + 1)) / 5) + K + Math.floor(K / 4) + Math.floor(J / 4) - (2 * J)) % 7;
+        const days = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+        return days[(h + 7) % 7];
+      };
+      
+      const dayOfWeek = getDayOfWeek(year, month, day);
+      
+      return { year, month, day, dayOfWeek };
     } catch {
-      return "Date TBD";
+      return null;
     }
   };
 
-  // Format time
-  const formatTime = (timeStr?: string): string => {
-    if (!timeStr || timeStr.trim() === '') return "Time TBD";
+  // Format date for display (matches Home page)
+  const formatDate = (timestamp: string | null) => {
+    if (!timestamp) return "Date not set";
+
+    const parsed = parseDateString(timestamp);
+    if (!parsed) return "Invalid date";
+    
+    const { year, month, day, dayOfWeek } = parsed;
+    
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[month - 1];
+    
+    // Calculate days difference
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const eventDate = new Date(year, month - 1, day);
+    
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
+    
+    if (diffDays < -1) return `${formattedDate} (Past)`;
+    if (diffDays === -1) return `Yesterday`;
+    if (diffDays === 0) return `Today`;
+    if (diffDays === 1) return `Tomorrow`;
+    if (diffDays <= 7) return `${formattedDate} (in ${diffDays} days)`;
+    
+    return formattedDate;
+  };
+
+  // Time formatting
+  const formatEventTime = (eventDate: string, eventTime?: string): string => {
+    if (eventTime) {
+      try {
+        let hours, minutes;
+        
+        if (eventTime.includes(':')) {
+          const timeParts = eventTime.split(':');
+          hours = parseInt(timeParts[0], 10);
+          minutes = timeParts[1] ? parseInt(timeParts[1], 10) : 0;
+        } else {
+          const timeNum = parseInt(eventTime, 10);
+          hours = Math.floor(timeNum / 100);
+          minutes = timeNum % 100;
+        }
+        
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        const displayMinutes = minutes ? minutes.toString().padStart(2, '0') : '00';
+        return `${displayHours}:${displayMinutes} ${ampm}`;
+      } catch {
+        // Continue to fallback
+      }
+    }
     
     try {
-      const cleanTime = timeStr.trim();
-      const timeRegex = /(\d{1,2}):?(\d{2})?\s*(am|pm|AM|PM)?/i;
-      const match = cleanTime.match(timeRegex);
+      const date = new Date(eventDate);
+      if (isNaN(date.getTime())) return "Time TBD";
       
-      if (!match) return cleanTime;
-      
-      let hours = parseInt(match[1], 10);
-      const minutes = match[2] ? parseInt(match[2], 10) : 0;
-      const period = match[3] ? match[3].toUpperCase() : '';
-      
-      if (period) {
-        if (period === 'PM' && hours < 12) hours += 12;
-        if (period === 'AM' && hours === 12) hours = 0;
-      }
-      
-      const displayPeriod = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      const displayMinutes = minutes.toString().padStart(2, '0');
-      
-      return `${displayHours}:${displayMinutes} ${displayPeriod}`;
-      
-    } catch (error) {
-      return timeStr;
+      let hours = date.getHours();
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${minutes} ${ampm}`;
+    } catch {
+      return "Time TBD";
     }
   };
 
@@ -215,6 +267,29 @@ if (eventIds.length > 0) {
       currency: "NGN",
       minimumFractionDigits: 0
     }).format(price);
+  };
+
+  // Get month name
+  const getMonthName = (month: number): string => {
+    const months = ["January", "February", "March", "April", "May", "June", 
+                   "July", "August", "September", "October", "November", "December"];
+    return months[month - 1] || "Month";
+  };
+
+  // Get day abbreviation
+  const getDayAbbreviation = (fullDay: string): string => {
+    return fullDay.substring(0, 3);
+  };
+
+  // Get ordinal suffix for date
+  const getDateWithOrdinal = (date: number): string => {
+    if (date >= 11 && date <= 13) return `${date}th`;
+    switch (date % 10) {
+      case 1: return `${date}st`;
+      case 2: return `${date}nd`;
+      case 3: return `${date}rd`;
+      default: return `${date}th`;
+    }
   };
 
   // Web share API
@@ -236,7 +311,6 @@ if (eventIds.length > 0) {
         });
       } catch (err) {
         console.error("Share failed:", err);
-        // Fallback to clipboard
         navigator.clipboard.writeText(window.location.href)
           .then(() => alert("Ticket link copied to clipboard! 📋"))
           .catch(() => alert("Sharing not supported on this device"));
@@ -309,6 +383,9 @@ if (eventIds.length > 0) {
     );
   }
 
+  // Parse date from event
+  const parsedDate = event ? parseDateString(event.date) : null;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50">
       {/* Success Header */}
@@ -376,10 +453,17 @@ if (eventIds.length > 0) {
                         <p className="font-semibold text-gray-800 text-lg">
                           {formatDate(event.date)}
                         </p>
-                        <p className="text-gray-600 flex items-center gap-2 mt-1">
-                          <Clock className="w-4 h-4" />
-                          {formatTime(event.time)}
-                        </p>
+                        <div className="flex items-center gap-3 mt-1">
+                          {parsedDate && (
+                            <div className="text-gray-600 text-sm bg-gray-100 px-3 py-1 rounded-full">
+                              {getDayAbbreviation(parsedDate.dayOfWeek)}
+                            </div>
+                          )}
+                          <p className="text-gray-600 flex items-center gap-2">
+                            <Clock className="w-4 h-4" />
+                            {formatEventTime(event.date, event.time)}
+                          </p>
+                        </div>
                       </div>
                     </div>
                     
@@ -417,6 +501,18 @@ if (eventIds.length > 0) {
                         <p className="text-gray-600 text-sm mt-1">Email sent to</p>
                       </div>
                     </div>
+                    
+                    {firstTicket.phone && (
+                      <div className="flex items-start gap-3">
+                        <Phone className="w-6 h-6 text-purple-600 flex-shrink-0 mt-1" />
+                        <div>
+                          <p className="font-semibold text-gray-800 text-lg">
+                            {firstTicket.phone}
+                          </p>
+                          <p className="text-gray-600 text-sm mt-1">Phone number</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -437,9 +533,19 @@ if (eventIds.length > 0) {
                     </div>
                   </div>
                   
-                  <p className="font-mono text-sm text-gray-500 mt-4">
-                    Ref: {firstTicket.reference || orderId}
-                  </p>
+                  <div className="mt-4 space-y-2">
+                    <p className="font-mono text-sm text-gray-500">
+                      Reference: {firstTicket.reference || orderId}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Purchased on {new Date(firstTicket.purchased_at).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -451,11 +557,13 @@ if (eventIds.length > 0) {
                   {tickets.map((ticket, index) => (
                     <div 
                       key={ticket.id} 
-                      className="flex justify-between items-center p-4 bg-gray-50 rounded-xl"
+                      className="flex justify-between items-center p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
                     >
                       <div>
                         <p className="font-semibold text-gray-900">{ticket.tier_name}</p>
-                        <p className="text-gray-600 text-sm">Ticket #{index + 1}</p>
+                        <p className="text-gray-600 text-sm">
+                          {ticket.ticket_type} • Ticket #{index + 1}
+                        </p>
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-purple-700">
@@ -474,7 +582,7 @@ if (eventIds.length > 0) {
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-lg font-semibold text-gray-900">Order Total</p>
-                      <p className="text-gray-600 text-sm">Including all tickets</p>
+                      <p className="text-gray-600 text-sm">{totalTickets} tickets</p>
                     </div>
                     <div className="text-right">
                       <p className="text-3xl font-black text-purple-700">
@@ -488,6 +596,42 @@ if (eventIds.length > 0) {
                   </div>
                 </div>
               </div>
+
+              {/* Event Date Box - FIXED: Shows exact date from string */}
+              {event && parsedDate && (
+                <div className="mt-8 bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl p-6 text-white">
+                  <div className="text-center mb-4">
+                    <p className="text-sm opacity-90 uppercase tracking-wider">Event Date</p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-center">
+                      <p className="text-sm opacity-90">Day</p>
+                      <h3 className="text-2xl md:text-3xl font-bold mt-1">
+                        {getDayAbbreviation(parsedDate.dayOfWeek)}
+                      </h3>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm opacity-90">Date</p>
+                      <p className="text-4xl md:text-5xl font-black">{parsedDate.day}</p>
+                      <p className="text-lg font-semibold">{getMonthName(parsedDate.month)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm opacity-90">Time</p>
+                      <h3 className="text-2xl md:text-3xl font-bold mt-1">
+                        {formatEventTime(event.date, event.time)}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="text-center mt-4 pt-4 border-t border-white/20">
+                    <p className="text-sm opacity-90">
+                      {parsedDate.dayOfWeek}, {getDateWithOrdinal(parsedDate.day)} of {getMonthName(parsedDate.month)} {parsedDate.year}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Date Verification - Shows exact parsing */}
+              
 
               {/* Action Buttons */}
               <div className="mt-8 pt-8 border-t border-gray-200 space-y-4">
@@ -509,6 +653,17 @@ if (eventIds.length > 0) {
                     <Share2 className="w-6 h-6" />
                     <span>Share Ticket</span>
                   </button>
+                </div>
+
+                {/* Important Information */}
+                <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+                  <h4 className="font-bold text-yellow-800 mb-2">Important Information</h4>
+                  <ul className="text-sm text-yellow-700 space-y-1">
+                    <li>• Present this QR code at the event entrance for check-in</li>
+                    <li>• Arrive at least 30 minutes before the event start time</li>
+                    <li>• Bring a valid ID that matches the ticket holder name</li>
+                    <li>• Tickets are non-refundable and non-transferable</li>
+                  </ul>
                 </div>
 
                 {/* Navigation Links */}
