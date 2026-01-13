@@ -37,63 +37,63 @@ const teamMembers: TeamMember[] = [
     // contact: "samuel@sahmtickethub.com"
   },
   {
-    name: "Project Manager",
-    role: "Head of Operations",
+    name: "Susan Agbonika",
+    role: "Head of Operations(Project Manager)",
     bio: "Ensures flawless event execution and team coordination. Manages promoter onboarding and support.",
     // image: "https://images.unsplash.com/photo-1582750433449-648ed127bb54?q=80&w=200&h=200&fit=crop&crop=face",
     icon: Settings,
     color: "from-blue-500 to-cyan-600",
-    // funFact: "5+ years event management",
+    funFact: "I can't read minds, but I can ask the right questions to get things done.",
     // contact: "ops@sahmtickethub.com"
   },
   {
-    name: "Social Media Team",
+    name: "Nereus Chori",
     role: "Digital Marketing",
     bio: "Creates buzz and drives ticket sales through targeted campaigns and social media strategy.",
     // image: "https://images.unsplash.com/photo-1551836026-d5c2c5af78e4?q=80&w=200&h=200&fit=crop&crop=face",
     icon: Megaphone,
     color: "from-orange-500 to-red-600",
-    // funFact: "Expert in event promotion",
+    funFact: "Talk less, act more jolly fellow",
     // contact: "marketing@sahmtickethub.com"
   },
     {
-    name: "Social Media Team",
+    name: "Attah Achema",
     role: "Digital Marketing",
     bio: "Creates buzz and drives ticket sales through targeted campaigns and social media strategy.",
     // image: "https://images.unsplash.com/photo-1551836026-d5c2c5af78e4?q=80&w=200&h=200&fit=crop&crop=face",
     icon: Megaphone,
     color: "from-orange-500 to-red-600",
-    // funFact: "Expert in event promotion",
+    funFact: "I ignore the task, panic a little, then deliver one hour before the deadline.",
     // contact: "marketing@sahmtickethub.com"
   },
   {
-    name: "Accountant",
+    name: "Rachael Benjamin",
     role: "Finance & Payouts",
     bio: "Manages all transactions and ensures 24-hour payouts. Handles financial compliance.",
     // image: "https://images.unsplash.com/photo-1552664730-d307ca884978?q=80&w=200&h=200&fit=crop&crop=face",
     icon: DollarSign,
     color: "from-green-500 to-emerald-600",
-    // funFact: "Fast payout processing",
+    funFact: "Peace of mind is my favourite luxury.",
     // contact: "finance@sahmtickethub.com"
   },
   {
-    name: "UI/UX Team",
-    role: "Product Design",
-    // bio: "Creates beautiful, intuitive interfaces that make ticket selling and buying seamless.",
+    name: "Anibe Achema",
+    role: "Product Design(UI/UX)",
+    bio: "Creates beautiful, intuitive interfaces that make ticket selling and buying seamless.",
     // image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&h=200&fit=crop&crop=face",
     icon: Palette,
     color: "from-pink-500 to-rose-600",
-    // funFact: "User-focused design",
+    funFact: "Garri is my favourite food.",
     // contact: "design@sahmtickethub.com"
   },
   {
-  name: "Media Team",
+  name: "Segun Jacob Abanize",
   role: "Photography & Video",
   bio: "Professional media coverage for events. Captures content for marketing and memories.",
   // image: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=200&h=200&fit=crop&crop=face",
   icon: Camera, // You'll need to import Camera from lucide-react
   color: "from-violet-500 to-purple-600",
-  funFact: "Covered 500+ events",
+  funFact: "A servant of the Most High God. Work smart, pray hard.",
   // contact: "media@sahmtickethub.com"
 },
   {
