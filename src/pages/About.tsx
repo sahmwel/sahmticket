@@ -34,7 +34,7 @@ const teamMembers: TeamMember[] = [
     icon: Code,
     color: "from-purple-500 to-pink-600",
     funFact: "Built platform in 8 weeks",
-    // contact: "samuel@sahmtickethub.com"
+    contact: "obutesamuel@yahoo.com"
   },
   {
     name: "Susan Agbonika",
@@ -44,7 +44,7 @@ const teamMembers: TeamMember[] = [
     icon: Settings,
     color: "from-blue-500 to-cyan-600",
     funFact: "I can't read minds, but I can ask the right questions to get things done.",
-    // contact: "ops@sahmtickethub.com"
+    contact: "ufedosusan@gmail.com"
   },
   {
     name: "Nereus Chori",
@@ -54,7 +54,7 @@ const teamMembers: TeamMember[] = [
     icon: Megaphone,
     color: "from-orange-500 to-red-600",
     funFact: "Talk less, act more jolly fellow",
-    // contact: "marketing@sahmtickethub.com"
+    contact: "nereusbeatzofficial@gmail.com"
   },
     {
     name: "Attah Achema",
@@ -64,7 +64,7 @@ const teamMembers: TeamMember[] = [
     icon: Megaphone,
     color: "from-orange-500 to-red-600",
     funFact: "I ignore the task, panic a little, then deliver one hour before the deadline.",
-    // contact: "marketing@sahmtickethub.com"
+    contact: "achemaattah@gmail.com"
   },
   {
     name: "Rachael Benjamin",
@@ -74,7 +74,7 @@ const teamMembers: TeamMember[] = [
     icon: DollarSign,
     color: "from-green-500 to-emerald-600",
     funFact: "Peace of mind is my favourite luxury.",
-    // contact: "finance@sahmtickethub.com"
+    contact: "rachaelobute@gmail.com"
   },
   {
     name: "Anibe Achema",
@@ -84,17 +84,17 @@ const teamMembers: TeamMember[] = [
     icon: Palette,
     color: "from-pink-500 to-rose-600",
     funFact: "Garri is my favourite food.",
-    // contact: "design@sahmtickethub.com"
+    contact: "achemaanibe@gmail.com"
   },
   {
   name: "Segun Jacob Abanize",
   role: "Photography & Video",
   bio: "Professional media coverage for events. Captures content for marketing and memories.",
   // image: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=200&h=200&fit=crop&crop=face",
-  icon: Camera, // You'll need to import Camera from lucide-react
+  icon: Camera,
   color: "from-violet-500 to-purple-600",
   funFact: "A servant of the Most High God. Work smart, pray hard.",
-  // contact: "media@sahmtickethub.com"
+  contact: "abanisesegun@gmail.com"
 },
   {
     name: "Support Team",
@@ -104,7 +104,7 @@ const teamMembers: TeamMember[] = [
     icon: CheckCircle,
     color: "from-indigo-500 to-blue-600",
     funFact: "Always available",
-    // contact: "support@sahmtickethub.com"
+    contact: "info@sahmtickethub.online"
   }
 ];
 
@@ -112,7 +112,7 @@ const teamMembers: TeamMember[] = [
 const platformStats = [
   { value: "2026", label: "Launched", icon: Calendar, color: "text-purple-600", growth: "Ready now" },
   { value: "0%", label: "Commission", icon: DollarSign, color: "text-green-600", growth: "Free to start" },
-  { value: "24hrs", label: "Payout Speed", icon: Clock, color: "text-blue-600", growth: "Guaranteed" },
+  { value: "Every Friday", label: "Payout Speed", icon: Clock, color: "text-blue-600", growth: "Guaranteed" },
   { value: "30%", label: "Avg Sales Increase", icon: TrendingUp, color: "text-amber-600", growth: "For new organizers" },
   { value: "100%", label: "Fraud Protection", icon: Shield, color: "text-emerald-600", growth: "Verified QR" },
   { value: "7", label: "Team Members", icon: Users, color: "text-pink-600", growth: "Full team" },
@@ -130,7 +130,7 @@ const platformFeatures = [
   {
     icon: Zap,
     title: "Instant Payouts",
-    description: "Get paid in 24 hours vs 30-day industry standard",
+    description: "Get paid every Friday vs 30-day industry standard",
     color: "bg-amber-500",
     metric: "Fast cash flow"
   },
@@ -523,7 +523,7 @@ export default function About() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Time to Payout</span>
-                    <span className="text-2xl font-bold">24h</span>
+                    <span className="text-2xl font-bold">Every Friday</span>
                   </div>
                 </div>
               </div>
@@ -671,7 +671,7 @@ export default function About() {
               </div>
               
               <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6">
-                <p className="text-3xl font-bold text-blue-400">24h</p>
+                <p className="text-3xl font-bold text-blue-400">Every Friday</p>
                 <p className="text-lg font-semibold">Payout Speed</p>
                 <p className="text-sm text-gray-400">Fastest in Nigeria</p>
               </div>
