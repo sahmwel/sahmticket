@@ -1,73 +1,61 @@
-# React + TypeScript + Vite
+# 🎟️ SahmTicketHub
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Nigeria's Fastest Event Ticketing Platform | Built in Kaduna**
 
-Currently, two official plugins are available:
+[![Live Demo](https://img.shields.io/badge/Live-Demo-green)](https://sahmtickethub.online)
+[![TypeScript](https://img.shields.io/badge/TypeScript-91%25-blue)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-18-blue)](https://reactjs.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Zero fake tickets • Instant payouts • QR entry • Real-time analytics
 
-## React Compiler
+## 🚀 Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 🎪 For Event Organizers
+- **QR-Verified Tickets** - 100% fraud protection
+- **24-Hour Payouts** - Fastest in Nigeria (vs 30-day industry standard)
+- **Real-Time Dashboard** - Track sales, attendance, revenue live
+- **Easy Event Creation** - Set up events in under 5 minutes
+- **Marketing Tools** - Built-in social media promotion
 
-## Expanding the ESLint configuration
+### 🎟️ For Attendees
+- **Secure Mobile Tickets** - QR codes on your phone
+- **Instant Confirmation** - Email/SMS tickets immediately
+- **Easy Refunds** - Simplified refund process
+- **Event Discovery** - Find events near you
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🛠️ Tech Stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+**Frontend:**
+- React 18 with TypeScript
+- Vite (Fast builds & HMR)
+- Tailwind CSS (Styling)
+- Framer Motion (Animations)
+- Lucide Icons (Icon library)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+**Backend:**
+- Node.js + Express.js
+- Supabase (PostgreSQL database)
+- RESTful API Architecture
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+**Key Features:**
+- Type-safe development with TypeScript
+- Responsive design (mobile-first)
+- PWA-ready (Progressive Web App)
+- SEO optimized
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 📦 Installation
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+```bash
+# Clone the repository
+git clone https://github.com/sahmwel/sahmtickethub.git
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+# Install dependencies
+cd sahmtickethub
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
