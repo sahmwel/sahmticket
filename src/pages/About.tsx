@@ -33,7 +33,7 @@ const teamMembers: TeamMember[] = [
     // image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&h=200&fit=crop&crop=face",
     icon: Code,
     color: "from-purple-500 to-pink-600",
-    funFact: "Built platform in 8 weeks",
+    funFact: "I just needed coffee, Wi-Fi, and a concerning lack of self-preservation instincts",
     contact: "obutesamuel@yahoo.com"
   },
   {

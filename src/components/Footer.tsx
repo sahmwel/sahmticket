@@ -74,21 +74,21 @@ export default function Footer() {
                 <Mail size={18} /> info@sahmtickethub.online
               </a>
               <a href="tel:+2347035651109" className="flex items-center gap-3 hover:text-white transition">
-                <Phone size={18} /> +234 703 565 1109
+                <Phone size={18} /> +234 904 443 1669
               </a>
             </div>
 
             {/* Social Icons */}
             <div className="flex gap-5">
-              <a href="https://instagram.com/sahmtickethub" target="_blank" rel="noopener noreferrer"
+              <a href="https://instagram.com/Sahmtickethub" target="_blank" rel="noopener noreferrer"
                  className="w-14 h-14 bg-white/10 backdrop-blur-lg rounded-full flex items-center justify-center hover:bg-gradient-to-r hover:from-pink-500 hover:to-purple-600 transition-all duration-300 group shadow-lg">
                 <SiInstagram size={24} className="group-hover:scale-110 transition" />
               </a>
-              <a href="https://x.com/sahmtickethub" target="_blank" rel="noopener noreferrer"
+              <a href="https://x.com/SahmTicketHub" target="_blank" rel="noopener noreferrer"
                  className="w-14 h-14 bg-white/10 backdrop-blur-lg rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-300 group shadow-lg">
                 <SiX size={24} className="group-hover:scale-110 transition" />
               </a>
-              <a href="https://wa.me/2347035651109" target="_blank" rel="noopener noreferrer"
+              <a href="https://wa.me/2349044431669" target="_blank" rel="noopener noreferrer"
                  className="w-14 h-14 bg-white/10 backdrop-blur-lg rounded-full flex items-center justify-center hover:bg-gradient-to-r hover:from-green-500 hover:to-emerald-600 transition-all duration-300 group shadow-lg">
                 <SiWhatsapp size={24} className="group-hover:scale-110 transition" />
               </a>

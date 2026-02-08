@@ -34,8 +34,8 @@ export default function Contact() {
             {
               icon: Phone,
               title: "Call or WhatsApp",
-              info: "+234 703 565 1109",
-              link: "https://wa.me/2347035651109",
+              info: "+234 904 443 1669",
+              link: "https://wa.me/2349044431669",
               color: "from-green-500 to-emerald-600"
             },
             {
@@ -77,7 +77,7 @@ export default function Contact() {
           <div className="flex justify-center gap-12">
             <motion.a
               whileHover={{ scale: 1.2, rotate: 360 }}
-              href="https://instagram.com/Sahmtickethub.online"
+              href="https://instagram.com/Sahmtickethub"
               target="_blank"
               rel="noopener noreferrer"
               className="bg-gradient-to-r from-pink-500 to-purple-600 p-8 rounded-full shadow-xl"
@@ -86,7 +86,7 @@ export default function Contact() {
             </motion.a>
             <motion.a
               whileHover={{ scale: 1.2, rotate: -360 }}
-              href="https://x.com/Sahmtickethubonline"
+              href="https://x.com/SahmTicketHub"
               target="_blank"
               rel="noopener noreferrer"
               className="bg-black p-8 rounded-full shadow-xl"

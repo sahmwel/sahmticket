@@ -4,6 +4,62 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
+    <!-- Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" 
+          content="default-src 'self';
+                   script-src 'self' 'unsafe-inline' 'unsafe-eval' 
+                   https://js.paystack.co 
+                   https://js.stripe.com 
+                   https://js.stripe.com/v3 
+                   https://pagead2.googlesyndication.com 
+                   https://api.sahmtickethub.online 
+                   https://ep2.adtrafficquality.google 
+                   https://www.googletagmanager.com 
+                   https://www.google-analytics.com 
+                   https://www.gstatic.com;
+                   style-src 'self' 'unsafe-inline' 
+                   https://paystack.com 
+                   https://fonts.googleapis.com 
+                   https://checkout.paystack.com 
+                   https://www.google.com 
+                   https://www.gstatic.com;
+                   img-src 'self' data: https: blob:;
+                   font-src 'self' data: 
+                   https://fonts.gstatic.com 
+                   https://www.google.com 
+                   https://www.gstatic.com;
+                   connect-src 'self' 
+                   wss://*.supabase.co 
+                   https://*.supabase.co 
+                   https://api.sahmtickethub.online 
+                   https://js.stripe.com 
+                   https://checkout.stripe.com 
+                   https://js.paystack.co 
+                   https://pagead2.googlesyndication.com 
+                   https://ep1.adtrafficquality.google 
+                   https://ep2.adtrafficquality.google 
+                   https://googleads.g.doubleclick.net 
+                   https://www.google-analytics.com 
+                   https://www.googletagmanager.com 
+                   https://checkout.paystack.com;
+                   frame-src 'self' 
+                   https://js.stripe.com 
+                   https://checkout.stripe.com 
+                   https://checkout.paystack.com 
+                   https://googleads.g.doubleclick.net 
+                   https://paystack.com 
+                   https://www.google.com 
+                   https://www.youtube.com 
+                   https://ep2.adtrafficquality.google;
+                   media-src 'self' https:;
+                   worker-src 'self' blob:;
+                   child-src 'self' 
+                   https://checkout.paystack.com 
+                   https://js.stripe.com 
+                   https://googleads.g.doubleclick.net 
+                   https://ep2.adtrafficquality.google;
+                   manifest-src 'self';">
+    
     <!-- Dynamic Title will be set by React -->
     <title>SahmTicketHub - Discover Events</title>
     
@@ -35,19 +91,70 @@
     <link rel="manifest" href="/manifest.json?v=3" />
     <meta name="theme-color" content="#ffffff" />
     
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
     <!-- Google AdSense -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4842937981886180"
       crossorigin="anonymous"></script>
 
-      
+    <!-- Preload Stripe.js for faster loading -->
+    <link rel="preload" href="https://js.stripe.com/v3/" as="script">
+    <link rel="preload" href="https://js.paystack.co/v1/inline.js" as="script">
+    
+    <!-- Additional Stripe meta tags for PWA compatibility -->
+    <meta name="stripe:version" content="v3" />
+    
+    <!-- Preconnect to domains for performance -->
+    <link rel="preconnect" href="https://js.stripe.com">
+    <link rel="preconnect" href="https://js.paystack.co">
+    <link rel="preconnect" href="https://mndkpucelwxueiltkmzr.supabase.co">
+    <link rel="preconnect" href="https://api.sahmtickethub.online">
+    <link rel="preconnect" href="https://ep2.adtrafficquality.google">
+    <link rel="preconnect" href="https://checkout.paystack.com">
+    <link rel="preconnect" href="https://googleads.g.doubleclick.net">
+    
   </head>
   <body>
     <!-- Only these elements -->
     <div id="root"></div>
     <div id="modal-root"></div>
     
-    <!-- Scripts -->
+    <!-- Loading states for better UX -->
+    <noscript>
+      <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; display: flex; justify-content: center; align-items: center; z-index: 9999;">
+        <div style="text-align: center; padding: 20px;">
+          <h1 style="color: #7c3aed; margin-bottom: 20px;">JavaScript Required</h1>
+          <p style="margin-bottom: 20px;">SahmTicketHub requires JavaScript to function properly. Please enable JavaScript in your browser.</p>
+          <p>If you're using an ad blocker, please whitelist sahmTickethub.online</p>
+        </div>
+      </div>
+    </noscript>
+    
+    <!-- Payment Scripts (loaded asynchronously) -->
+    <script src="https://js.stripe.com/v3/" async defer></script>
+    <script src="https://js.paystack.co/v1/inline.js" async defer></script>
+    
+    <!-- Main App Script -->
     <script type="module" src="/src/main.tsx"></script>
-    <script src="https://js.paystack.co/v1/inline.js"></script>
+    
+    <!-- Payment Gateway Load Check -->
+    <script>
+      // Check if payment gateways are loaded
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          if (typeof Stripe === 'undefined') {
+            console.warn('Stripe.js not loaded. Check CSP or network issues.');
+          }
+          if (typeof Paystack === 'undefined') {
+            console.warn('Paystack.js not loaded. Check CSP or network issues.');
+          }
+          
+          // Log CSP warnings for debugging
+          console.log('CSP configured for all required domains');
+        }, 3000);
+      });
+    </script>
   </body>
 </html>
