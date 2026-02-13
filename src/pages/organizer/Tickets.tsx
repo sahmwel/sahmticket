@@ -2,9 +2,9 @@
 import Sidebar from "../../components/Sidebar";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { 
-  Search, Download, Calendar, Ticket, DollarSign, Users, 
-  Shield, CheckCircle, Copy, QrCode, Hash, User, Clock, MapPin, 
+import {
+  Search, Download, Calendar, Ticket, DollarSign, Users,
+  Shield, CheckCircle, Copy, QrCode, Hash, User, Clock, MapPin,
   BadgeCheck, AlertCircle, FileText, Filter, ChevronDown, Eye,
   X, RefreshCw, Tag, Menu
 } from "lucide-react";
@@ -87,7 +87,7 @@ export default function OrganizerTickets() {
 
     try {
       setLoading(true);
-      
+
       // Get organizer's events first
       const { data: organizerEvents, error: eventsError } = await supabase
         .from("events")
@@ -139,13 +139,13 @@ export default function OrganizerTickets() {
 
       const formatted: Ticket[] = (data || []).map((t: any) => {
         // Generate ticket number from ID and reference
-        const ticketNum = t.reference 
+        const ticketNum = t.reference
           ? `T-${t.reference.substring(0, 8).toUpperCase()}`
           : `T-${t.id.substring(0, 8).toUpperCase()}`;
-        
+
         // Determine status based on verified_at
         const status = t.verified_at ? "verified" : "pending";
-        
+
         return {
           id: t.id,
           ticket_type: t.ticket_type || t.tier_name || "General Admission",
@@ -286,30 +286,30 @@ export default function OrganizerTickets() {
         unit: 'mm',
         format: 'a4'
       });
-      
+
       // Add gradient background
       doc.setFillColor(106, 13, 173); // Purple
       doc.rect(0, 0, 210, 50, 'F');
-      
+
       // Header
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(28);
       doc.setFont('helvetica', 'bold');
       doc.text("SAHMTICKETHUB", 105, 25, { align: "center" });
-      
+
       doc.setFontSize(14);
       doc.setFont('helvetica', 'normal');
       doc.text("OFFICIAL EVENT TICKET", 105, 35, { align: "center" });
       doc.text("Valid for Entry", 105, 42, { align: "center" });
-      
+
       // Reset for content
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(12);
       doc.setFont('helvetica', 'normal');
-      
+
       // Ticket details section
       let yPos = 65;
-      
+
       // Ticket Number - Prominent
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
@@ -318,13 +318,13 @@ export default function OrganizerTickets() {
       doc.setFontSize(18);
       doc.setTextColor(106, 13, 173);
       doc.text(ticket.ticket_number, 70, yPos);
-      
+
       // Reset
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(12);
       yPos += 15;
-      
+
       // Event Details
       doc.setFont('helvetica', 'bold');
       doc.text("EVENT DETAILS", 20, yPos);
@@ -332,22 +332,22 @@ export default function OrganizerTickets() {
       doc.setFont('helvetica', 'normal');
       doc.text(`Event: ${ticket.event_title}`, 20, yPos);
       yPos += 7;
-      
+
       if (ticket.event_date) {
         doc.text(`Date: ${formatDate(ticket.event_date)}`, 20, yPos);
         yPos += 7;
       }
-      
+
       if (ticket.event_venue) {
         doc.text(`Venue: ${ticket.event_venue}`, 20, yPos);
         yPos += 7;
       }
-      
+
       if (ticket.event_location) {
         doc.text(`Location: ${ticket.event_location}`, 20, yPos);
         yPos += 10;
       }
-      
+
       // Ticket Info
       doc.setFont('helvetica', 'bold');
       doc.text("TICKET INFORMATION", 20, yPos);
@@ -359,7 +359,7 @@ export default function OrganizerTickets() {
       yPos += 7;
       doc.text(`Status: ${ticket.status.toUpperCase()}`, 20, yPos);
       yPos += 10;
-      
+
       // Buyer Info
       doc.setFont('helvetica', 'bold');
       doc.text("BUYER INFORMATION", 20, yPos);
@@ -369,7 +369,7 @@ export default function OrganizerTickets() {
       yPos += 7;
       doc.text(`Email: ${ticket.buyer_email}`, 20, yPos);
       yPos += 10;
-      
+
       // Payment Info
       doc.setFont('helvetica', 'bold');
       doc.text("PAYMENT INFORMATION", 20, yPos);
@@ -383,7 +383,7 @@ export default function OrganizerTickets() {
       yPos += 7;
       doc.text(`Purchase Date: ${formatDate(ticket.purchased_at)}`, 20, yPos);
       yPos += 15;
-      
+
       // Add QR Code if available
       if (ticket.qr_code_url) {
         try {
@@ -405,7 +405,7 @@ export default function OrganizerTickets() {
             img.onerror = reject;
             img.src = ticket.qr_code_url!;
           });
-          
+
           doc.addImage(imgData, 'PNG', 140, 65, 50, 50);
           doc.setFontSize(10);
           doc.setTextColor(100, 100, 100);
@@ -414,7 +414,7 @@ export default function OrganizerTickets() {
           console.warn("Could not add QR code to PDF:", err);
         }
       }
-      
+
       // Security footer
       doc.setFontSize(10);
       doc.setTextColor(150, 150, 150);
@@ -422,13 +422,13 @@ export default function OrganizerTickets() {
       doc.text("This ticket is non-transferable and valid only for the specified event.", 105, 200, { align: "center" });
       doc.text("Generated by SahmTicketHub Organizer Portal", 105, 205, { align: "center" });
       doc.text(`Generated: ${new Date().toLocaleDateString()}`, 105, 210, { align: "center" });
-      
+
       // Security border
       doc.setDrawColor(106, 13, 173);
       doc.setLineWidth(0.5);
       doc.rect(10, 10, 190, 277); // Outer border
       doc.rect(15, 15, 180, 267); // Inner border
-      
+
       // Save PDF
       doc.save(`Ticket-${ticket.ticket_number}.pdf`);
       toast.success("Ticket PDF generated successfully");
@@ -443,7 +443,7 @@ export default function OrganizerTickets() {
     try {
       const { error } = await supabase
         .from("tickets")
-        .update({ 
+        .update({
           verified_at: new Date().toISOString()
         })
         .eq("id", ticketId);
@@ -451,15 +451,15 @@ export default function OrganizerTickets() {
       if (error) throw error;
 
       // Update local state
-      setTickets(prev => prev.map(t => 
-        t.id === ticketId 
-          ? { ...t, verified_at: new Date().toISOString(), status: "verified" } 
+      setTickets(prev => prev.map(t =>
+        t.id === ticketId
+          ? { ...t, verified_at: new Date().toISOString(), status: "verified" }
           : t
       ));
 
-      setFilteredTickets(prev => prev.map(t => 
-        t.id === ticketId 
-          ? { ...t, verified_at: new Date().toISOString(), status: "verified" } 
+      setFilteredTickets(prev => prev.map(t =>
+        t.id === ticketId
+          ? { ...t, verified_at: new Date().toISOString(), status: "verified" }
           : t
       ));
 
@@ -554,18 +554,16 @@ export default function OrganizerTickets() {
               <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-medium">
                 {ticket.ticket_type}
               </span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${
-                ticket.price === 0 
+              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${ticket.price === 0
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
                   : 'bg-green-500/20 text-green-300 border-green-500/50'
-              }`}>
+                }`}>
                 {ticket.price === 0 ? 'FREE' : formatCurrency(ticket.price)}
               </span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${
-                ticket.verified_at
+              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${ticket.verified_at
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
                   : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
-              }`}>
+                }`}>
                 {ticket.verified_at ? 'VERIFIED' : 'PENDING'}
               </span>
             </div>
@@ -574,14 +572,15 @@ export default function OrganizerTickets() {
 
         {/* Ticket Number Section */}
         <div className="mb-4 p-3 sm:p-4 bg-white/5 rounded-xl border border-white/10">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col gap-3">
+            {/* Ticket Number Section */}
             <div className="flex-1">
               <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
                 <Hash className="w-4 h-4" />
                 <span>Ticket Number</span>
               </div>
               <div className="flex items-center gap-3">
-                <code className="text-base sm:text-lg font-mono font-bold text-white bg-black/30 px-2 sm:px-3 py-1 rounded-lg truncate">
+                <code className="text-base sm:text-lg font-mono font-bold text-white bg-black/30 px-2 sm:px-3 py-1 rounded-lg truncate min-w-0 flex-1">
                   {ticket.ticket_number}
                 </code>
                 <button
@@ -593,28 +592,32 @@ export default function OrganizerTickets() {
                 </button>
               </div>
             </div>
-            <div className="sm:text-right">
-              <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-                <Shield className="w-4 h-4" />
-                <span>Authenticity</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-                {ticket.verified_at ? (
-                  <span className="text-emerald-400 font-medium flex items-center gap-1">
-                    <CheckCircle className="w-4 h-4" /> Verified
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-yellow-400 font-medium">Pending</span>
-                    <button
-                      onClick={() => verifyTicket(ticket.id)}
-                      disabled={verifyingTicket === ticket.id}
-                      className="px-3 py-1 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 rounded-lg text-xs transition disabled:opacity-50 whitespace-nowrap"
-                    >
-                      {verifyingTicket === ticket.id ? 'Verifying...' : 'Verify'}
-                    </button>
-                  </>
-                )}
+
+            {/* Authenticity Section - Always on next line */}
+            <div className="border-t border-white/10 pt-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <Shield className="w-4 h-4" />
+                  <span>Authenticity</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+                  {ticket.verified_at ? (
+                    <span className="text-emerald-400 font-medium flex items-center gap-1">
+                      <CheckCircle className="w-4 h-4" /> Verified
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-yellow-400 font-medium">Pending</span>
+                      <button
+                        onClick={() => verifyTicket(ticket.id)}
+                        disabled={verifyingTicket === ticket.id}
+                        className="px-3 py-1 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 rounded-lg text-xs transition disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {verifyingTicket === ticket.id ? 'Verifying...' : 'Verify'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -632,7 +635,7 @@ export default function OrganizerTickets() {
           </div>
           <div>
             <div className="flex items-center gap-2 text-gray-500 mb-1">
-              <Ticket className="w-4 h-4" />
+              <Ticket className="w-4 h-4" />/
               <span>Order Details</span>
             </div>
             <div className="text-white font-medium truncate text-sm sm:text-base">{ticket.order_id}</div>
@@ -681,11 +684,10 @@ export default function OrganizerTickets() {
                   }
                 }}
                 disabled={!ticket.qr_code_url}
-                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-sm font-medium transition flex-1 sm:flex-none justify-center ${
-                  ticket.qr_code_url 
-                    ? 'bg-white/10 hover:bg-white/20 text-white' 
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-sm font-medium transition flex-1 sm:flex-none justify-center ${ticket.qr_code_url
+                    ? 'bg-white/10 hover:bg-white/20 text-white'
                     : 'bg-gray-800/50 text-gray-500 cursor-not-allowed'
-                }`}
+                  }`}
               >
                 <Download className="w-4 h-4" /> <span className="hidden sm:inline">QR</span>
               </button>
@@ -842,11 +844,10 @@ export default function OrganizerTickets() {
                           <button
                             key={status}
                             onClick={() => setFilterStatus(status)}
-                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${
-                              filterStatus === status
+                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${filterStatus === status
                                 ? 'bg-purple-600 text-white'
                                 : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                            }`}
+                              }`}
                           >
                             {status === "all" ? "All" : status === "verified" ? "Verified" : "Pending"}
                           </button>
@@ -873,11 +874,10 @@ export default function OrganizerTickets() {
                           <button
                             key={type}
                             onClick={() => setFilterType(type)}
-                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${
-                              filterType === type
+                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${filterType === type
                                 ? 'bg-purple-600 text-white'
                                 : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                            }`}
+                              }`}
                           >
                             {type === "all" ? "All" : type === "free" ? "Free" : "Paid"}
                           </button>
@@ -911,8 +911,8 @@ export default function OrganizerTickets() {
               <div className="text-center py-16 sm:py-20">
                 <Ticket size={48} className="mx-auto text-gray-600 mb-4 sm:mb-6" />
                 <h3 className="text-xl sm:text-2xl font-bold text-white mb-3">
-                  {searchTerm || filterStatus !== "all" || filterEvent !== "all" || filterType !== "all" 
-                    ? "No matching tickets found" 
+                  {searchTerm || filterStatus !== "all" || filterEvent !== "all" || filterType !== "all"
+                    ? "No matching tickets found"
                     : "No tickets sold yet"}
                 </h3>
                 <p className="text-gray-400 text-sm sm:text-base mb-6 max-w-md mx-auto">
@@ -953,7 +953,7 @@ export default function OrganizerTickets() {
               >
                 Download QR
               </button>
-              <button 
+              <button
                 onClick={() => setSelectedQR(null)}
                 className="flex-1 bg-white/10 hover:bg-white/20 px-4 sm:px-6 py-3 rounded-xl text-white font-medium transition"
               >
@@ -1044,11 +1044,10 @@ export default function OrganizerTickets() {
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Status</p>
                     <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        selectedTicket.verified_at
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${selectedTicket.verified_at
                           ? 'bg-emerald-500/20 text-emerald-300'
                           : 'bg-yellow-500/20 text-yellow-300'
-                      }`}>
+                        }`}>
                         {selectedTicket.verified_at ? 'VERIFIED' : 'PENDING'}
                       </span>
                       {!selectedTicket.verified_at && (

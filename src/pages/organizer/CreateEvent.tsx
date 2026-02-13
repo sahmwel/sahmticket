@@ -1,4 +1,4 @@
-// src/pages/organizer/CreateEvent.tsx - COMPLETE VERSION WITH ALL CATEGORIES
+// src/pages/organizer/CreateEvent.tsx - COMPLETE VERSION WITH FEE STRATEGY
 import Sidebar from "../../components/Sidebar";
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
@@ -7,7 +7,7 @@ import {
   Calendar, MapPin, Image as ImageIcon, Menu,
   Tag, Globe, DollarSign, Users, Map, Navigation,
   CreditCard, Flag, ChevronDown, Currency,
-  Music, Mic, Star, UserPlus, Trash2, Clock
+  Music, Mic, Star, UserPlus, Trash2, Clock, Receipt
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -43,6 +43,9 @@ interface GuestArtiste {
 
 // Currency types
 type CurrencyType = 'NGN' | 'USD' | 'GBP' | 'EUR' | 'GHS' | 'KES' | 'ZAR' | 'CAD';
+
+// Fee Strategy type
+type FeeStrategy = 'pass_to_attendees' | 'absorb_fees';
 
 // Timezones for different countries
 const TIMEZONES: Record<string, string> = {
@@ -195,7 +198,6 @@ export default function CreateEvent() {
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<number | "">(4);
-  // Use COMPLETE_CATEGORIES instead of fetching from Supabase
   const [categories] = useState<Category[]>(COMPLETE_CATEGORIES);
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([
     {
@@ -225,6 +227,9 @@ export default function CreateEvent() {
   const [selectedCurrency, setSelectedCurrency] = useState<CurrencyType>('NGN');
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
 
+  // ===== NEW: Fee Strategy State =====
+  const [feeStrategy, setFeeStrategy] = useState<FeeStrategy>('pass_to_attendees');
+
   const [featured, setFeatured] = useState(false);
   const [trending, setTrending] = useState(false);
   const [isNew, setIsNew] = useState(false);
@@ -250,14 +255,11 @@ export default function CreateEvent() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigate = useNavigate();
 
   // Get current timezone for selected country
   const currentTimezone = TIMEZONES[country] || 'WAT (UTC+1)';
-
-  // REMOVED THE USEEFFECT THAT FETCHES CATEGORIES - Using local array instead
 
   // Banner preview
   useEffect(() => {
@@ -580,321 +582,339 @@ export default function CreateEvent() {
     </div>
   );
 
-  // Handle create event
-  const handleCreateEvent = async () => {
-    setError("");
-    setSuccess(false);
+  // Handle create event - FIXED VERSION WITH FEE STRATEGY
+const handleCreateEvent = async () => {
+  setError("");
+  setSuccess(false);
 
-    // Basic validation
-    if (!title.trim() || !date || !venue.trim() || !categoryId) {
-      setError("Title, Date, Venue, and Category are required");
+  // Basic validation
+  if (!title.trim() || !date || !venue.trim() || !categoryId) {
+    setError("Title, Date, Venue, and Category are required");
+    return;
+  }
+
+  // Check ticket tiers
+  const invalidTier = ticketTiers.find(t => !t.name.trim() || !t.quantity.trim());
+  if (invalidTier) {
+    setError("All ticket tiers must have a name and quantity");
+    return;
+  }
+
+  // Validate guest artistes
+  const invalidArtiste = guestArtistes.find(g => !g.name.trim());
+  if (invalidArtiste) {
+    setError("All guest artistes must have a name");
+    return;
+  }
+
+  // Validate coordinates
+  let latNum = null;
+  let lngNum = null;
+
+  if (latitude.trim() || longitude.trim()) {
+    latNum = parseFloat(latitude);
+    lngNum = parseFloat(longitude);
+
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      setError("Invalid latitude/longitude values");
       return;
     }
 
-    // Check ticket tiers
-    const invalidTier = ticketTiers.find(t => !t.name.trim() || !t.quantity.trim());
-    if (invalidTier) {
-      setError("All ticket tiers must have a name and quantity");
+    if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+      setError("Invalid coordinate values");
       return;
     }
+  }
 
-    // Validate guest artistes
-    const invalidArtiste = guestArtistes.find(g => !g.name.trim());
-    if (invalidArtiste) {
-      setError("All guest artistes must have a name");
-      return;
+  setLoading(true);
+
+  try {
+    console.log("=== STARTING EVENT CREATION ===");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      throw new Error("Please log in to create events");
     }
 
-    // Validate coordinates
-    let latNum = null;
-    let lngNum = null;
+    const userId = session.user.id;
+    console.log("User ID:", userId);
+    console.log("Selected Currency:", selectedCurrency);
+    console.log("Fee Strategy:", feeStrategy);
 
-    if (latitude.trim() || longitude.trim()) {
-      latNum = parseFloat(latitude);
-      lngNum = parseFloat(longitude);
+    // Upload banner
+    let banner_url: string | null = null;
+    if (bannerFile) {
+      console.log("Uploading banner...");
+      const ext = bannerFile.name.split(".").pop() || "jpg";
+      const fileName = `${userId}/${Date.now()}.${ext}`;
 
-      if (isNaN(latNum) || isNaN(lngNum)) {
-        setError("Invalid latitude/longitude values");
-        return;
-      }
+      const { error: uploadError } = await supabase.storage
+        .from("event-banners")
+        .upload(fileName, bannerFile);
 
-      if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
-        setError("Invalid coordinate values");
-        return;
+      if (!uploadError) {
+        const { data } = supabase.storage.from("event-banners").getPublicUrl(fileName);
+        banner_url = data.publicUrl;
+        console.log("✅ Banner uploaded:", banner_url);
+      } else {
+        console.warn("⚠️ Banner upload failed:", uploadError);
       }
     }
 
-    setLoading(true);
+    // Generate unique slug
+    console.log("Generating unique slug...");
+    const uniqueSlug = await generateUniqueSlug(title.trim());
+    console.log("✅ Generated slug:", uniqueSlug);
 
-    try {
-      console.log("=== STARTING EVENT CREATION ===");
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) {
-        throw new Error("Please log in to create events");
-      }
-
-      const userId = session.user.id;
-      console.log("User ID:", userId);
-      console.log("Selected Currency:", selectedCurrency);
-
-      // Upload banner
-      let banner_url: string | null = null;
-      if (bannerFile) {
-        console.log("Uploading banner...");
-        const ext = bannerFile.name.split(".").pop() || "jpg";
-        const fileName = `${userId}/${Date.now()}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("event-banners")
-          .upload(fileName, bannerFile);
-
-        if (!uploadError) {
-          const { data } = supabase.storage.from("event-banners").getPublicUrl(fileName);
-          banner_url = data.publicUrl;
-          console.log("✅ Banner uploaded:", banner_url);
-        } else {
-          console.warn("⚠️ Banner upload failed:", uploadError);
+    // Upload guest artiste images
+    const artistesWithImages = [...guestArtistes];
+    for (const artiste of artistesWithImages) {
+      if (artiste.imageFile) {
+        console.log(`Uploading image for ${artiste.name}...`);
+        const imageUrl = await uploadGuestImage(artiste.imageFile, artiste.name, userId);
+        if (imageUrl) {
+          artiste.image_url = imageUrl;
+          console.log(`✅ Image uploaded for ${artiste.name}:`, imageUrl);
         }
       }
+    }
 
-      // Generate unique slug
-      console.log("Generating unique slug...");
-      const uniqueSlug = await generateUniqueSlug(title.trim());
-      console.log("✅ Generated slug:", uniqueSlug);
+    // Convert ticket prices to NGN
+    const tiersToInsert = ticketTiers.map(tier => {
+      const priceInSelectedCurrency = parseFloat(tier.price) || 0;
+      let priceInNGN = priceInSelectedCurrency;
 
-      // Upload guest artiste images
-      const artistesWithImages = [...guestArtistes];
-      for (const artiste of artistesWithImages) {
-        if (artiste.imageFile) {
-          console.log(`Uploading image for ${artiste.name}...`);
-          const imageUrl = await uploadGuestImage(artiste.imageFile, artiste.name, userId);
-          if (imageUrl) {
-            artiste.image_url = imageUrl;
-            console.log(`✅ Image uploaded for ${artiste.name}:`, imageUrl);
-          }
-        }
+      if (selectedCurrency !== 'NGN') {
+        priceInNGN = priceInSelectedCurrency * EXCHANGE_RATES[selectedCurrency];
       }
 
-      // Convert ticket prices to NGN
-      const tiersToInsert = ticketTiers.map(tier => {
-        const priceInSelectedCurrency = parseFloat(tier.price) || 0;
-        let priceInNGN = priceInSelectedCurrency;
+      const quantity = parseInt(tier.quantity) || 100;
 
-        if (selectedCurrency !== 'NGN') {
-          priceInNGN = priceInSelectedCurrency * EXCHANGE_RATES[selectedCurrency];
-        }
-
-        const quantity = parseInt(tier.quantity) || 100;
-
-        return {
-          event_id: "",
-          tier_name: tier.name.trim(),
-          description: tier.description.trim() || `${tier.name} ticket`,
-          price: priceInNGN,
-          original_currency: selectedCurrency,
-          original_price: priceInSelectedCurrency,
-          quantity_total: quantity,
-          quantity_sold: 0,
-          is_active: true
-        };
-      });
-
-      // Build event data - set as DRAFT first
-      const eventPayload = {
-        title: title.trim(),
-        description: description.trim() || null,
-        category_id: categoryId,
-        date: `${date}T${time}:00`, // Store without timezone
-        time: time || "00:00",
-        venue: venue.trim(),
-        location: venue.trim(),
-        city: city.trim() || null,
-        state: state.trim() || null,
-        country: country.trim() || "Nigeria",
-        image: banner_url,
-        cover_image: banner_url,
-        featured: false,
-        trending: false,
-        isnew: false,
-        sponsored: false,
-        status: "draft",
-        organizer_id: userId,
-        slug: uniqueSlug,
-        tags: tags.length > 0 ? tags : null,
-        lat: latNum,
-        lng: lngNum,
-        event_type: eventType || "physical",
-        virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
-        contact_email: contactEmail.trim() || null,
-        contact_phone: contactPhone.trim() || null,
-        published_at: null,
-        base_currency: selectedCurrency,
-        exchange_rates: EXCHANGE_RATES,
-        timezone: currentTimezone
-      };
-
-      console.log("📦 Event payload (draft):", JSON.stringify(eventPayload, null, 2));
-
-      // Create event as DRAFT
-      console.log("🚀 Creating event as DRAFT...");
-      const { data: event, error: eventError } = await supabase
-        .from("events")
-        .insert(eventPayload)
-        .select("id, title, slug, status, base_currency")
-        .single();
-
-      if (eventError) {
-        console.error("❌ Event creation error:", eventError);
-        throw eventError;
-      }
-
-      if (!event?.id) throw new Error("Failed to create event - no ID returned");
-
-      console.log("✅ Draft event created successfully:", event);
-
-      // Prepare ticket tiers for events.ticketTiers JSON column
-      const ticketTiersForEventsColumn = tiersToInsert.map(tier => ({
-        id: `${event.id}-${tier.tier_name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
-        name: tier.tier_name,
-        price: tier.price,
-        original_price: tier.original_price,
-        original_currency: tier.original_currency,
-        description: tier.description,
-        quantity_available: tier.quantity_total,
+      return {
+        event_id: "", // placeholder, will be replaced after event creation
+        tier_name: tier.name.trim(),
+        description: tier.description.trim() || `${tier.name} ticket`,
+        price: priceInNGN,
+        original_currency: selectedCurrency,
+        original_price: priceInSelectedCurrency,
+        quantity_total: quantity,
         quantity_sold: 0,
         is_active: true
+      };
+    });
+
+    // Prepare ticket tiers for events.ticketTiers JSON column
+    const ticketTiersForEventsColumn = tiersToInsert.map(tier => ({
+      id: `${Date.now()}-${tier.tier_name.toLowerCase().replace(/\s+/g, '-')}`,
+      name: tier.tier_name,
+      price: tier.price,
+      original_price: tier.original_price,
+      original_currency: tier.original_currency,
+      description: tier.description,
+      quantity_available: tier.quantity_total,
+      quantity_sold: 0,
+      is_active: true
+    }));
+
+    // Build event data - set as DRAFT first
+    const eventPayload = {
+      title: title.trim(),
+      description: description.trim() || null,
+      category_id: categoryId,
+      date: `${date}T${time}:00`,
+      time: time || "00:00",
+      venue: venue.trim(),
+      location: venue.trim(),
+      city: city.trim() || null,
+      state: state.trim() || null,
+      country: country.trim() || "Nigeria",
+      image: banner_url,
+      cover_image: banner_url,
+      featured: false,
+      trending: false,
+      isnew: false,
+      sponsored: false,
+      status: "draft",
+      organizer_id: userId,
+      slug: uniqueSlug,
+      tags: tags.length > 0 ? tags : null,
+      lat: latNum,
+      lng: lngNum,
+      event_type: eventType || "physical",
+      virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
+      contact_email: contactEmail.trim() || null,
+      contact_phone: contactPhone.trim() || null,
+      published_at: null,
+      fee_strategy: feeStrategy,
+      base_currency: selectedCurrency,
+      exchange_rates: EXCHANGE_RATES,
+      timezone: currentTimezone,
+      ticketTiers: ticketTiersForEventsColumn,
+      updated_at: new Date().toISOString()
+    };
+
+    console.log("📦 Event payload (draft):", JSON.stringify(eventPayload, null, 2));
+
+    // Create event as DRAFT with ticketTiers included
+    console.log("🚀 Creating event as DRAFT...");
+    const { data: event, error: eventError } = await supabase
+      .from("events")
+      .insert(eventPayload)
+      .select("id, title, slug, status, base_currency, fee_strategy")
+      .single();
+
+    if (eventError) {
+      console.error("❌ Event creation error:", eventError);
+      throw eventError;
+    }
+
+    if (!event?.id) throw new Error("Failed to create event - no ID returned");
+
+    console.log("✅ Draft event created successfully:", event);
+    console.log("✅ Fee strategy saved:", event.fee_strategy);
+
+  // ============ 🎫 INSERT TICKET TIERS INTO ticketTiers TABLE ============
+if (tiersToInsert.length > 0) {
+  // ✅ Only include columns that ACTUALLY EXIST in your ticketTiers table
+  const tiersWithEventId = tiersToInsert.map(tier => ({
+    event_id: event.id,
+    tier_name: tier.tier_name,
+    description: tier.description,
+    price: tier.price,
+    quantity_total: tier.quantity_total,
+    quantity_sold: 0,              // always start at 0
+    is_active: true,
+    created_at: new Date().toISOString()
+    // ❌ REMOVED: original_currency, original_price – they DO NOT EXIST in your table
+    // ❌ REMOVED: event_id placeholder, id, etc.
+  }));
+
+  const { error: tiersError } = await supabase
+    .from("ticketTiers")
+    .insert(tiersWithEventId);
+
+  if (tiersError) {
+    console.error("❌ Failed to insert ticket tiers:", tiersError);
+    setError(`Event created, but ticket tiers could not be saved: ${tiersError.message}`);
+  } else {
+    console.log(`✅ Inserted ${tiersWithEventId.length} ticket tiers into ticketTiers table`);
+  }
+}
+// =======================================================================
+
+    // Create guest artistes
+    const artistesToInsert = artistesWithImages
+      .filter(artiste => artiste.name.trim())
+      .map(artiste => ({
+        event_id: event.id,
+        name: artiste.name.trim(),
+        role: artiste.role,
+        image_url: artiste.image_url.trim() || null,
+        bio: artiste.bio.trim() || null,
+        social_media: artiste.social_media || {},
+        created_at: new Date().toISOString()
       }));
 
-      // Store ticket tiers in events table (JSON column)
-      console.log("💾 Saving ticket tiers to events.ticketTiers JSON column...");
-      const { error: updateEventError } = await supabase
+    if (artistesToInsert.length > 0) {
+      const { data: insertedArtistes, error: artistesError } = await supabase
+        .from("guest_artistes")
+        .insert(artistesToInsert)
+        .select();
+
+      if (artistesError) {
+        console.error("❌ Failed to create guest artistes:", artistesError);
+      } else {
+        console.log(`✅ Created ${artistesToInsert.length} guest artistes`);
+      }
+    }
+
+    // Ask user if they want to publish
+    const shouldPublish = window.confirm(
+      "Draft event created successfully!\n\n" +
+      `Base Currency: ${selectedCurrency} (${CURRENCY_INFO[selectedCurrency].name})\n` +
+      `Fee Strategy: ${feeStrategy === 'pass_to_attendees' ? 'Buyers pay fees' : 'Organizer pays fees'}\n` +
+      `Timezone: ${currentTimezone}\n` +
+      `Guest Artistes: ${artistesToInsert.length}\n\n` +
+      "Would you like to publish it now?\n\n" +
+      "Click OK to publish immediately.\n" +
+      "Click Cancel to keep as draft and edit later."
+    );
+
+    if (shouldPublish) {
+      console.log("📢 Publishing draft event...");
+
+      const publishData = {
+        status: "published",
+        published_at: new Date().toISOString(),
+        featured: featured || false,
+        trending: trending || false,
+        isnew: isNew || false,
+        sponsored: sponsored || false,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: publishError } = await supabase
         .from("events")
-        .update({
-          ticketTiers: ticketTiersForEventsColumn,
-          ticket_tiers_updated_at: new Date().toISOString()
-        })
+        .update(publishData)
         .eq("id", event.id);
 
-      if (updateEventError) {
-        console.error("❌ Could not update events.ticketTiers column:", updateEventError);
-        throw new Error(`Failed to save ticket tiers: ${updateEventError.message}`);
+      if (publishError) {
+        console.error("❌ Failed to publish event:", publishError);
+        setError(`Event saved as draft, but couldn't be published: ${publishError.message}`);
       } else {
-        console.log("✅ Saved to events.ticketTiers column successfully");
+        console.log("✅ Event published successfully!");
       }
-
-      // Create guest artistes
-      const artistesToInsert = artistesWithImages
-        .filter(artiste => artiste.name.trim())
-        .map(artiste => ({
-          event_id: event.id,
-          name: artiste.name.trim(),
-          role: artiste.role,
-          image_url: artiste.image_url.trim() || null,
-          bio: artiste.bio.trim() || null,
-          social_media: artiste.social_media || {},
-          created_at: new Date().toISOString()
-        }));
-
-      if (artistesToInsert.length > 0) {
-        const { data: insertedArtistes, error: artistesError } = await supabase
-          .from("guest_artistes")
-          .insert(artistesToInsert)
-          .select();
-
-        if (artistesError) {
-          console.error("❌ Failed to create guest artistes:", artistesError);
-        } else {
-          console.log(`✅ Created ${artistesToInsert.length} guest artistes`);
-        }
-      }
-
-      // Ask user if they want to publish
-      const shouldPublish = window.confirm(
-        "Draft event created successfully!\n\n" +
-        `Base Currency: ${selectedCurrency} (${CURRENCY_INFO[selectedCurrency].name})\n` +
-        `Timezone: ${currentTimezone}\n` +
-        `Guest Artistes: ${artistesToInsert.length}\n\n` +
-        "Would you like to publish it now?\n\n" +
-        "Click OK to publish immediately.\n" +
-        "Click Cancel to keep as draft and edit later."
-      );
-
-      if (shouldPublish) {
-        console.log("📢 Publishing draft event...");
-
-        const publishData = {
-          status: "published",
-          published_at: new Date().toISOString(),
-          featured: featured || false,
-          trending: trending || false,
-          isnew: isNew || false,
-          sponsored: sponsored || false,
-          updated_at: new Date().toISOString()
-        };
-
-        const { error: publishError } = await supabase
-          .from("events")
-          .update(publishData)
-          .eq("id", event.id);
-
-        if (publishError) {
-          console.error("❌ Failed to publish event:", publishError);
-          setError(`Event saved as draft, but couldn't be published: ${publishError.message}`);
-        } else {
-          console.log("✅ Event published successfully!");
-        }
-      } else {
-        console.log("📝 Keeping event as draft");
-      }
-
-      setSuccess(true);
-
-      // Navigate to organizer dashboard
-      setTimeout(() => {
-        navigate("/organizer/dashboard");
-      }, 1500);
-
-    } catch (err: any) {
-      console.error("💥 ERROR in event creation:", err);
-
-      let userMessage = err.message || "Failed to create event. Please try again.";
-
-      if (err.code) {
-        switch (err.code) {
-          case "23505":
-            userMessage = "An event with similar title already exists. Try changing the title slightly.";
-            break;
-          case "42501":
-            userMessage = "Permission denied. Please make sure you have organizer permissions.";
-            break;
-          case "42703":
-            userMessage = "Database column error. Please contact support.";
-            break;
-          case "42P01":
-            userMessage = "Database table not found. Please contact support.";
-            break;
-          case "22P02":
-            userMessage = "Invalid data format. Please check your input values.";
-            break;
-          case "23502":
-            userMessage = "Missing required field. Please fill all required fields.";
-            break;
-          case "23514":
-            userMessage = "Data validation failed. Please check your input values.";
-            break;
-          case "22007":
-            userMessage = "Invalid date/time format. Please check your date and time values.";
-            break;
-        }
-      }
-
-      setError(userMessage);
-
-    } finally {
-      setLoading(false);
-      console.log("=== EVENT CREATION PROCESS ENDED ===");
+    } else {
+      console.log("📝 Keeping event as draft");
     }
-  };
+
+    setSuccess(true);
+
+    // Navigate to organizer dashboard
+    setTimeout(() => {
+      navigate("/organizer/dashboard");
+    }, 1500);
+
+  } catch (err: any) {
+    console.error("💥 ERROR in event creation:", err);
+
+    let userMessage = err.message || "Failed to create event. Please try again.";
+
+    if (err.code) {
+      switch (err.code) {
+        case "23505":
+          userMessage = "An event with similar title already exists. Try changing the title slightly.";
+          break;
+        case "42501":
+          userMessage = "Permission denied. Please make sure you have organizer permissions.";
+          break;
+        case "42703":
+          userMessage = "Database column error. Please contact support.";
+          break;
+        case "42P01":
+          userMessage = "Database table not found. Please contact support.";
+          break;
+        case "22P02":
+          userMessage = "Invalid data format. Please check your input values.";
+          break;
+        case "23502":
+          userMessage = "Missing required field. Please fill all required fields.";
+          break;
+        case "23514":
+          userMessage = "Data validation failed. Please check your input values.";
+          break;
+        case "22007":
+          userMessage = "Invalid date/time format. Please check your date and time values.";
+          break;
+      }
+    }
+
+    setError(userMessage);
+
+  } finally {
+    setLoading(false);
+    console.log("=== EVENT CREATION PROCESS ENDED ===");
+  }
+};
 
   return (
     <div className="flex min-h-screen bg-gray-950">
@@ -958,8 +978,9 @@ export default function CreateEvent() {
                     }}
                     onDragLeave={() => setDragActive(false)}
                     onDrop={handleDrop}
-                    className={`relative border-2 border-dashed rounded-xl md:rounded-2xl p-4 sm:p-6 md:p-8 text-center transition-all ${dragActive ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
-                      }`}
+                    className={`relative border-2 border-dashed rounded-xl md:rounded-2xl p-4 sm:p-6 md:p-8 text-center transition-all ${
+                      dragActive ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
+                    }`}
                   >
                     <input
                       type="file"
@@ -998,14 +1019,18 @@ export default function CreateEvent() {
                     <button
                       type="button"
                       onClick={() => setEventType("physical")}
-                      className={`py-2.5 sm:py-3 px-3 sm:px-4 rounded-lg text-center transition text-sm sm:text-base ${eventType === "physical" ? "bg-purple-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}
+                      className={`py-2.5 sm:py-3 px-3 sm:px-4 rounded-lg text-center transition text-sm sm:text-base ${
+                        eventType === "physical" ? "bg-purple-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"
+                      }`}
                     >
                       Physical
                     </button>
                     <button
                       type="button"
                       onClick={() => setEventType("virtual")}
-                      className={`py-2.5 sm:py-3 px-3 sm:px-4 rounded-lg text-center transition text-sm sm:text-base ${eventType === "virtual" ? "bg-purple-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}
+                      className={`py-2.5 sm:py-3 px-3 sm:px-4 rounded-lg text-center transition text-sm sm:text-base ${
+                        eventType === "virtual" ? "bg-purple-600 text-white" : "bg-white/5 text-gray-400 hover:bg-white/10"
+                      }`}
                     >
                       Virtual
                     </button>
@@ -1129,8 +1154,7 @@ export default function CreateEvent() {
                           <option key={cat.id} value={cat.id}>{cat.name}</option>
                         ))}
                       </select>
-                      
-                      {/* Combined message for both trending categories */}
+
                       {(categoryId === 4 || categoryId === 16) && (
                         <p className="text-purple-300 text-xs sm:text-sm mt-1 flex items-center gap-1">
                           <Star size={12} /> Great choice! {categoryId === 4 ? 'Rave parties' : 'Beach parties'} are trending!
@@ -1312,23 +1336,23 @@ export default function CreateEvent() {
                               />
                             </div>
                             <div>
-  <label className="text-white font-medium mb-2 block text-sm sm:text-base">Role</label>
-  <select
-    value={artiste.role}
-    onChange={(e) => updateGuestArtiste(artiste.id, "role", e.target.value)}
-    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-800 rounded-lg text-white text-sm sm:text-base border border-white/10 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-  >
-    {GUEST_ROLES.map(role => (
-      <option 
-        key={role} 
-        value={role}
-        className="bg-gray-800 text-white py-2"
-      >
-        {role}
-      </option>
-    ))}
-  </select>
-</div>
+                              <label className="text-white font-medium mb-2 block text-sm sm:text-base">Role</label>
+                              <select
+                                value={artiste.role}
+                                onChange={(e) => updateGuestArtiste(artiste.id, "role", e.target.value)}
+                                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-800 rounded-lg text-white text-sm sm:text-base border border-white/10 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                              >
+                                {GUEST_ROLES.map(role => (
+                                  <option 
+                                    key={role} 
+                                    value={role}
+                                    className="bg-gray-800 text-white py-2"
+                                  >
+                                    {role}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
 
                           {/* Guest Image Upload */}
@@ -1341,8 +1365,9 @@ export default function CreateEvent() {
                               }}
                               onDragLeave={() => setGuestDragActive(null)}
                               onDrop={(e) => handleGuestDrop(e, artiste.id)}
-                              className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-all ${guestDragActive === artiste.id ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
-                                }`}
+                              className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-all ${
+                                guestDragActive === artiste.id ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
+                              }`}
                             >
                               <input
                                 type="file"
@@ -1559,6 +1584,76 @@ export default function CreateEvent() {
                     ))}
                   </div>
                 </div>
+
+                {/* ===== NEW: FEE SETTINGS SECTION ===== */}
+                <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl md:rounded-2xl p-4 sm:p-6">
+                  <h2 className="text-lg sm:text-xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
+                    <Receipt size={20} /> Fee Settings
+                  </h2>
+                  <p className="text-gray-400 text-sm mb-4">
+                    Choose who pays the <span className="text-purple-400 font-medium">5% service fee</span>. 
+                    VAT is always calculated at checkout based on the buyer's country and paid by the buyer.
+                  </p>
+
+                  <div className="space-y-3">
+                    {/* Option 1: Pass to attendees (default) */}
+                    <label className={`flex items-center justify-between p-4 bg-white/5 border rounded-xl transition cursor-pointer ${
+                      feeStrategy === 'pass_to_attendees' 
+                        ? 'border-purple-500 bg-purple-500/10' 
+                        : 'border-white/10 hover:bg-white/10'
+                    }`}>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="radio"
+                          name="feeStrategy"
+                          value="pass_to_attendees"
+                          checked={feeStrategy === 'pass_to_attendees'}
+                          onChange={(e) => setFeeStrategy('pass_to_attendees')}
+                          className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-white/20 bg-white/10"
+                        />
+                        <div>
+                          <p className="text-white font-medium">Pass fees to attendees</p>
+                          <p className="text-gray-400 text-sm">Buyers pay ticket price + 5% service fee + VAT</p>
+                        </div>
+                      </div>
+                      {feeStrategy === 'pass_to_attendees' && (
+                        <span className="text-purple-400 text-xs sm:text-sm font-medium bg-purple-500/20 px-3 py-1 rounded-full">
+                          Recommended
+                        </span>
+                      )}
+                    </label>
+
+                    {/* Option 2: Organizer absorbs fees */}
+                    <label className={`flex items-center p-4 bg-white/5 border rounded-xl transition cursor-pointer ${
+                      feeStrategy === 'absorb_fees' 
+                        ? 'border-purple-500 bg-purple-500/10' 
+                        : 'border-white/10 hover:bg-white/10'
+                    }`}>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="radio"
+                          name="feeStrategy"
+                          value="absorb_fees"
+                          checked={feeStrategy === 'absorb_fees'}
+                          onChange={(e) => setFeeStrategy('absorb_fees')}
+                          className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-white/20 bg-white/10"
+                        />
+                        <div>
+                          <p className="text-white font-medium">I'll pay the fees myself</p>
+                          <p className="text-gray-400 text-sm">Organizer absorbs 5% service fee, buyers only pay ticket price + VAT</p>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                    <p className="text-xs sm:text-sm text-purple-300">
+                      <span className="font-medium">💡 Note:</span> VAT is calculated in real-time at checkout based on the buyer's selected country and is always paid by the buyer. 
+                      The service fee is a fixed 5% of the ticket price.
+                    </p>
+                  </div>
+                </div>
+                {/* ===== END OF FEE SETTINGS ===== */}
 
                 {/* Tags & Contact */}
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl md:rounded-2xl p-4 sm:p-6">
