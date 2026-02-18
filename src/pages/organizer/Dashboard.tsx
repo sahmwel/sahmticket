@@ -1,4 +1,6 @@
-// src/pages/organizer/Dashboard.tsx - UPDATED FOR RESPONSIVENESS
+// src/pages/organizer/Dashboard.tsx - UPDATED FOR RESPONSIVENESS + SIDEBAR FIX ✅
+// Mobile slide-in sidebar (same pattern as Tickets.tsx & MyEvents.tsx)
+
 import Sidebar from "../../components/Sidebar";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../../lib/supabaseClient";
@@ -335,35 +337,30 @@ export default function OrganizerDashboard() {
     <div className="flex min-h-screen bg-gray-950">
       <Toaster position="top-right" />
 
-      {/* Mobile Menu Button */}
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-gray-900/80 backdrop-blur-sm rounded-lg border border-white/10"
-        aria-label="Toggle menu"
+      {/* ========== MOBILE SIDEBAR - SLIDE IN (lg:hidden) ========== */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ease-in-out lg:hidden ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
       >
-        <Menu size={24} className="text-white" />
-      </button>
-
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-40">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-gray-950 border-r border-white/10">
-            <Sidebar />
-          </div>
-        </div>
-      )}
-
-      {/* Desktop Sidebar */}
-      <div className="hidden lg:block">
-        <Sidebar />
+   <Sidebar role="organizer" />
       </div>
 
-      {/* Main Content */}
+      {/* Overlay - only when sidebar is open, hidden on lg+ */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* ========== MAIN CONTENT ========== */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex-1 bg-gradient-to-br from-gray-900 via-purple-900/10 to-gray-900">
+     
+
+        <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-900 via-purple-900/10 to-gray-900">
           <main className="p-4 sm:p-6 lg:p-8 xl:p-10">
-            {/* Header */}
+            {/* ---------- HEADER ---------- */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 lg:mb-10 gap-4 sm:gap-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-1 sm:mb-2">Dashboard</h1>
@@ -373,7 +370,6 @@ export default function OrganizerDashboard() {
                 <button
                   onClick={handleRefresh}
                   className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition text-xs sm:text-sm"
-                  aria-label="Refresh dashboard data"
                 >
                   <RefreshCw size={14} className="sm:w-4 sm:h-4" />
                   Refresh
@@ -381,7 +377,6 @@ export default function OrganizerDashboard() {
                 <button
                   onClick={goToMyEvents}
                   className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition text-xs sm:text-sm"
-                  aria-label="View all events"
                 >
                   <Eye size={14} className="sm:w-4 sm:h-4" />
                   View All Events
@@ -389,7 +384,6 @@ export default function OrganizerDashboard() {
                 <button
                   onClick={() => navigate("/organizer/create-event")}
                   className="flex items-center gap-2 sm:gap-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 transition-all text-white px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-xl font-medium shadow-lg hover:shadow-purple-500/25 text-sm sm:text-base"
-                  aria-label="Create new event"
                 >
                   <PlusCircle size={18} className="sm:w-6 sm:h-6" />
                   Create New Event
@@ -397,7 +391,7 @@ export default function OrganizerDashboard() {
               </div>
             </div>
 
-            {/* Stats Overview - Responsive Grid */}
+            {/* ---------- STATS OVERVIEW ---------- */}
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6 mb-6 sm:mb-8 lg:mb-10">
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6">
                 <div className="flex items-center justify-between">
@@ -467,7 +461,7 @@ export default function OrganizerDashboard() {
               </div>
             </div>
 
-            {/* Secondary Stats Row */}
+            {/* ---------- SECONDARY STATS ROW ---------- */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6 sm:mb-8 lg:mb-10">
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-3 sm:p-4">
                 <div className="flex items-center justify-between">
@@ -530,7 +524,7 @@ export default function OrganizerDashboard() {
               </div>
             </div>
 
-            {/* Recent Events Section */}
+            {/* ---------- RECENT EVENTS SECTION ---------- */}
             <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
               <h2 className="text-xl sm:text-2xl font-bold text-white">Recent Events</h2>
               <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -550,7 +544,6 @@ export default function OrganizerDashboard() {
                 <button
                   onClick={goToMyEvents}
                   className="flex items-center gap-1.5 text-purple-400 hover:text-purple-300 text-xs sm:text-sm font-medium group"
-                  aria-label="View all events"
                 >
                   View All 
                   <ChevronRight size={12} className="sm:w-4 sm:h-4 group-hover:translate-x-1 transition-transform" />
@@ -558,7 +551,7 @@ export default function OrganizerDashboard() {
               </div>
             </div>
 
-            {/* Events Grid */}
+            {/* ---------- EVENTS GRID ---------- */}
             {loading ? (
               <div className="flex flex-col sm:flex-row justify-center items-center py-12 sm:py-20">
                 <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-t-4 border-b-4 border-purple-500 mb-3 sm:mb-4"></div>
@@ -574,7 +567,6 @@ export default function OrganizerDashboard() {
                 <button
                   onClick={() => navigate("/organizer/create-event")}
                   className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 px-4 sm:px-8 py-2.5 sm:py-4 rounded-xl text-white font-medium shadow-lg transition hover:scale-105 text-sm sm:text-base"
-                  aria-label="Create your first event"
                 >
                   <PlusCircle className="inline mr-1.5 sm:mr-2 w-3 h-3 sm:w-5 sm:h-5" />
                   Create Your First Event
@@ -739,7 +731,7 @@ export default function OrganizerDashboard() {
               </div>
             )}
 
-            {/* Quick Actions */}
+            {/* ---------- QUICK ACTIONS ---------- */}
             {events.length > 0 && (
               <div className="mt-6 sm:mt-8 lg:mt-10 p-4 sm:p-6 bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-white/10 rounded-xl sm:rounded-2xl">
                 <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">Quick Actions</h3>
@@ -747,7 +739,6 @@ export default function OrganizerDashboard() {
                   <button
                     onClick={() => navigate("/organizer/create-event")}
                     className="p-3 sm:p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white text-left transition flex items-center gap-2 sm:gap-3 group"
-                    aria-label="Create new event"
                   >
                     <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-500/20 rounded-lg flex items-center justify-center group-hover:bg-purple-500/30 transition">
                       <PlusCircle size={16} className="sm:w-5 sm:h-5" />
@@ -760,7 +751,6 @@ export default function OrganizerDashboard() {
                   <button
                     onClick={goToMyEvents}
                     className="p-3 sm:p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white text-left transition flex items-center gap-2 sm:gap-3 group"
-                    aria-label="View all events"
                   >
                     <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500/20 rounded-lg flex items-center justify-center group-hover:bg-blue-500/30 transition">
                       <Eye size={16} className="sm:w-5 sm:h-5" />
@@ -773,7 +763,6 @@ export default function OrganizerDashboard() {
                   <button
                     onClick={() => navigate("/organizer/analytics")}
                     className="p-3 sm:p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white text-left transition flex items-center gap-2 sm:gap-3 group"
-                    aria-label="View analytics"
                   >
                     <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-500/20 rounded-lg flex items-center justify-center group-hover:bg-green-500/30 transition">
                       <BarChart3 size={16} className="sm:w-5 sm:h-5" />

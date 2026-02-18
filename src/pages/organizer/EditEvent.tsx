@@ -877,15 +877,13 @@ if (banner_url) {
         <div className="lg:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-72 bg-gray-950 border-r border-white/10">
-            <Sidebar />
-          </div>
+<Sidebar role="organizer" />          </div>
         </div>
       )}
 
       {/* Sidebar for Desktop */}
       <div className="hidden lg:block">
-        <Sidebar />
-      </div>
+<Sidebar role="organizer" />      </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">

@@ -1,4 +1,4 @@
-// src/pages/organizer/CreateEvent.tsx - COMPLETE VERSION WITH FEE STRATEGY
+// src/pages/organizer/CreateEvent.tsx - COMPLETE VERSION WITH FEE STRATEGY & SUBACCOUNTS
 import Sidebar from "../../components/Sidebar";
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
@@ -209,26 +209,19 @@ export default function CreateEvent() {
     }
   ]);
 
-  // Guest Artistes State
-  const [guestArtistes, setGuestArtistes] = useState<GuestArtiste[]>([
-    {
-      id: "1",
-      name: "",
-      role: "Headliner",
-      image_url: "",
-      imageFile: null,
-      imagePreview: null,
-      bio: "",
-      social_media: {}
-    }
-  ]);
+  // Guest Artistes State – now optional, starts empty
+  const [guestArtistes, setGuestArtistes] = useState<GuestArtiste[]>([]);
 
   // Currency State
   const [selectedCurrency, setSelectedCurrency] = useState<CurrencyType>('NGN');
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
 
-  // ===== NEW: Fee Strategy State =====
+  // Fee Strategy State
   const [feeStrategy, setFeeStrategy] = useState<FeeStrategy>('pass_to_attendees');
+
+  // ===== NEW: Subaccount Codes =====
+  const [organizerSubaccountCode, setOrganizerSubaccountCode] = useState("");
+  const [organizerFlutterwaveSubaccount, setOrganizerFlutterwaveSubaccount] = useState("");
 
   const [featured, setFeatured] = useState(false);
   const [trending, setTrending] = useState(false);
@@ -381,7 +374,7 @@ export default function CreateEvent() {
     setTicketTiers(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
-  // Guest Artiste Functions
+  // Guest Artiste Functions – optional
   const addGuestArtiste = () => {
     setGuestArtistes(prev => [...prev, {
       id: Date.now().toString(),
@@ -396,15 +389,13 @@ export default function CreateEvent() {
   };
 
   const removeGuestArtiste = (id: string) => {
-    if (guestArtistes.length > 1) {
-      setGuestArtistes(prev => {
-        const artiste = prev.find(g => g.id === id);
-        if (artiste?.imagePreview) {
-          URL.revokeObjectURL(artiste.imagePreview);
-        }
-        return prev.filter(g => g.id !== id);
-      });
-    }
+    setGuestArtistes(prev => {
+      const artiste = prev.find(g => g.id === id);
+      if (artiste?.imagePreview) {
+        URL.revokeObjectURL(artiste.imagePreview);
+      }
+      return prev.filter(g => g.id !== id);
+    });
   };
 
   const updateGuestArtiste = (id: string, field: keyof GuestArtiste | `social_media.${string}`, value: string) => {
@@ -582,339 +573,338 @@ export default function CreateEvent() {
     </div>
   );
 
-  // Handle create event - FIXED VERSION WITH FEE STRATEGY
-const handleCreateEvent = async () => {
-  setError("");
-  setSuccess(false);
+  // Handle create event - with subaccounts and optional guest artistes
+  const handleCreateEvent = async () => {
+    setError("");
+    setSuccess(false);
 
-  // Basic validation
-  if (!title.trim() || !date || !venue.trim() || !categoryId) {
-    setError("Title, Date, Venue, and Category are required");
-    return;
-  }
-
-  // Check ticket tiers
-  const invalidTier = ticketTiers.find(t => !t.name.trim() || !t.quantity.trim());
-  if (invalidTier) {
-    setError("All ticket tiers must have a name and quantity");
-    return;
-  }
-
-  // Validate guest artistes
-  const invalidArtiste = guestArtistes.find(g => !g.name.trim());
-  if (invalidArtiste) {
-    setError("All guest artistes must have a name");
-    return;
-  }
-
-  // Validate coordinates
-  let latNum = null;
-  let lngNum = null;
-
-  if (latitude.trim() || longitude.trim()) {
-    latNum = parseFloat(latitude);
-    lngNum = parseFloat(longitude);
-
-    if (isNaN(latNum) || isNaN(lngNum)) {
-      setError("Invalid latitude/longitude values");
+    // Basic validation
+    if (!title.trim() || !date || !venue.trim() || !categoryId) {
+      setError("Title, Date, Venue, and Category are required");
       return;
     }
 
-    if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
-      setError("Invalid coordinate values");
+    // Check ticket tiers
+    const invalidTier = ticketTiers.find(t => !t.name.trim() || !t.quantity.trim());
+    if (invalidTier) {
+      setError("All ticket tiers must have a name and quantity");
       return;
     }
-  }
 
-  setLoading(true);
+    // Guest artistes are optional – we only validate if any are present, but we don't require them
+    // Actually, we allow empty names – they just won't be inserted. No error.
 
-  try {
-    console.log("=== STARTING EVENT CREATION ===");
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) {
-      throw new Error("Please log in to create events");
-    }
+    // Validate coordinates
+    let latNum = null;
+    let lngNum = null;
 
-    const userId = session.user.id;
-    console.log("User ID:", userId);
-    console.log("Selected Currency:", selectedCurrency);
-    console.log("Fee Strategy:", feeStrategy);
+    if (latitude.trim() || longitude.trim()) {
+      latNum = parseFloat(latitude);
+      lngNum = parseFloat(longitude);
 
-    // Upload banner
-    let banner_url: string | null = null;
-    if (bannerFile) {
-      console.log("Uploading banner...");
-      const ext = bannerFile.name.split(".").pop() || "jpg";
-      const fileName = `${userId}/${Date.now()}.${ext}`;
+      if (isNaN(latNum) || isNaN(lngNum)) {
+        setError("Invalid latitude/longitude values");
+        return;
+      }
 
-      const { error: uploadError } = await supabase.storage
-        .from("event-banners")
-        .upload(fileName, bannerFile);
-
-      if (!uploadError) {
-        const { data } = supabase.storage.from("event-banners").getPublicUrl(fileName);
-        banner_url = data.publicUrl;
-        console.log("✅ Banner uploaded:", banner_url);
-      } else {
-        console.warn("⚠️ Banner upload failed:", uploadError);
+      if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+        setError("Invalid coordinate values");
+        return;
       }
     }
 
-    // Generate unique slug
-    console.log("Generating unique slug...");
-    const uniqueSlug = await generateUniqueSlug(title.trim());
-    console.log("✅ Generated slug:", uniqueSlug);
+    setLoading(true);
 
-    // Upload guest artiste images
-    const artistesWithImages = [...guestArtistes];
-    for (const artiste of artistesWithImages) {
-      if (artiste.imageFile) {
-        console.log(`Uploading image for ${artiste.name}...`);
-        const imageUrl = await uploadGuestImage(artiste.imageFile, artiste.name, userId);
-        if (imageUrl) {
-          artiste.image_url = imageUrl;
-          console.log(`✅ Image uploaded for ${artiste.name}:`, imageUrl);
+    try {
+      console.log("=== STARTING EVENT CREATION ===");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        throw new Error("Please log in to create events");
+      }
+
+      const userId = session.user.id;
+      console.log("User ID:", userId);
+      console.log("Selected Currency:", selectedCurrency);
+      console.log("Fee Strategy:", feeStrategy);
+      console.log("Subaccount Code:", organizerSubaccountCode);
+      console.log("Flutterwave Subaccount:", organizerFlutterwaveSubaccount);
+
+      // Upload banner
+      let banner_url: string | null = null;
+      if (bannerFile) {
+        console.log("Uploading banner...");
+        const ext = bannerFile.name.split(".").pop() || "jpg";
+        const fileName = `${userId}/${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("event-banners")
+          .upload(fileName, bannerFile);
+
+        if (!uploadError) {
+          const { data } = supabase.storage.from("event-banners").getPublicUrl(fileName);
+          banner_url = data.publicUrl;
+          console.log("✅ Banner uploaded:", banner_url);
+        } else {
+          console.warn("⚠️ Banner upload failed:", uploadError);
         }
       }
-    }
 
-    // Convert ticket prices to NGN
-    const tiersToInsert = ticketTiers.map(tier => {
-      const priceInSelectedCurrency = parseFloat(tier.price) || 0;
-      let priceInNGN = priceInSelectedCurrency;
+      // Generate unique slug
+      console.log("Generating unique slug...");
+      const uniqueSlug = await generateUniqueSlug(title.trim());
+      console.log("✅ Generated slug:", uniqueSlug);
 
-      if (selectedCurrency !== 'NGN') {
-        priceInNGN = priceInSelectedCurrency * EXCHANGE_RATES[selectedCurrency];
+      // Upload guest artiste images for those with names and images
+      const artistesWithImages = [...guestArtistes];
+      for (const artiste of artistesWithImages) {
+        if (artiste.imageFile && artiste.name.trim()) {
+          console.log(`Uploading image for ${artiste.name}...`);
+          const imageUrl = await uploadGuestImage(artiste.imageFile, artiste.name, userId);
+          if (imageUrl) {
+            artiste.image_url = imageUrl;
+            console.log(`✅ Image uploaded for ${artiste.name}:`, imageUrl);
+          }
+        }
       }
 
-      const quantity = parseInt(tier.quantity) || 100;
+      // Filter guest artistes to only those with a name
+      const validArtistes = artistesWithImages.filter(a => a.name.trim());
 
-      return {
-        event_id: "", // placeholder, will be replaced after event creation
-        tier_name: tier.name.trim(),
-        description: tier.description.trim() || `${tier.name} ticket`,
-        price: priceInNGN,
-        original_currency: selectedCurrency,
-        original_price: priceInSelectedCurrency,
-        quantity_total: quantity,
+      // Convert ticket prices to NGN
+      const tiersToInsert = ticketTiers.map(tier => {
+        const priceInSelectedCurrency = parseFloat(tier.price) || 0;
+        let priceInNGN = priceInSelectedCurrency;
+
+        if (selectedCurrency !== 'NGN') {
+          priceInNGN = priceInSelectedCurrency * EXCHANGE_RATES[selectedCurrency];
+        }
+
+        const quantity = parseInt(tier.quantity) || 100;
+
+        return {
+          event_id: "", // placeholder, will be replaced after event creation
+          tier_name: tier.name.trim(),
+          description: tier.description.trim() || `${tier.name} ticket`,
+          price: priceInNGN,
+          original_currency: selectedCurrency,
+          original_price: priceInSelectedCurrency,
+          quantity_total: quantity,
+          quantity_sold: 0,
+          is_active: true
+        };
+      });
+
+      // Prepare ticket tiers for events.ticketTiers JSON column
+      const ticketTiersForEventsColumn = tiersToInsert.map(tier => ({
+        id: `${Date.now()}-${tier.tier_name.toLowerCase().replace(/\s+/g, '-')}`,
+        name: tier.tier_name,
+        price: tier.price,
+        original_price: tier.original_price,
+        original_currency: tier.original_currency,
+        description: tier.description,
+        quantity_available: tier.quantity_total,
         quantity_sold: 0,
         is_active: true
-      };
-    });
-
-    // Prepare ticket tiers for events.ticketTiers JSON column
-    const ticketTiersForEventsColumn = tiersToInsert.map(tier => ({
-      id: `${Date.now()}-${tier.tier_name.toLowerCase().replace(/\s+/g, '-')}`,
-      name: tier.tier_name,
-      price: tier.price,
-      original_price: tier.original_price,
-      original_currency: tier.original_currency,
-      description: tier.description,
-      quantity_available: tier.quantity_total,
-      quantity_sold: 0,
-      is_active: true
-    }));
-
-    // Build event data - set as DRAFT first
-    const eventPayload = {
-      title: title.trim(),
-      description: description.trim() || null,
-      category_id: categoryId,
-      date: `${date}T${time}:00`,
-      time: time || "00:00",
-      venue: venue.trim(),
-      location: venue.trim(),
-      city: city.trim() || null,
-      state: state.trim() || null,
-      country: country.trim() || "Nigeria",
-      image: banner_url,
-      cover_image: banner_url,
-      featured: false,
-      trending: false,
-      isnew: false,
-      sponsored: false,
-      status: "draft",
-      organizer_id: userId,
-      slug: uniqueSlug,
-      tags: tags.length > 0 ? tags : null,
-      lat: latNum,
-      lng: lngNum,
-      event_type: eventType || "physical",
-      virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
-      contact_email: contactEmail.trim() || null,
-      contact_phone: contactPhone.trim() || null,
-      published_at: null,
-      fee_strategy: feeStrategy,
-      base_currency: selectedCurrency,
-      exchange_rates: EXCHANGE_RATES,
-      timezone: currentTimezone,
-      ticketTiers: ticketTiersForEventsColumn,
-      updated_at: new Date().toISOString()
-    };
-
-    console.log("📦 Event payload (draft):", JSON.stringify(eventPayload, null, 2));
-
-    // Create event as DRAFT with ticketTiers included
-    console.log("🚀 Creating event as DRAFT...");
-    const { data: event, error: eventError } = await supabase
-      .from("events")
-      .insert(eventPayload)
-      .select("id, title, slug, status, base_currency, fee_strategy")
-      .single();
-
-    if (eventError) {
-      console.error("❌ Event creation error:", eventError);
-      throw eventError;
-    }
-
-    if (!event?.id) throw new Error("Failed to create event - no ID returned");
-
-    console.log("✅ Draft event created successfully:", event);
-    console.log("✅ Fee strategy saved:", event.fee_strategy);
-
-  // ============ 🎫 INSERT TICKET TIERS INTO ticketTiers TABLE ============
-if (tiersToInsert.length > 0) {
-  // ✅ Only include columns that ACTUALLY EXIST in your ticketTiers table
-  const tiersWithEventId = tiersToInsert.map(tier => ({
-    event_id: event.id,
-    tier_name: tier.tier_name,
-    description: tier.description,
-    price: tier.price,
-    quantity_total: tier.quantity_total,
-    quantity_sold: 0,              // always start at 0
-    is_active: true,
-    created_at: new Date().toISOString()
-    // ❌ REMOVED: original_currency, original_price – they DO NOT EXIST in your table
-    // ❌ REMOVED: event_id placeholder, id, etc.
-  }));
-
-  const { error: tiersError } = await supabase
-    .from("ticketTiers")
-    .insert(tiersWithEventId);
-
-  if (tiersError) {
-    console.error("❌ Failed to insert ticket tiers:", tiersError);
-    setError(`Event created, but ticket tiers could not be saved: ${tiersError.message}`);
-  } else {
-    console.log(`✅ Inserted ${tiersWithEventId.length} ticket tiers into ticketTiers table`);
-  }
-}
-// =======================================================================
-
-    // Create guest artistes
-    const artistesToInsert = artistesWithImages
-      .filter(artiste => artiste.name.trim())
-      .map(artiste => ({
-        event_id: event.id,
-        name: artiste.name.trim(),
-        role: artiste.role,
-        image_url: artiste.image_url.trim() || null,
-        bio: artiste.bio.trim() || null,
-        social_media: artiste.social_media || {},
-        created_at: new Date().toISOString()
       }));
 
-    if (artistesToInsert.length > 0) {
-      const { data: insertedArtistes, error: artistesError } = await supabase
-        .from("guest_artistes")
-        .insert(artistesToInsert)
-        .select();
-
-      if (artistesError) {
-        console.error("❌ Failed to create guest artistes:", artistesError);
-      } else {
-        console.log(`✅ Created ${artistesToInsert.length} guest artistes`);
-      }
-    }
-
-    // Ask user if they want to publish
-    const shouldPublish = window.confirm(
-      "Draft event created successfully!\n\n" +
-      `Base Currency: ${selectedCurrency} (${CURRENCY_INFO[selectedCurrency].name})\n` +
-      `Fee Strategy: ${feeStrategy === 'pass_to_attendees' ? 'Buyers pay fees' : 'Organizer pays fees'}\n` +
-      `Timezone: ${currentTimezone}\n` +
-      `Guest Artistes: ${artistesToInsert.length}\n\n` +
-      "Would you like to publish it now?\n\n" +
-      "Click OK to publish immediately.\n" +
-      "Click Cancel to keep as draft and edit later."
-    );
-
-    if (shouldPublish) {
-      console.log("📢 Publishing draft event...");
-
-      const publishData = {
-        status: "published",
-        published_at: new Date().toISOString(),
-        featured: featured || false,
-        trending: trending || false,
-        isnew: isNew || false,
-        sponsored: sponsored || false,
+      // Build event data - set as DRAFT first
+      const eventPayload = {
+        title: title.trim(),
+        description: description.trim() || null,
+        category_id: categoryId,
+        date: `${date}T${time}:00`,
+        time: time || "00:00",
+        venue: venue.trim(),
+        location: venue.trim(),
+        city: city.trim() || null,
+        state: state.trim() || null,
+        country: country.trim() || "Nigeria",
+        image: banner_url,
+        cover_image: banner_url,
+        featured: false,
+        trending: false,
+        isnew: false,
+        sponsored: false,
+        status: "draft",
+        organizer_id: userId,
+        slug: uniqueSlug,
+        tags: tags.length > 0 ? tags : null,
+        lat: latNum,
+        lng: lngNum,
+        event_type: eventType || "physical",
+        virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
+        contact_email: contactEmail.trim() || null,
+        contact_phone: contactPhone.trim() || null,
+        published_at: null,
+        fee_strategy: feeStrategy,
+        base_currency: selectedCurrency,
+        exchange_rates: EXCHANGE_RATES,
+        timezone: currentTimezone,
+        ticketTiers: ticketTiersForEventsColumn,
+        organizer_subaccount_code: organizerSubaccountCode.trim() || null,   // 👈 Paystack subaccount
+        organizer_flutterwave_subaccount: organizerFlutterwaveSubaccount.trim() || null, // 👈 Flutterwave subaccount
         updated_at: new Date().toISOString()
       };
 
-      const { error: publishError } = await supabase
+      console.log("📦 Event payload (draft):", JSON.stringify(eventPayload, null, 2));
+
+      // Create event as DRAFT with ticketTiers included
+      console.log("🚀 Creating event as DRAFT...");
+      const { data: event, error: eventError } = await supabase
         .from("events")
-        .update(publishData)
-        .eq("id", event.id);
+        .insert(eventPayload)
+        .select("id, title, slug, status, base_currency, fee_strategy")
+        .single();
 
-      if (publishError) {
-        console.error("❌ Failed to publish event:", publishError);
-        setError(`Event saved as draft, but couldn't be published: ${publishError.message}`);
+      if (eventError) {
+        console.error("❌ Event creation error:", eventError);
+        throw eventError;
+      }
+
+      if (!event?.id) throw new Error("Failed to create event - no ID returned");
+
+      console.log("✅ Draft event created successfully:", event);
+      console.log("✅ Fee strategy saved:", event.fee_strategy);
+
+      // Insert ticket tiers into ticketTiers table
+      if (tiersToInsert.length > 0) {
+        const tiersWithEventId = tiersToInsert.map(tier => ({
+          event_id: event.id,
+          tier_name: tier.tier_name,
+          description: tier.description,
+          price: tier.price,
+          quantity_total: tier.quantity_total,
+          quantity_sold: 0,
+          is_active: true,
+          created_at: new Date().toISOString()
+        }));
+
+        const { error: tiersError } = await supabase
+          .from("ticketTiers")
+          .insert(tiersWithEventId);
+
+        if (tiersError) {
+          console.error("❌ Failed to insert ticket tiers:", tiersError);
+          setError(`Event created, but ticket tiers could not be saved: ${tiersError.message}`);
+        } else {
+          console.log(`✅ Inserted ${tiersWithEventId.length} ticket tiers into ticketTiers table`);
+        }
+      }
+
+      // Create guest artistes – only if there are valid names
+      if (validArtistes.length > 0) {
+        const artistesToInsert = validArtistes.map(artiste => ({
+          event_id: event.id,
+          name: artiste.name.trim(),
+          role: artiste.role,
+          image_url: artiste.image_url.trim() || null,
+          bio: artiste.bio.trim() || null,
+          social_media: artiste.social_media || {},
+          created_at: new Date().toISOString()
+        }));
+
+        const { data: insertedArtistes, error: artistesError } = await supabase
+          .from("guest_artistes")
+          .insert(artistesToInsert)
+          .select();
+
+        if (artistesError) {
+          console.error("❌ Failed to create guest artistes:", artistesError);
+        } else {
+          console.log(`✅ Created ${artistesToInsert.length} guest artistes`);
+        }
+      }
+
+      // Ask user if they want to publish
+      const shouldPublish = window.confirm(
+        "Draft event created successfully!\n\n" +
+        `Base Currency: ${selectedCurrency} (${CURRENCY_INFO[selectedCurrency].name})\n` +
+        `Fee Strategy: ${feeStrategy === 'pass_to_attendees' ? 'Buyers pay fees' : 'Organizer pays fees'}\n` +
+        `Timezone: ${currentTimezone}\n` +
+        `Guest Artistes: ${validArtistes.length}\n` +
+        `Paystack Subaccount: ${organizerSubaccountCode || 'Not set'}\n` +
+        `Flutterwave Subaccount: ${organizerFlutterwaveSubaccount || 'Not set'}\n\n` +
+        "Would you like to publish it now?\n\n" +
+        "Click OK to publish immediately.\n" +
+        "Click Cancel to keep as draft and edit later."
+      );
+
+      if (shouldPublish) {
+        console.log("📢 Publishing draft event...");
+
+        const publishData = {
+          status: "published",
+          published_at: new Date().toISOString(),
+          featured: featured || false,
+          trending: trending || false,
+          isnew: isNew || false,
+          sponsored: sponsored || false,
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: publishError } = await supabase
+          .from("events")
+          .update(publishData)
+          .eq("id", event.id);
+
+        if (publishError) {
+          console.error("❌ Failed to publish event:", publishError);
+          setError(`Event saved as draft, but couldn't be published: ${publishError.message}`);
+        } else {
+          console.log("✅ Event published successfully!");
+        }
       } else {
-        console.log("✅ Event published successfully!");
+        console.log("📝 Keeping event as draft");
       }
-    } else {
-      console.log("📝 Keeping event as draft");
-    }
 
-    setSuccess(true);
+      setSuccess(true);
 
-    // Navigate to organizer dashboard
-    setTimeout(() => {
-      navigate("/organizer/dashboard");
-    }, 1500);
+      // Navigate to organizer dashboard
+      setTimeout(() => {
+        navigate("/organizer/dashboard");
+      }, 1500);
 
-  } catch (err: any) {
-    console.error("💥 ERROR in event creation:", err);
+    } catch (err: any) {
+      console.error("💥 ERROR in event creation:", err);
 
-    let userMessage = err.message || "Failed to create event. Please try again.";
+      let userMessage = err.message || "Failed to create event. Please try again.";
 
-    if (err.code) {
-      switch (err.code) {
-        case "23505":
-          userMessage = "An event with similar title already exists. Try changing the title slightly.";
-          break;
-        case "42501":
-          userMessage = "Permission denied. Please make sure you have organizer permissions.";
-          break;
-        case "42703":
-          userMessage = "Database column error. Please contact support.";
-          break;
-        case "42P01":
-          userMessage = "Database table not found. Please contact support.";
-          break;
-        case "22P02":
-          userMessage = "Invalid data format. Please check your input values.";
-          break;
-        case "23502":
-          userMessage = "Missing required field. Please fill all required fields.";
-          break;
-        case "23514":
-          userMessage = "Data validation failed. Please check your input values.";
-          break;
-        case "22007":
-          userMessage = "Invalid date/time format. Please check your date and time values.";
-          break;
+      if (err.code) {
+        switch (err.code) {
+          case "23505":
+            userMessage = "An event with similar title already exists. Try changing the title slightly.";
+            break;
+          case "42501":
+            userMessage = "Permission denied. Please make sure you have organizer permissions.";
+            break;
+          case "42703":
+            userMessage = "Database column error. Please contact support.";
+            break;
+          case "42P01":
+            userMessage = "Database table not found. Please contact support.";
+            break;
+          case "22P02":
+            userMessage = "Invalid data format. Please check your input values.";
+            break;
+          case "23502":
+            userMessage = "Missing required field. Please fill all required fields.";
+            break;
+          case "23514":
+            userMessage = "Data validation failed. Please check your input values.";
+            break;
+          case "22007":
+            userMessage = "Invalid date/time format. Please check your date and time values.";
+            break;
+        }
       }
+
+      setError(userMessage);
+
+    } finally {
+      setLoading(false);
+      console.log("=== EVENT CREATION PROCESS ENDED ===");
     }
-
-    setError(userMessage);
-
-  } finally {
-    setLoading(false);
-    console.log("=== EVENT CREATION PROCESS ENDED ===");
-  }
-};
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-950">
@@ -1297,11 +1287,11 @@ if (tiersToInsert.length > 0) {
                   </div>
                 </div>
 
-                {/* Guest Artistes Section */}
+                {/* Guest Artistes Section – now optional */}
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl md:rounded-2xl p-4 sm:p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
                     <div>
-                      <h2 className="text-lg sm:text-xl font-bold text-white">Guest Artistes</h2>
+                      <h2 className="text-lg sm:text-xl font-bold text-white">Guest Artistes (Optional)</h2>
                       <p className="text-gray-400 text-xs sm:text-sm mt-1">Add performers, speakers, or special guests</p>
                     </div>
                     <button
@@ -1312,162 +1302,175 @@ if (tiersToInsert.length > 0) {
                     </button>
                   </div>
 
-                  <div className="space-y-4 sm:space-y-6">
-                    {guestArtistes.map((artiste) => (
-                      <div key={artiste.id} className="bg-white/5 border border-white/10 rounded-xl p-4 sm:p-6 relative">
-                        {guestArtistes.length > 1 && (
-                          <button
-                            onClick={() => removeGuestArtiste(artiste.id)}
-                            className="absolute top-3 right-3 sm:top-4 sm:right-4 text-gray-400 hover:text-red-400 transition"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
-
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-                            <div>
-                              <label className="text-white font-medium mb-2 block text-sm sm:text-base">Name *</label>
-                              <input
-                                value={artiste.name}
-                                onChange={(e) => updateGuestArtiste(artiste.id, "name", e.target.value)}
-                                placeholder="e.g., Burna Boy, Wizkid"
-                                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white/10 rounded-lg text-white placeholder-gray-500 text-sm sm:text-base"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-white font-medium mb-2 block text-sm sm:text-base">Role</label>
-                              <select
-                                value={artiste.role}
-                                onChange={(e) => updateGuestArtiste(artiste.id, "role", e.target.value)}
-                                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-800 rounded-lg text-white text-sm sm:text-base border border-white/10 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                              >
-                                {GUEST_ROLES.map(role => (
-                                  <option 
-                                    key={role} 
-                                    value={role}
-                                    className="bg-gray-800 text-white py-2"
-                                  >
-                                    {role}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Guest Image Upload */}
-                          <div>
-                            <label className="text-white font-medium mb-2 block text-sm sm:text-base">Profile Image</label>
-                            <div
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                setGuestDragActive(artiste.id);
-                              }}
-                              onDragLeave={() => setGuestDragActive(null)}
-                              onDrop={(e) => handleGuestDrop(e, artiste.id)}
-                              className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-all ${
-                                guestDragActive === artiste.id ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
-                              }`}
+                  {guestArtistes.length === 0 ? (
+                    <div className="text-center py-8 bg-white/5 rounded-xl border border-white/10">
+                      <UserPlus size={40} className="mx-auto text-gray-500 mb-3" />
+                      <p className="text-gray-400">No guest artistes added yet</p>
+                      <button
+                        onClick={addGuestArtiste}
+                        className="mt-3 text-purple-400 hover:text-purple-300 font-medium text-sm"
+                      >
+                        + Add your first artiste
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 sm:space-y-6">
+                      {guestArtistes.map((artiste) => (
+                        <div key={artiste.id} className="bg-white/5 border border-white/10 rounded-xl p-4 sm:p-6 relative">
+                          {guestArtistes.length > 1 && (
+                            <button
+                              onClick={() => removeGuestArtiste(artiste.id)}
+                              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-gray-400 hover:text-red-400 transition"
                             >
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => e.target.files?.[0] && handleGuestImageChange(artiste.id, e.target.files[0])}
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                              />
-                              {artiste.imagePreview ? (
-                                <div className="relative">
-                                  <img
-                                    src={artiste.imagePreview}
-                                    alt="Preview"
-                                    className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg mx-auto"
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      setGuestArtistes(prev => prev.map(a => {
-                                        if (a.id === artiste.id) {
-                                          if (a.imagePreview) URL.revokeObjectURL(a.imagePreview);
-                                          return { ...a, imageFile: null, imagePreview: null };
-                                        }
-                                        return a;
-                                      }));
-                                    }}
-                                    className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 p-1 rounded-full transition"
-                                  >
-                                    <X size={14} className="text-white" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="space-y-2 py-2">
-                                  <ImageIcon size={32} className="mx-auto text-gray-500" />
-                                  <p className="text-white font-medium text-sm">Drop image or click to upload</p>
-                                  <p className="text-gray-500 text-xs">PNG, JPG up to 5MB</p>
-                                </div>
-                              )}
+                              <Trash2 size={18} />
+                            </button>
+                          )}
+
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                              <div>
+                                <label className="text-white font-medium mb-2 block text-sm sm:text-base">Name *</label>
+                                <input
+                                  value={artiste.name}
+                                  onChange={(e) => updateGuestArtiste(artiste.id, "name", e.target.value)}
+                                  placeholder="e.g., Burna Boy, Wizkid"
+                                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white/10 rounded-lg text-white placeholder-gray-500 text-sm sm:text-base"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-white font-medium mb-2 block text-sm sm:text-base">Role</label>
+                                <select
+                                  value={artiste.role}
+                                  onChange={(e) => updateGuestArtiste(artiste.id, "role", e.target.value)}
+                                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-800 rounded-lg text-white text-sm sm:text-base border border-white/10 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                >
+                                  {GUEST_ROLES.map(role => (
+                                    <option 
+                                      key={role} 
+                                      value={role}
+                                      className="bg-gray-800 text-white py-2"
+                                    >
+                                      {role}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
-                          </div>
 
-                          <div>
-                            <label className="text-white font-medium mb-2 block text-sm sm:text-base">Bio</label>
-                            <textarea
-                              value={artiste.bio}
-                              onChange={(e) => updateGuestArtiste(artiste.id, "bio", e.target.value)}
-                              rows={2}
-                              placeholder="Short description about the artiste..."
-                              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white/10 rounded-lg text-white placeholder-gray-500 resize-none text-sm sm:text-base"
-                            />
-                          </div>
+                            {/* Guest Image Upload */}
+                            <div>
+                              <label className="text-white font-medium mb-2 block text-sm sm:text-base">Profile Image</label>
+                              <div
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  setGuestDragActive(artiste.id);
+                                }}
+                                onDragLeave={() => setGuestDragActive(null)}
+                                onDrop={(e) => handleGuestDrop(e, artiste.id)}
+                                className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-all ${
+                                  guestDragActive === artiste.id ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
+                                }`}
+                              >
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => e.target.files?.[0] && handleGuestImageChange(artiste.id, e.target.files[0])}
+                                  className="absolute inset-0 opacity-0 cursor-pointer"
+                                />
+                                {artiste.imagePreview ? (
+                                  <div className="relative">
+                                    <img
+                                      src={artiste.imagePreview}
+                                      alt="Preview"
+                                      className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg mx-auto"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        setGuestArtistes(prev => prev.map(a => {
+                                          if (a.id === artiste.id) {
+                                            if (a.imagePreview) URL.revokeObjectURL(a.imagePreview);
+                                            return { ...a, imageFile: null, imagePreview: null };
+                                          }
+                                          return a;
+                                        }));
+                                      }}
+                                      className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 p-1 rounded-full transition"
+                                    >
+                                      <X size={14} className="text-white" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2 py-2">
+                                    <ImageIcon size={32} className="mx-auto text-gray-500" />
+                                    <p className="text-white font-medium text-sm">Drop image or click to upload</p>
+                                    <p className="text-gray-500 text-xs">PNG, JPG up to 5MB</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
 
-                          {/* Social Media */}
-                          <div className="bg-white/5 rounded-lg p-3 sm:p-4">
-                            <label className="text-white font-medium mb-2 sm:mb-3 block text-sm sm:text-base">Social Media Links</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">Instagram</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.instagram || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.instagram", e.target.value)}
-                                  placeholder="https://instagram.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">Twitter/X</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.twitter || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.twitter", e.target.value)}
-                                  placeholder="https://twitter.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">YouTube</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.youtube || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.youtube", e.target.value)}
-                                  placeholder="https://youtube.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">Spotify</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.spotify || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.spotify", e.target.value)}
-                                  placeholder="https://open.spotify.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
-                                />
+                            <div>
+                              <label className="text-white font-medium mb-2 block text-sm sm:text-base">Bio</label>
+                              <textarea
+                                value={artiste.bio}
+                                onChange={(e) => updateGuestArtiste(artiste.id, "bio", e.target.value)}
+                                rows={2}
+                                placeholder="Short description about the artiste..."
+                                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white/10 rounded-lg text-white placeholder-gray-500 resize-none text-sm sm:text-base"
+                              />
+                            </div>
+
+                            {/* Social Media */}
+                            <div className="bg-white/5 rounded-lg p-3 sm:p-4">
+                              <label className="text-white font-medium mb-2 sm:mb-3 block text-sm sm:text-base">Social Media Links</label>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">Instagram</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.instagram || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.instagram", e.target.value)}
+                                    placeholder="https://instagram.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">Twitter/X</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.twitter || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.twitter", e.target.value)}
+                                    placeholder="https://twitter.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">YouTube</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.youtube || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.youtube", e.target.value)}
+                                    placeholder="https://youtube.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">Spotify</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.spotify || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.spotify", e.target.value)}
+                                    placeholder="https://open.spotify.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs sm:text-sm"
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Ticket Tiers */}
@@ -1585,7 +1588,7 @@ if (tiersToInsert.length > 0) {
                   </div>
                 </div>
 
-                {/* ===== NEW: FEE SETTINGS SECTION ===== */}
+                {/* FEE SETTINGS SECTION */}
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl md:rounded-2xl p-4 sm:p-6">
                   <h2 className="text-lg sm:text-xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
                     <Receipt size={20} /> Fee Settings
@@ -1653,7 +1656,60 @@ if (tiersToInsert.length > 0) {
                     </p>
                   </div>
                 </div>
-                {/* ===== END OF FEE SETTINGS ===== */}
+
+                {/* ===== NEW: PAYMENT SETTINGS – SUBACCOUNTS ===== */}
+                <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl md:rounded-2xl p-4 sm:p-6">
+                  <h2 className="text-lg sm:text-xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
+                    <CreditCard size={20} /> Payment Settings (Subaccounts)
+                  </h2>
+                  <p className="text-gray-400 text-sm mb-4">
+                    If you have a Paystack or Flutterwave subaccount, enter the codes below to receive ticket revenue directly (minus platform fees). Leave empty to use the default account.
+                  </p>
+
+                  <div className="space-y-4">
+                    {/* Paystack Subaccount */}
+                    <div>
+                      <label className="text-white font-medium mb-2 block text-sm sm:text-base flex items-center gap-2">
+                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                        Paystack Subaccount Code
+                      </label>
+                      <input
+                        type="text"
+                        value={organizerSubaccountCode}
+                        onChange={(e) => setOrganizerSubaccountCode(e.target.value)}
+                        placeholder="e.g., ACCT_6uujpqtzmnufzkw"
+                        className="w-full px-4 sm:px-5 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-lg sm:rounded-xl text-white placeholder-gray-500 text-sm sm:text-base"
+                      />
+                      <p className="text-gray-500 text-xs mt-1">
+                        Find this in your Paystack dashboard → Settings → Subaccounts.
+                      </p>
+                    </div>
+
+                    {/* Flutterwave Subaccount */}
+                    <div>
+                      <label className="text-white font-medium mb-2 block text-sm sm:text-base flex items-center gap-2">
+                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                        Flutterwave Subaccount ID
+                      </label>
+                      <input
+                        type="text"
+                        value={organizerFlutterwaveSubaccount}
+                        onChange={(e) => setOrganizerFlutterwaveSubaccount(e.target.value)}
+                        placeholder="e.g., RS_D87A9EE339AE28BFA2AE86041C6DE70E"
+                        className="w-full px-4 sm:px-5 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-lg sm:rounded-xl text-white placeholder-gray-500 text-sm sm:text-base"
+                      />
+                      <p className="text-gray-500 text-xs mt-1">
+                        Find this in your Flutterwave dashboard → Subaccounts.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                    <p className="text-xs sm:text-sm text-purple-300">
+                      <span className="font-medium">💡 How it works:</span> When a buyer pays, the exact ticket price (minus fees) goes to the subaccount you provide. Fees are credited to your main platform account.
+                    </p>
+                  </div>
+                </div>
 
                 {/* Tags & Contact */}
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl md:rounded-2xl p-4 sm:p-6">

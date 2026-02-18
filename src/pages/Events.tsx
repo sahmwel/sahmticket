@@ -38,6 +38,61 @@ const PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1540575467063-178a5
 const EVENTS_PER_PAGE = 50;
 const CAROUSEL_INTERVAL = 5000;
 
+// --- Hardcoded Categories (matches CreateEvent) ---
+const COMPLETE_CATEGORIES = [
+  { id: 1, name: "🎵 Concerts & Live Music" },
+  { id: 2, name: "🎪 Festivals" },
+  { id: 3, name: "🕺 Parties & Nightlife" },
+  { id: 4, name: "✨ Rave / EDM Parties" },
+  { id: 5, name: "🏠 House Party" },
+  { id: 6, name: "🤝 Networking Events" },
+  { id: 7, name: "🎨 Workshop & Classes" },
+  { id: 8, name: "💼 Conference & Seminars" },
+  { id: 9, name: "⚽ Sports Events" },
+  { id: 10, name: "🎭 Theatre & Performing Arts" },
+  { id: 11, name: "🎉 Birthday Parties" },
+  { id: 12, name: "💍 Weddings & Engagements" },
+  { id: 13, name: "🏢 Corporate Events" },
+  { id: 14, name: "❤️ Charity & Fundraisers" },
+  { id: 15, name: "🍔 Food & Drink Tastings" },
+  { id: 16, name: "🏖️ Beach Party" },
+  { id: 17, name: "🏊 Pool Party" },
+  { id: 19, name: "🎭 Themed Costume Party" },
+  { id: 20, name: "🎤 Karaoke Night" },
+  { id: 21, name: "👻 Halloween Party" },
+  { id: 22, name: "🎄 Christmas Party" },
+  { id: 23, name: "🎆 New Year's Eve Party" }
+];
+
+// Helper to get a gradient based on category id (or return a default)
+const getCategoryGradient = (id: number): string => {
+  const gradients = [
+    "from-purple-500 to-pink-600",
+    "from-blue-500 to-cyan-600",
+    "from-emerald-500 to-teal-600",
+    "from-orange-500 to-red-600",
+    "from-amber-500 to-yellow-600",
+    "from-indigo-500 to-violet-600",
+    "from-rose-500 to-pink-600",
+    "from-fuchsia-500 to-purple-600",
+  ];
+  // Use modulo to cycle through gradients
+  return gradients[id % gradients.length];
+};
+
+// --- Haversine distance helper (km) ---
+const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 // --- Type Definitions ---
 interface TicketTier {
   name: string;
@@ -69,67 +124,48 @@ interface Event {
   isPast?: boolean;
 }
 
-interface Category {
-  id: number;
-  name: string;
-  gradient: string;
-}
-
 // --- Date Formatting Functions ---
 const formatDateOnly = (timestamp: string | null): string => {
   if (!timestamp) return "No date";
   try {
     const datePart = timestamp.split('T')[0];
     const [year, month, day] = datePart.split('-').map(Number);
-    
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const monthName = monthNames[month - 1];
-    
     return `${monthName} ${day}, ${year}`;
   } catch {
     return "Invalid date";
   }
 };
 
-// FIXED: Updated to match Home page formatting
 const formatEventDateShort = (dateString: string): string => {
   if (!dateString) return "Date TBD";
-  
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return "Invalid date";
-    
     const datePart = dateString.split('T')[0];
     const [year, month, day] = datePart.split('-').map(Number);
-    
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const monthName = monthNames[month - 1];
-    
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const eventDate = new Date(year, month - 1, day);
-    
     const diffTime = eventDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
     const formattedDate = `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''}`;
-    
     if (diffDays < -1) return `${formattedDate} (Past)`;
     if (diffDays === -1) return `Yesterday`;
     if (diffDays === 0) return `Today`;
     if (diffDays === 1) return `Tomorrow`;
     if (diffDays <= 7) return `${formattedDate} (in ${diffDays} days)`;
-    
     return formattedDate;
-  } catch (error) {
+  } catch {
     return "Date TBD";
   }
 };
 
 const formatEventTime = (dateString: string, timeString?: string): string => {
   if (!dateString) return "Time TBD";
-  
-  // First try to use the timeString if available
   if (timeString) {
     try {
       const [hours, minutes] = timeString.split(':').map(Number);
@@ -137,16 +173,11 @@ const formatEventTime = (dateString: string, timeString?: string): string => {
       const displayHours = hours % 12 || 12;
       const displayMinutes = minutes ? minutes.toString().padStart(2, '0') : '00';
       return `${displayHours}:${displayMinutes} ${ampm}`;
-    } catch {
-      // Fall through to extracting from date
-    }
+    } catch { /* fall through */ }
   }
-  
-  // Extract from date string if it contains time
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return "Time TBD";
-    
     let hours = date.getHours();
     const minutes = date.getMinutes().toString().padStart(2, '0');
     const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -160,7 +191,6 @@ const formatEventTime = (dateString: string, timeString?: string): string => {
 
 const isEventPast = (dateString: string): boolean => {
   if (!dateString) return false;
-  
   try {
     const today = new Date().toISOString().split('T')[0];
     const eventDateStr = dateString.split('T')[0];
@@ -172,94 +202,60 @@ const isEventPast = (dateString: string): boolean => {
 
 // --- Helper Functions ---
 const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
-  if (typeof price === 'number') {
-    return { amount: price, isFree: price === 0 };
-  }
-  
+  if (typeof price === 'number') return { amount: price, isFree: price === 0 };
   if (typeof price === 'string') {
     const lowerPrice = price.toLowerCase().trim();
-    
     if (['free', '0', '₦0', 'ngn0', 'n0', '0.00', '0.0'].includes(lowerPrice)) {
       return { amount: 0, isFree: true };
     }
-    
     const cleaned = price.replace(/[^\d.-]/g, '');
     const amount = parseFloat(cleaned) || 0;
-    
     return { amount, isFree: amount === 0 };
   }
-  
   return { amount: 0, isFree: true };
 };
 
 const getLowestPriceFromTiers = (ticketTiers: TicketTier[]): { price: number; isFree: boolean } => {
-  if (!ticketTiers?.length) {
-    return { price: 0, isFree: true };
-  }
-
+  if (!ticketTiers?.length) return { price: 0, isFree: true };
   let hasPaidTier = false;
   let lowestPaidPrice = Infinity;
   let hasFreeTier = false;
-
   ticketTiers.forEach(tier => {
     if (!tier) return;
-    
     const available = tier.available ?? tier.quantity_available;
     const sold = tier.sold ?? tier.quantity_sold ?? 0;
-    
-    if (available !== undefined && (available === 0 || sold >= available)) {
-      return;
-    }
-    
+    if (available !== undefined && (available === 0 || sold >= available)) return;
     const priceInfo = parsePrice(tier.price);
-    
-    if (priceInfo.isFree) {
-      hasFreeTier = true;
-    } else if (priceInfo.amount > 0) {
+    if (priceInfo.isFree) hasFreeTier = true;
+    else if (priceInfo.amount > 0) {
       hasPaidTier = true;
       lowestPaidPrice = Math.min(lowestPaidPrice, priceInfo.amount);
     }
   });
-
-  if (hasPaidTier) {
-    return { price: lowestPaidPrice, isFree: false };
-  }
-  
-  if (hasFreeTier) {
-    return { price: 0, isFree: true };
-  }
-  
+  if (hasPaidTier) return { price: lowestPaidPrice, isFree: false };
+  if (hasFreeTier) return { price: 0, isFree: true };
   return { price: 0, isFree: true };
 };
 
 const isEventSoldOut = (ticketTiers: TicketTier[]): boolean => {
   if (!ticketTiers?.length) return false;
-  
   const hasAvailableTickets = ticketTiers.some(tier => {
     if (!tier) return false;
-    
     const available = tier.available ?? tier.quantity_available;
     const sold = tier.sold ?? tier.quantity_sold ?? 0;
-    
     if (available == null) return true;
-    
     return available > 0 && sold < available;
   });
-  
   return !hasAvailableTickets;
 };
 
 const getAvailableTickets = (ticketTiers: TicketTier[]): number => {
   if (!ticketTiers?.length) return 0;
-  
   return ticketTiers.reduce((total, tier) => {
     if (!tier) return total;
-    
     const available = tier.available ?? tier.quantity_available;
     const sold = tier.sold ?? tier.quantity_sold ?? 0;
-    
     if (available == null) return total + 9999;
-    
     return total + Math.max(0, available - sold);
   }, 0);
 };
@@ -284,11 +280,9 @@ const ChangeView: React.FC<{ center: [number, number]; zoom: number }> = ({ cent
 
 const LocationMarker: React.FC<{ position: [number, number] }> = ({ position }) => {
   const map = useMap();
-  
   const handleClick = useCallback(() => {
     map.flyTo(position, 15, { duration: 1.5 });
   }, [map, position]);
-
   return (
     <Marker position={position} eventHandlers={{ click: handleClick }}>
       <Popup>
@@ -317,14 +311,9 @@ const Badge: React.FC<{ type: "new" | "sponsored" | "featured" | "trending" | "p
     trending: { icon: Flame, color: "from-orange-500 to-red-600", text: "Trending" },
     past: { icon: History, color: "from-gray-500 to-gray-700", text: "Past" },
   }[type];
-  
   const Icon = config.icon;
-  
   return (
-    <span 
-      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r ${config.color} shadow-lg`}
-      aria-label={config.text}
-    >
+    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r ${config.color} shadow-lg`} aria-label={config.text}>
       <Icon size={14} aria-hidden="true" />
       {config.text}
     </span>
@@ -347,15 +336,14 @@ const EventCardSkeleton: React.FC = () => (
 );
 
 // --- SearchBar Component ---
-const SearchBar: React.FC<{ 
-  searchTerm: string; 
+const SearchBar: React.FC<{
+  searchTerm: string;
   setSearchTerm: (term: string) => void;
   resultsCount: number;
   showPast: boolean;
   setShowPast: (show: boolean) => void;
 }> = ({ searchTerm, setSearchTerm, resultsCount, showPast, setShowPast }) => {
   const handleClear = useCallback(() => setSearchTerm(""), [setSearchTerm]);
-
   return (
     <div className="max-w-2xl mx-auto px-5 mb-12">
       <div className="relative">
@@ -378,19 +366,17 @@ const SearchBar: React.FC<{
           </button>
         )}
       </div>
-      
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
         <p className="text-center text-gray-600">
           Found {resultsCount} event{resultsCount !== 1 ? 's' : ''}
           {searchTerm && ` for "${searchTerm}"`}
         </p>
-        
         <button
           onClick={() => setShowPast(!showPast)}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105"
           style={{
-            background: showPast 
-              ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)' 
+            background: showPast
+              ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)'
               : 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
             color: 'white'
           }}
@@ -404,33 +390,26 @@ const SearchBar: React.FC<{
 };
 
 // --- Main Components ---
-const EventCard: React.FC<{ 
+const EventCard: React.FC<{
   event: Event;
   onEventClick: (event: Event) => void;
 }> = React.memo(({ event, onEventClick }) => {
   const [imageError, setImageError] = useState(false);
-  
   const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
   const soldOut = isEventSoldOut(event.ticketTiers);
   const availableTickets = getAvailableTickets(event.ticketTiers);
   const isLowStock = availableTickets > 0 && availableTickets <= 10;
   const isUnlimited = availableTickets >= 9999;
   const eventIsPast = isEventPast(event.date);
-  
-  const handleClick = useCallback(() => {
-    onEventClick(event);
-  }, [event, onEventClick]);
-  
+
+  const handleClick = useCallback(() => onEventClick(event), [event, onEventClick]);
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onEventClick(event);
     }
   }, [event, onEventClick]);
-  
-  const handleImageError = useCallback(() => {
-    setImageError(true);
-  }, []);
+  const handleImageError = useCallback(() => setImageError(true), []);
 
   return (
     <motion.div
@@ -454,9 +433,9 @@ const EventCard: React.FC<{
           </div>
         ) : (
           <>
-            <img 
-              src={event.image || PLACEHOLDER_IMAGE} 
-              alt={event.title} 
+            <img
+              src={event.image || PLACEHOLDER_IMAGE}
+              alt={event.title}
               className="w-full h-64 object-cover group-hover:scale-110 transition-transform duration-700"
               onError={handleImageError}
               loading="lazy"
@@ -472,7 +451,6 @@ const EventCard: React.FC<{
             )}
           </>
         )}
-        
         <div className="absolute top-4 left-4 flex flex-col gap-2">
           {eventIsPast && <Badge type="past" />}
           {!eventIsPast && event.isNew && <Badge type="new" />}
@@ -480,7 +458,6 @@ const EventCard: React.FC<{
           {!eventIsPast && event.featured && <Badge type="featured" />}
           {!eventIsPast && event.trending && <Badge type="trending" />}
         </div>
-        
         {!eventIsPast && !soldOut && isLowStock && (
           <div className="absolute top-4 right-4">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-red-600">
@@ -488,7 +465,6 @@ const EventCard: React.FC<{
             </span>
           </div>
         )}
-        
         {!eventIsPast && !soldOut && isUnlimited && (
           <div className="absolute top-4 right-4">
             <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600">
@@ -497,12 +473,10 @@ const EventCard: React.FC<{
           </div>
         )}
       </div>
-
       <div className="p-6 flex flex-col flex-grow">
         <h3 className="text-2xl font-black text-gray-900 group-hover:text-purple-600 transition-colors line-clamp-2">
           {event.title}
         </h3>
-
         <div className="mt-4 space-y-3 text-gray-700">
           <div className="flex items-center gap-3">
             <Calendar size={20} className="text-purple-600 flex-shrink-0" aria-hidden="true" />
@@ -517,25 +491,24 @@ const EventCard: React.FC<{
             <span className="truncate" title={event.location}>{event.location}</span>
           </div>
         </div>
-
-        <button 
+        <button
           className={`mt-auto w-full font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-lg hover:shadow-xl active:scale-95 focus:outline-none focus:ring-4 focus:ring-purple-300 ${
             eventIsPast
-              ? 'bg-gradient-to-r from-gray-600 to-gray-800 text-white hover:scale-105' 
-              : soldOut 
-                ? 'bg-gray-400 text-white cursor-not-allowed hover:scale-100 hover:shadow-lg' 
-                : isFree 
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:scale-105' 
+              ? 'bg-gradient-to-r from-gray-600 to-gray-800 text-white hover:scale-105'
+              : soldOut
+                ? 'bg-gray-400 text-white cursor-not-allowed hover:scale-100 hover:shadow-lg'
+                : isFree
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:scale-105'
                   : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
           }`}
           aria-label={`${eventIsPast ? 'View past event: ' : ''}${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
           disabled={soldOut && !eventIsPast}
         >
           <Ticket size={24} aria-hidden="true" />
-          {eventIsPast 
-            ? 'View Event Details' 
-            : soldOut 
-              ? 'SOLD OUT' 
+          {eventIsPast
+            ? 'View Event Details'
+            : soldOut
+              ? 'SOLD OUT'
               : `Get Ticket • ${isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`
           }
         </button>
@@ -543,7 +516,6 @@ const EventCard: React.FC<{
     </motion.div>
   );
 });
-
 EventCard.displayName = 'EventCard';
 
 // --- Main Events Page Component ---
@@ -553,49 +525,54 @@ export default function EventsPage() {
   const [userLocation, setUserLocation] = useState<[number, number]>(DEFAULT_LOCATION);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [events, setEvents] = useState<Event[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapZoom, setMapZoom] = useState(11);
   const [searchTerm, setSearchTerm] = useState("");
   const [showPastEvents, setShowPastEvents] = useState(false);
-  
+
   const navigate = useNavigate();
+
+  // --- Geolocation on mount ---
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+          setMapZoom(13);
+        },
+        () => console.log("Geolocation denied, using default location")
+      );
+    }
+  }, []);
 
   // --- Memoized Values ---
   const today = new Date().toISOString().split('T')[0];
-  
-  // FIXED: Featured events should NOT show past events
+
   const featuredEvents = useMemo(() => {
     return events
       .filter((e) => e.featured)
       .filter(event => {
         const eventDateStr = event.date?.split('T')[0];
-        return eventDateStr && eventDateStr >= today; // Only future/present events
+        return eventDateStr && eventDateStr >= today;
       });
   }, [events, today]);
 
   const filteredEvents = useMemo(() => {
-    // First filter by search term
     let filtered = events.filter(
       e =>
         e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (e.location && e.location.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-    
-    // Then filter by category
-    filtered = selectedCategory === "All" 
-      ? filtered 
+    filtered = selectedCategory === "All"
+      ? filtered
       : filtered.filter((e) => e.category_id === selectedCategory);
-    
-    // Then filter by past events toggle
     if (!showPastEvents) {
       filtered = filtered.filter(event => {
         const eventDateStr = event.date?.split('T')[0];
         return eventDateStr && eventDateStr >= today;
       });
     }
-    
     return filtered;
   }, [events, searchTerm, selectedCategory, showPastEvents, today]);
 
@@ -613,16 +590,26 @@ export default function EventsPage() {
     });
   }, [filteredEvents, today]);
 
-  const nearYouEvents = useMemo(() => 
-    futureEvents.slice(0, 8), [futureEvents]
-  );
+  // --- Nearby events (sorted by distance from user location) ---
+  const nearYouEvents = useMemo(() => {
+    const eventsWithCoords = futureEvents.filter(e => e.coordinates?.lat && e.coordinates?.lng);
+    if (eventsWithCoords.length === 0) return [];
+    const withDistance = eventsWithCoords.map(event => {
+      const dist = haversineDistance(
+        userLocation[0], userLocation[1],
+        event.coordinates!.lat, event.coordinates!.lng
+      );
+      return { ...event, distance: dist };
+    });
+    withDistance.sort((a, b) => a.distance - b.distance);
+    return withDistance.slice(0, 8);
+  }, [futureEvents, userLocation]);
 
   // --- Data Fetching ---
   const fetchEvents = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-
       const { data, error: fetchError } = await supabase
         .from("events")
         .select(`
@@ -653,9 +640,7 @@ export default function EventsPage() {
         .eq("status", "published")
         .order("date", { ascending: true })
         .limit(EVENTS_PER_PAGE);
-
       if (fetchError) throw fetchError;
-
       const parsedEvents = (data || []).map((item: any) => ({
         id: item.id,
         title: item.title || "Untitled Event",
@@ -682,7 +667,6 @@ export default function EventsPage() {
           : undefined,
         slug: item.slug,
       }));
-
       setEvents(parsedEvents);
     } catch (err: any) {
       console.error("Events fetch failed:", err);
@@ -692,45 +676,16 @@ export default function EventsPage() {
     }
   }, []);
 
-  const fetchCategories = useCallback(async () => {
-    try {
-      const { data } = await supabase
-        .from("categories")
-        .select("id, name, gradient")
-        .order("name");
-      
-      if (data) setCategories(data);
-    } catch (err) {
-      console.error("Categories fetch failed:", err);
-    }
-  }, []);
-
   useEffect(() => {
     fetchEvents();
-    fetchCategories();
-  }, [fetchEvents, fetchCategories]);
-
-  // --- Geolocation ---
-  useEffect(() => {
-    if (viewMode !== "map" || !navigator.geolocation) return;
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLocation([pos.coords.latitude, pos.coords.longitude]);
-        setMapZoom(13);
-      },
-      () => console.log("Geolocation denied/default used")
-    );
-  }, [viewMode]);
+  }, [fetchEvents]);
 
   // --- Carousel Autoplay ---
   useEffect(() => {
     if (featuredEvents.length <= 1) return;
-
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % featuredEvents.length);
     }, CAROUSEL_INTERVAL);
-
     return () => clearInterval(interval);
   }, [featuredEvents]);
 
@@ -774,11 +729,7 @@ export default function EventsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex flex-col items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-center space-y-6"
-        >
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center space-y-6">
           <Loader2 className="w-16 h-16 text-purple-600 animate-spin mx-auto" aria-hidden="true" />
           <h2 className="text-3xl font-bold text-gray-800">Loading Events...</h2>
           <p className="text-gray-600">Discovering amazing experiences for you</p>
@@ -791,11 +742,7 @@ export default function EventsPage() {
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 flex flex-col items-center justify-center p-8">
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="max-w-md text-center space-y-6"
-        >
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-md text-center space-y-6">
           <AlertCircle className="w-20 h-20 text-red-500 mx-auto" aria-hidden="true" />
           <h2 className="text-3xl font-bold text-gray-800">Oops! Something went wrong</h2>
           <p className="text-gray-600">{error}</p>
@@ -816,11 +763,7 @@ export default function EventsPage() {
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Header */}
-        <motion.header
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
+        <motion.header initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-black text-gray-900 mb-3">
             Discover Events Around You
           </h1>
@@ -830,7 +773,7 @@ export default function EventsPage() {
         </motion.header>
 
         {/* Search Bar */}
-        <SearchBar 
+        <SearchBar
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           resultsCount={filteredEvents.length}
@@ -857,9 +800,7 @@ export default function EventsPage() {
                   Slide {currentSlide + 1} of {featuredEvents.length}
                 </div>
               </div>
-              
               <div className="relative overflow-hidden rounded-3xl shadow-2xl group">
-                {/* Carousel Navigation */}
                 {featuredEvents.length > 1 && (
                   <>
                     <button
@@ -878,9 +819,7 @@ export default function EventsPage() {
                     </button>
                   </>
                 )}
-
-                {/* Carousel Content */}
-                <div 
+                <div
                   className="flex transition-transform duration-700 ease-out"
                   style={{ transform: `translateX(-${currentSlide * 100}%)` }}
                   aria-live="polite"
@@ -891,7 +830,6 @@ export default function EventsPage() {
                     const soldOut = isEventSoldOut(event.ticketTiers);
                     const availableTickets = getAvailableTickets(event.ticketTiers);
                     const eventIsPast = isEventPast(event.date);
-                    
                     return (
                       <div key={event.id} className="w-full flex-shrink-0">
                         <button
@@ -900,8 +838,8 @@ export default function EventsPage() {
                           aria-label={`Featured event ${index + 1}: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
                         >
                           <div className="relative h-96 md:h-[560px] bg-black rounded-3xl overflow-hidden group/carousel">
-                            <img 
-                              src={event.image || PLACEHOLDER_IMAGE} 
+                            <img
+                              src={event.image || PLACEHOLDER_IMAGE}
                               alt={event.title}
                               className="w-full h-full object-cover opacity-70 group-hover/carousel:opacity-90 transition-opacity duration-500"
                               loading="lazy"
@@ -934,10 +872,10 @@ export default function EventsPage() {
                               </p>
                               <div className="flex items-center justify-between mt-6">
                                 <p className={`text-3xl font-bold ${
-                                  soldOut ? 'text-red-400' : 
+                                  soldOut ? 'text-red-400' :
                                   isFree ? 'text-emerald-400' : 'text-purple-400'
                                 }`}>
-                                  {soldOut ? 'SOLD OUT' : 
+                                  {soldOut ? 'SOLD OUT' :
                                    isFree ? 'Free' : formatPriceDisplay(price, isFree)}
                                 </p>
                                 <span className="text-white/80 text-lg">
@@ -958,8 +896,6 @@ export default function EventsPage() {
                     );
                   })}
                 </div>
-
-                {/* Carousel Indicators */}
                 {featuredEvents.length > 1 && (
                   <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3" role="tablist" aria-label="Featured events slides">
                     {featuredEvents.map((_, i) => (
@@ -967,8 +903,8 @@ export default function EventsPage() {
                         key={i}
                         onClick={() => setCurrentSlide(i)}
                         className={`w-3 h-3 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-white ${
-                          currentSlide === i 
-                            ? "bg-white w-12 scale-110" 
+                          currentSlide === i
+                            ? "bg-white w-12 scale-110"
                             : "bg-white/50 hover:bg-white/80"
                         }`}
                         role="tab"
@@ -983,8 +919,8 @@ export default function EventsPage() {
           )}
         </AnimatePresence>
 
-        {/* Near You Section (Future Events Only) */}
-        {!showPastEvents && futureEvents.length > 0 && (
+        {/* Near You Section (Future Events Only, sorted by distance) */}
+        {!showPastEvents && nearYouEvents.length > 0 && (
           <section className="mb-16" aria-label="Events near your location">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-4">
@@ -993,29 +929,24 @@ export default function EventsPage() {
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Filter size={16} aria-hidden="true" />
-                <span>Based on your location</span>
+                <span>Closest first</span>
               </div>
             </div>
-            
-            <motion.div 
+            <motion.div
               className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ staggerChildren: 0.1 }}
             >
               {nearYouEvents.map((event) => (
-                <EventCard 
-                  key={event.id} 
-                  event={event} 
-                  onEventClick={handleEventClick} 
-                />
+                <EventCard key={event.id} event={event} onEventClick={handleEventClick} />
               ))}
             </motion.div>
           </section>
         )}
 
         {/* View Mode Toggle */}
-        <motion.div 
+        <motion.div
           className="flex justify-center gap-6 mb-10"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -1059,7 +990,6 @@ export default function EventsPage() {
             id="map-section"
             aria-label="Map showing event locations"
           >
-            {/* Map Controls */}
             <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
               <button
                 onClick={handleMapZoomIn}
@@ -1076,8 +1006,6 @@ export default function EventsPage() {
                 <span className="text-xl font-bold">−</span>
               </button>
             </div>
-
-            {/* Past Events Warning */}
             {showPastEvents && (
               <div className="absolute top-4 left-4 z-[1000] bg-yellow-500/90 backdrop-blur-sm p-3 rounded-2xl shadow-lg">
                 <p className="text-sm font-semibold text-white flex items-center gap-2">
@@ -1085,7 +1013,6 @@ export default function EventsPage() {
                 </p>
               </div>
             )}
-
             <MapContainer
               center={userLocation}
               zoom={mapZoom}
@@ -1100,8 +1027,6 @@ export default function EventsPage() {
               />
               <ChangeView center={userLocation} zoom={mapZoom} />
               <LocationMarker position={userLocation} />
-              
-              {/* Event Markers */}
               {filteredEvents
                 .filter(event => event.coordinates)
                 .map((event) => {
@@ -1110,20 +1035,17 @@ export default function EventsPage() {
                   const availableTickets = getAvailableTickets(event.ticketTiers);
                   const isLowStock = availableTickets > 0 && availableTickets <= 10;
                   const eventIsPast = isEventPast(event.date);
-                  
                   return (
                     <Marker
                       key={event.id}
                       position={[event.coordinates!.lat, event.coordinates!.lng]}
-                      eventHandlers={{
-                        click: () => handleEventClick(event),
-                      }}
+                      eventHandlers={{ click: () => handleEventClick(event) }}
                       aria-label={`Event: ${event.title} at ${event.location}`}
                     >
                       <Popup>
                         <div className="p-2 max-w-xs">
-                          <img 
-                            src={event.image || PLACEHOLDER_IMAGE} 
+                          <img
+                            src={event.image || PLACEHOLDER_IMAGE}
                             alt={event.title}
                             className="w-full h-32 object-cover rounded-lg mb-2"
                             loading="lazy"
@@ -1156,11 +1078,11 @@ export default function EventsPage() {
                           </p>
                           <div className={`text-sm font-bold mt-2 ${
                             eventIsPast ? 'text-gray-600' :
-                            soldOut ? 'text-red-600' : 
+                            soldOut ? 'text-red-600' :
                             isFree ? 'text-emerald-600' : 'text-purple-600'
                           }`}>
-                            {eventIsPast ? 'PAST EVENT' : 
-                             soldOut ? 'SOLD OUT' : 
+                            {eventIsPast ? 'PAST EVENT' :
+                             soldOut ? 'SOLD OUT' :
                              isFree ? 'Free' : formatPriceDisplay(price, isFree)}
                           </div>
                           <button
@@ -1168,8 +1090,8 @@ export default function EventsPage() {
                             className={`mt-3 w-full py-2 rounded-lg hover:shadow transition text-sm font-bold focus:outline-none focus:ring-2 focus:ring-purple-600 ${
                               eventIsPast
                                 ? 'bg-gradient-to-r from-gray-600 to-gray-800 text-white hover:shadow-lg'
-                                : soldOut 
-                                  ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                : soldOut
+                                  ? 'bg-gray-400 text-white cursor-not-allowed'
                                   : isFree
                                     ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:shadow-lg'
                                     : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'
@@ -1185,7 +1107,6 @@ export default function EventsPage() {
                   );
                 })}
             </MapContainer>
-            
             <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 backdrop-blur-sm p-4 rounded-2xl shadow-lg">
               <p className="text-sm font-semibold text-gray-800">
                 📍 {filteredEvents.filter(e => e.coordinates).length} events on map
@@ -1214,7 +1135,6 @@ export default function EventsPage() {
                   {showPastEvents && pastEvents.length > 0 && ` (${pastEvents.length} past)`}
                 </span>
               </div>
-              
               <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-purple-300 scrollbar-track-transparent pb-4">
                 <div className="flex gap-4 min-w-max" role="tablist" aria-label="Event categories">
                   <button
@@ -1230,15 +1150,16 @@ export default function EventsPage() {
                   >
                     All Events ({filteredEvents.length})
                   </button>
-                  {categories.map((cat) => {
+                  {COMPLETE_CATEGORIES.map((cat) => {
                     const count = events.filter((e) => e.category_id === cat.id).length;
+                    const gradient = getCategoryGradient(cat.id);
                     return (
                       <button
                         key={cat.id}
                         onClick={() => handleCategorySelect(cat.id)}
                         className={`flex items-center gap-3 px-6 py-4 rounded-2xl font-bold shadow-lg transition-all whitespace-nowrap focus:outline-none focus:ring-4 focus:ring-purple-300 ${
                           selectedCategory === cat.id
-                            ? `bg-gradient-to-r ${cat.gradient} text-white shadow-xl`
+                            ? `bg-gradient-to-r ${gradient} text-white shadow-xl`
                             : "bg-white text-gray-800 border hover:shadow-xl"
                         }`}
                         role="tab"
@@ -1258,28 +1179,22 @@ export default function EventsPage() {
               <h2 className="text-4xl font-black mb-8">
                 {selectedCategory === "All"
                   ? showPastEvents ? "All Events" : "Upcoming Events"
-                  : categories.find((c) => c.id === selectedCategory)?.name || "Events"}
+                  : COMPLETE_CATEGORIES.find((c) => c.id === selectedCategory)?.name || "Events"}
                 <span className="text-purple-600 ml-3">({filteredEvents.length})</span>
               </h2>
 
               {filteredEvents.length === 0 ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center py-20"
-                >
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
                   <div className="w-24 h-24 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-6">
                     <Calendar className="w-12 h-12 text-purple-400" aria-hidden="true" />
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-800 mb-3">
-                    No events found
-                  </h3>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-3">No events found</h3>
                   <p className="text-gray-600 max-w-md mx-auto">
                     {searchTerm
                       ? `No events found for "${searchTerm}". Try a different search.`
                       : selectedCategory === "All"
                         ? `No ${showPastEvents ? 'events' : 'upcoming events'} found.`
-                        : `No ${categories.find(c => c.id === selectedCategory)?.name?.toLowerCase()} ${showPastEvents ? 'events' : 'upcoming events'} found. Try another category.`}
+                        : `No ${COMPLETE_CATEGORIES.find(c => c.id === selectedCategory)?.name?.toLowerCase()} ${showPastEvents ? 'events' : 'upcoming events'} found. Try another category.`}
                   </p>
                   <div className="flex flex-wrap gap-4 justify-center mt-6">
                     {searchTerm && (
@@ -1304,17 +1219,10 @@ export default function EventsPage() {
                   </div>
                 </motion.div>
               ) : (
-                <motion.div
-                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
-                  layout
-                >
+                <motion.div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8" layout>
                   <AnimatePresence>
                     {filteredEvents.map((event) => (
-                      <EventCard 
-                        key={event.id} 
-                        event={event} 
-                        onEventClick={handleEventClick} 
-                      />
+                      <EventCard key={event.id} event={event} onEventClick={handleEventClick} />
                     ))}
                   </AnimatePresence>
                 </motion.div>
@@ -1337,7 +1245,6 @@ export default function EventsPage() {
                     {pastEvents.length} past events
                   </span>
                 </div>
-                
                 <motion.div
                   className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
                   initial={{ opacity: 0 }}
@@ -1345,11 +1252,7 @@ export default function EventsPage() {
                   transition={{ staggerChildren: 0.1 }}
                 >
                   {pastEvents.map((event) => (
-                    <EventCard 
-                      key={`past-${event.id}`} 
-                      event={event} 
-                      onEventClick={handleEventClick} 
-                    />
+                    <EventCard key={`past-${event.id}`} event={event} onEventClick={handleEventClick} />
                   ))}
                 </motion.div>
               </motion.section>

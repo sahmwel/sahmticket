@@ -871,7 +871,6 @@ const EventCard = ({ event, isPast = false }: { event: Event; isPast?: boolean }
     e.currentTarget.src = PLACEHOLDER_IMAGE;
   }, []);
 
-  // Check if event is past
   const todayStr = new Date().toISOString().split('T')[0];
   const eventDateStr = event.date?.split('T')[0];
   const isEventPast = isPast || (eventDateStr && eventDateStr < todayStr);
@@ -881,10 +880,10 @@ const EventCard = ({ event, isPast = false }: { event: Event; isPast?: boolean }
       layout
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
-      whileHover={{ y: -16, scale: 1.04 }}
+      whileHover={{ y: -8, scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
-      className={`group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-500 border cursor-pointer ${
+      transition={{ duration: 0.3 }}
+      className={`group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border cursor-pointer flex flex-col h-[420px] ${
         isEventPast ? 'border-gray-200 opacity-80 hover:opacity-100' : 
         soldOut ? 'border-gray-100 opacity-90' : 'border-gray-100'
       }`}
@@ -894,16 +893,18 @@ const EventCard = ({ event, isPast = false }: { event: Event; isPast?: boolean }
       onKeyDown={(e) => e.key === 'Enter' && handleEventClick()}
       aria-label={`View ${event.title} event details`}
     >
+      {/* Background glow effect */}
       <div className={`absolute inset-0 blur-3xl -z-10 opacity-0 group-hover:opacity-100 ${
         isEventPast ? 'bg-gradient-to-r from-gray-200/20 via-gray-300/20 to-gray-400/20' :
         'bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-rose-600/20'
       }`} />
       
-      <div className="relative aspect-[3/2] bg-gray-50 overflow-hidden">
+      {/* Image section - fixed height */}
+      <div className="relative h-48 bg-gray-50 overflow-hidden flex-shrink-0">
         <img
           src={event.image || PLACEHOLDER_IMAGE}
           alt={event.title}
-          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           onError={handleImageError}
           loading="lazy"
           width={300}
@@ -918,8 +919,8 @@ const EventCard = ({ event, isPast = false }: { event: Event; isPast?: boolean }
         
         {!isEventPast && soldOut && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-            <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-lg font-bold text-white bg-gradient-to-r from-red-600 to-red-800">
-              <Ticket className="w-5 h-5" />
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold text-white bg-gradient-to-r from-red-600 to-red-800">
+              <Ticket className="w-4 h-4" />
               SOLD OUT
             </span>
           </div>
@@ -947,65 +948,65 @@ const EventCard = ({ event, isPast = false }: { event: Event; isPast?: boolean }
             </span>
           </div>
         )}
-        
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       </div>
       
-      <div className="p-4 pb-6">
-        <h3 className={`font-bold text-sm line-clamp-2 group-hover:text-purple-600 transition-colors duration-300 ${
+      {/* Content section - flex column to push button to bottom */}
+      <div className="p-4 flex flex-col flex-grow">
+        <h3 className={`font-bold text-base line-clamp-2 min-h-[3rem] group-hover:text-purple-600 transition-colors ${
           isEventPast ? 'text-gray-700' : 'text-gray-900'
         }`}>
           {event.title || "Untitled Event"}
         </h3>
         
-        <div className="mt-3 space-y-2 text-xs">
+        <div className="mt-2 space-y-1.5 text-xs flex-grow">
           <div className="flex items-center gap-2">
             <Calendar size={13} className={isEventPast ? "text-gray-500" : "text-purple-600"} />
-            <span className={isEventPast ? "text-gray-600" : "text-gray-700"}>
+            <span className={`line-clamp-1 ${isEventPast ? "text-gray-600" : "text-gray-700"}`}>
               {formatDate(event.date)}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <Clock size={13} className={isEventPast ? "text-gray-500" : "text-purple-600"} />
-            <span className={`font-semibold ${isEventPast ? "text-gray-600" : "text-gray-700"}`}>
+            <span className={`font-semibold line-clamp-1 ${isEventPast ? "text-gray-600" : "text-gray-700"}`}>
               {formatEventTime(event.date, event.time)}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <MapPin size={13} className={isEventPast ? "text-gray-500" : "text-purple-600"} />
-            <span className={`truncate ${isEventPast ? "text-gray-600" : "text-gray-700"}`}>
+            <span className={`truncate line-clamp-1 ${isEventPast ? "text-gray-600" : "text-gray-700"}`}>
               {event.location || "Location TBD"}
             </span>
           </div>
         </div>
         
+        {/* Button - pushed to bottom with mt-auto */}
         {isEventPast ? (
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="w-full bg-gradient-to-r from-gray-600 to-gray-800 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg transition-transform mt-4 hover:shadow-gray-500/50 hover:scale-105"
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full bg-gradient-to-r from-gray-600 to-gray-800 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all mt-3"
             onClick={(e) => {
               e.stopPropagation();
               handleEventClick();
             }}
             aria-label={`View ${event.title} event details`}
           >
-            <Eye className="w-5 h-5" />
-            View Event Details
+            <Eye className="w-4 h-4" />
+            View Details
           </motion.button>
         ) : soldOut ? (
-          <div className="w-full bg-gray-400 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-md mt-4 cursor-not-allowed">
-            <Ticket size={24} />
+          <div className="w-full bg-gray-400 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 shadow-md mt-3 cursor-not-allowed">
+            <Ticket className="w-4 h-4" />
             Sold Out
           </div>
         ) : (
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className={`w-full text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg transition-transform mt-4 hover:scale-105 ${
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.98 }}
+            className={`w-full text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all mt-3 ${
               isFree 
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:shadow-emerald-500/50' 
-                : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-purple-500/50'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:shadow-emerald-500/30' 
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-purple-500/30'
             }`}
             onClick={(e) => {
               e.stopPropagation();
@@ -1013,8 +1014,8 @@ const EventCard = ({ event, isPast = false }: { event: Event; isPast?: boolean }
             }}
             aria-label={`Get ticket for ${event.title} for ${priceDisplay}`}
           >
-            <Ticket size={24} />
-            Get Ticket • {priceDisplay}
+            <Ticket className="w-4 h-4" />
+            {priceDisplay}
           </motion.button>
         )}
       </div>

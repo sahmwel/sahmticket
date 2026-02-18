@@ -1,4 +1,6 @@
-// src/pages/organizer/MyEvents.tsx - UPDATED FOR RESPONSIVENESS
+// src/pages/organizer/MyEvents.tsx - FINAL VERSION ✅
+// Mobile slide-in sidebar (same pattern as Tickets.tsx & Dashboard.tsx)
+
 import Sidebar from "../../components/Sidebar";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
@@ -30,6 +32,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast, Toaster } from "react-hot-toast";
 
+// ---------- INTERFACES ----------
 interface TicketTier {
   id: string;
   event_id: string;
@@ -74,6 +77,110 @@ interface Event {
   total_revenue: number;
 }
 
+// ---------- HELPER FUNCTIONS ----------
+const TIMEZONES: Record<string, string> = {
+  Nigeria: "WAT (UTC+1)",
+  "United States": "EST (UTC-5)",
+  "United Kingdom": "GMT (UTC+0)",
+  "European Union": "CET (UTC+1)",
+  Ghana: "GMT (UTC+0)",
+  Kenya: "EAT (UTC+3)",
+  "South Africa": "SAST (UTC+2)",
+  Canada: "EST (UTC-5)",
+};
+
+const getEventTimezone = (event: Event) => {
+  if (event.timezone) return event.timezone;
+  if (event.country) return TIMEZONES[event.country] || "WAT (UTC+1)";
+  return "WAT (UTC+1)";
+};
+
+const formatDate = (timestamp: string | null) => {
+  if (!timestamp) return "Date not set";
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return "Invalid date";
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const eventDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    const dayName = dayNames[date.getDay()];
+    const monthName = monthNames[date.getMonth()];
+    const day = date.getDate();
+    const year = date.getFullYear();
+
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const formattedTime = `${hours}:${minutes} ${ampm}`;
+
+    if (diffDays === 0) return `Today at ${formattedTime}`;
+    if (diffDays === 1) return `Tomorrow at ${formattedTime}`;
+    if (diffDays === -1) return `Yesterday at ${formattedTime}`;
+    if (diffDays > -7 && diffDays < 7) {
+      return `${dayName}, ${monthName} ${day} at ${formattedTime}`;
+    }
+
+    return `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ""} at ${formattedTime}`;
+  } catch (error) {
+    return "Invalid date";
+  }
+};
+
+const formatDateOnly = (timestamp: string | null) => {
+  if (!timestamp) return "No date";
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return "Invalid date";
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthName = monthNames[date.getMonth()];
+    const day = date.getDate();
+    const year = date.getFullYear();
+
+    return `${monthName} ${day}, ${year}`;
+  } catch {
+    return "Invalid date";
+  }
+};
+
+const combineDateTime = (dateString: string, timeString: string): string | null => {
+  if (!dateString) return null;
+  try {
+    const [year, month, day] = dateString.split("T")[0].split("-").map(Number);
+    let hours = 0,
+      minutes = 0;
+    if (timeString) {
+      const [timeHours, timeMinutes] = timeString.split(":").map(Number);
+      hours = timeHours || 0;
+      minutes = timeMinutes || 0;
+    }
+    const date = new Date(year, month - 1, day, hours, minutes);
+    return date.toISOString();
+  } catch (error) {
+    console.error("Error combining date and time:", error);
+    return null;
+  }
+};
+
+const formatEventDateTime = (event: Event) => {
+  if (!event.date) return "Date not set";
+  const combined = combineDateTime(event.date, event.time || "00:00");
+  const formattedDate = formatDate(combined);
+  const timezone = getEventTimezone(event);
+  return `${formattedDate} (${timezone})`;
+};
+
+// ---------- COMPONENT ----------
 export default function OrganizerMyEvents() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,144 +191,14 @@ export default function OrganizerMyEvents() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [sortBy, setSortBy] = useState<string>("newest");
-  
+
   const navigate = useNavigate();
 
-  // Timezone mapping
-  const TIMEZONES: Record<string, string> = {
-    'Nigeria': 'WAT (UTC+1)',
-    'United States': 'EST (UTC-5)',
-    'United Kingdom': 'GMT (UTC+0)',
-    'European Union': 'CET (UTC+1)',
-    'Ghana': 'GMT (UTC+0)',
-    'Kenya': 'EAT (UTC+3)',
-    'South Africa': 'SAST (UTC+2)',
-    'Canada': 'EST (UTC-5)'
-  };
-
-  // Get timezone for event
-  const getEventTimezone = (event: Event) => {
-    if (event.timezone) return event.timezone;
-    if (event.country) return TIMEZONES[event.country] || 'WAT (UTC+1)';
-    return 'WAT (UTC+1)';
-  };
-
-  // Enhanced date formatting
-  const formatDate = (timestamp: string | null) => {
-    if (!timestamp) return "Date not set";
-
-    try {
-      const date = new Date(timestamp);
-      if (isNaN(date.getTime())) return "Invalid date";
-      
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const eventDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      
-      const diffTime = eventDate.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      
-      const dayName = dayNames[date.getDay()];
-      const monthName = monthNames[date.getMonth()];
-      const day = date.getDate();
-      const year = date.getFullYear();
-      
-      let hours = date.getHours();
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      const formattedTime = `${hours}:${minutes} ${ampm}`;
-
-      if (diffDays === 0) return `Today at ${formattedTime}`;
-      if (diffDays === 1) return `Tomorrow at ${formattedTime}`;
-      if (diffDays === -1) return `Yesterday at ${formattedTime}`;
-      if (diffDays > -7 && diffDays < 7) {
-        return `${dayName}, ${monthName} ${day} at ${formattedTime}`;
-      }
-      
-      return `${monthName} ${day}${year !== now.getFullYear() ? `, ${year}` : ''} at ${formattedTime}`;
-    } catch (error) {
-      return "Invalid date";
-    }
-  };
-
-  const formatDateOnly = (timestamp: string | null) => {
-    if (!timestamp) return "No date";
-    try {
-      const date = new Date(timestamp);
-      if (isNaN(date.getTime())) return "Invalid date";
-      
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      const monthName = monthNames[date.getMonth()];
-      const day = date.getDate();
-      const year = date.getFullYear();
-      
-      return `${monthName} ${day}, ${year}`;
-    } catch {
-      return "Invalid date";
-    }
-  };
-
-  // Format event date with timezone
-  const formatEventDateTime = (event: Event) => {
-    if (!event.date) return "Date not set";
-    
-    const combinedDateTime = (dateString: string, timeString: string): string | null => {
-      if (!dateString) return null;
-      
-      try {
-        const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
-        
-        let hours = 0, minutes = 0;
-        if (timeString) {
-          const [timeHours, timeMinutes] = timeString.split(':').map(Number);
-          hours = timeHours || 0;
-          minutes = timeMinutes || 0;
-        }
-        
-        const date = new Date(year, month - 1, day, hours, minutes);
-        return date.toISOString();
-      } catch (error) {
-        console.error("Error combining date and time:", error);
-        return null;
-      }
-    };
-
-    const combined = combineDateTime(event.date, event.time || "00:00");
-    const formattedDate = formatDate(combined);
-    const timezone = getEventTimezone(event);
-    
-    return `${formattedDate} (${timezone})`;
-  };
-
-  const combineDateTime = (dateString: string, timeString: string): string | null => {
-    if (!dateString) return null;
-    
-    try {
-      const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
-      
-      let hours = 0, minutes = 0;
-      if (timeString) {
-        const [timeHours, timeMinutes] = timeString.split(':').map(Number);
-        hours = timeHours || 0;
-        minutes = timeMinutes || 0;
-      }
-      
-      const date = new Date(year, month - 1, day, hours, minutes);
-      return date.toISOString();
-    } catch (error) {
-      console.error("Error combining date and time:", error);
-      return null;
-    }
-  };
-
-  // Fetch events
+  // ---------- FETCH EVENTS ----------
   const fetchEvents = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
     if (!session?.user) {
       navigate("/auth");
@@ -229,7 +206,7 @@ export default function OrganizerMyEvents() {
     }
 
     setLoading(true);
-    
+
     try {
       const { data: eventsData, error: eventsError } = await supabase
         .from("events")
@@ -245,19 +222,19 @@ export default function OrganizerMyEvents() {
       }
 
       const enrichedEvents: Event[] = [];
-      
+
       for (const event of eventsData) {
         let totalSold = 0;
         let totalRevenue = 0;
         let ticketTiers: TicketTier[] = [];
-        
+
         // Fetch purchases
         try {
           const { data: purchases, error: purchasesError } = await supabase
             .from("purchases")
             .select("quantity, price")
             .eq("event_id", event.id);
-          
+
           if (!purchasesError && purchases && purchases.length > 0) {
             purchases.forEach((purchase: any) => {
               const quantity = parseInt(purchase.quantity) || 0;
@@ -269,14 +246,14 @@ export default function OrganizerMyEvents() {
         } catch (err) {
           console.warn("Could not fetch purchases:", err);
         }
-        
+
         // Fetch ticket tiers
         try {
           const { data: tiersData, error: tiersError } = await supabase
             .from("ticketTiers")
             .select("*")
             .eq("event_id", event.id);
-          
+
           if (!tiersError && tiersData && tiersData.length > 0) {
             ticketTiers = tiersData.map((tier: any) => ({
               id: tier.id,
@@ -288,9 +265,9 @@ export default function OrganizerMyEvents() {
               quantity_sold: parseInt(tier.quantity_sold) || 0,
               is_active: tier.is_active !== false,
               created_at: tier.created_at,
-              updated_at: tier.updated_at
+              updated_at: tier.updated_at,
             }));
-            
+
             if (totalSold === 0) {
               tiersData.forEach((tier: any) => {
                 const sold = parseInt(tier.quantity_sold) || 0;
@@ -303,7 +280,7 @@ export default function OrganizerMyEvents() {
         } catch (err) {
           console.log("ticketTiers table not accessible");
         }
-        
+
         // Check JSONB column
         if (totalSold === 0 && event.ticketTiers && Array.isArray(event.ticketTiers)) {
           ticketTiers = event.ticketTiers
@@ -311,10 +288,10 @@ export default function OrganizerMyEvents() {
             .map((tier: any, index: number) => {
               const sold = parseInt(tier.quantity_sold) || 0;
               const price = parseFloat(tier.price) || 0;
-              
+
               totalSold += sold;
               totalRevenue += price * sold;
-              
+
               return {
                 id: tier.id || `json-${event.id}-${index}`,
                 event_id: event.id,
@@ -325,11 +302,11 @@ export default function OrganizerMyEvents() {
                 quantity_sold: sold,
                 is_active: tier.is_active !== false,
                 created_at: tier.created_at || new Date().toISOString(),
-                updated_at: tier.updated_at || null
+                updated_at: tier.updated_at || null,
               };
             });
         }
-        
+
         const enrichedEvent: Event = {
           id: event.id,
           title: event.title,
@@ -360,11 +337,11 @@ export default function OrganizerMyEvents() {
           total_tickets_sold: totalSold,
           total_revenue: totalRevenue,
         };
-        
+
         enrichedEvents.push(enrichedEvent);
       }
 
-      // Apply sorting
+      // Sorting
       let sortedEvents = [...enrichedEvents];
       if (sortBy === "newest") {
         sortedEvents.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -384,13 +361,11 @@ export default function OrganizerMyEvents() {
         sortedEvents.sort((a, b) => a.total_tickets_sold - b.total_tickets_sold);
       }
 
-      // Apply status filter
-      const filteredEvents = statusFilter === "all" 
-        ? sortedEvents 
-        : sortedEvents.filter((event: Event) => event.status === statusFilter);
+      // Status filter
+      const filteredEvents =
+        statusFilter === "all" ? sortedEvents : sortedEvents.filter((event: Event) => event.status === statusFilter);
 
       setEvents(filteredEvents);
-
     } catch (err: any) {
       console.error("Fetch error:", err);
       toast.error("Failed to load your events: " + (err.message || "Unknown error"));
@@ -427,40 +402,34 @@ export default function OrganizerMyEvents() {
 
       if (error) throw error;
 
-      setEvents((prev) =>
-        prev.map((e) => (e.id === eventId ? { ...e, status: "published" } : e))
-      );
+      setEvents((prev) => prev.map((e) => (e.id === eventId ? { ...e, status: "published" } : e)));
 
       toast.success("Event published!");
     } catch (error: any) {
       toast.error("Could not publish event: " + error.message);
     }
   };
-const deleteEvent = async (eventId: string) => {
-  try {
-    const { data, error } = await supabase
-      .from("events")
-      .delete()
-      .eq("id", eventId)
-      .select();   // ← 🔥 critical – returns the deleted rows
 
-    if (error) throw error;
+  const deleteEvent = async (eventId: string) => {
+    try {
+      const { data, error } = await supabase.from("events").delete().eq("id", eventId).select();
 
-    // data will be an array of deleted rows. If empty, nothing was deleted.
-    if (!data || data.length === 0) {
-      throw new Error("Event not found or you don't have permission to delete it.");
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        throw new Error("Event not found or you don't have permission to delete it.");
+      }
+
+      setEvents((prev) => prev.filter((e) => e.id !== eventId));
+      setShowDeleteConfirm(null);
+      toast.success("Event deleted successfully");
+    } catch (error: any) {
+      console.error("Delete error:", error);
+      toast.error(`Failed to delete event: ${error.message}`);
     }
+  };
 
-    // Only remove from UI if we actually deleted something
-    setEvents((prev) => prev.filter((e) => e.id !== eventId));
-    setShowDeleteConfirm(null);
-    toast.success("Event deleted successfully");
-  } catch (error: any) {
-    console.error("Delete error:", error);
-    toast.error(`Failed to delete event: ${error.message}`);
-  }
-};
-
+  // ---------- FILTERING ----------
   const filteredEvents = events.filter(
     (event) =>
       event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -470,6 +439,7 @@ const deleteEvent = async (eventId: string) => {
       (event.city?.toLowerCase() || "").includes(searchTerm.toLowerCase())
   );
 
+  // ---------- STATS ----------
   const stats = {
     total: events.length,
     published: events.filter((e) => e.status === "published").length,
@@ -493,7 +463,7 @@ const deleteEvent = async (eventId: string) => {
       style: "currency",
       currency: "NGN",
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(amount);
   };
 
@@ -501,39 +471,37 @@ const deleteEvent = async (eventId: string) => {
     <div className="flex min-h-screen bg-gray-950">
       <Toaster position="top-right" />
 
-      {/* Mobile Menu Button */}
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-gray-900/80 backdrop-blur-sm rounded-lg border border-white/10"
-        aria-label="Toggle menu"
+      {/* ========== MOBILE SIDEBAR - SLIDE IN (lg:hidden) ========== */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ease-in-out lg:hidden ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
       >
-        <Menu size={24} className="text-white" />
-      </button>
-
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-40">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-gray-950 border-r border-white/10">
-            <Sidebar />
-          </div>
-        </div>
-      )}
-
-      {/* Desktop Sidebar */}
-      <div className="hidden lg:block">
-        <Sidebar />
+        <Sidebar role="organizer" />
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      {/* Overlay - only when sidebar is open, hidden on lg+ */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* ========== MAIN CONTENT ========== */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Scrollable content area */}
         <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-900 via-purple-900/10 to-gray-900">
           <main className="p-4 sm:p-6 lg:p-8 xl:p-10">
-            {/* Header */}
+            {/* ---------- HEADER ---------- */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 sm:mb-8 lg:mb-10 gap-4 sm:gap-6">
               <div>
-                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-1 sm:mb-2">My Events</h1>
-                <p className="text-gray-400 text-sm sm:text-base">Manage all your events in one place</p>
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-1 sm:mb-2">
+                  My Events
+                </h1>
+                <p className="text-gray-400 text-sm sm:text-base">
+                  Manage all your events in one place
+                </p>
               </div>
               <div className="flex flex-wrap gap-2 sm:gap-3 w-full lg:w-auto">
                 <button
@@ -553,13 +521,15 @@ const deleteEvent = async (eventId: string) => {
               </div>
             </div>
 
-            {/* Stats Cards - Responsive Grid */}
+            {/* ---------- STATS CARDS ---------- */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 lg:gap-6 mb-6 sm:mb-8 lg:mb-10">
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Total Events</p>
-                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2">{stats.total}</p>
+                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2">
+                      {stats.total}
+                    </p>
                   </div>
                   <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-purple-500/20 rounded-lg sm:rounded-xl flex items-center justify-center">
                     <Calendar className="text-purple-400 w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6" />
@@ -571,7 +541,9 @@ const deleteEvent = async (eventId: string) => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Published</p>
-                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-green-400 mt-1 sm:mt-2">{stats.published}</p>
+                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-green-400 mt-1 sm:mt-2">
+                      {stats.published}
+                    </p>
                   </div>
                   <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-green-500/20 rounded-lg sm:rounded-xl flex items-center justify-center">
                     <CheckCircle className="text-green-400 w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6" />
@@ -583,7 +555,9 @@ const deleteEvent = async (eventId: string) => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Drafts</p>
-                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-yellow-400 mt-1 sm:mt-2">{stats.draft}</p>
+                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-yellow-400 mt-1 sm:mt-2">
+                      {stats.draft}
+                    </p>
                   </div>
                   <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-yellow-500/20 rounded-lg sm:rounded-xl flex items-center justify-center">
                     <Clock className="text-yellow-400 w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6" />
@@ -595,7 +569,9 @@ const deleteEvent = async (eventId: string) => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Ticket Tiers</p>
-                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2">{stats.totalTicketTiers}</p>
+                    <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2">
+                      {stats.totalTicketTiers}
+                    </p>
                   </div>
                   <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-blue-500/20 rounded-lg sm:rounded-xl flex items-center justify-center">
                     <Ticket className="text-blue-400 w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6" />
@@ -632,7 +608,7 @@ const deleteEvent = async (eventId: string) => {
               </div>
             </div>
 
-            {/* Mobile Filter Toggle */}
+            {/* ---------- MOBILE FILTER TOGGLE ---------- */}
             <div className="lg:hidden mb-4">
               <button
                 onClick={() => setShowMobileFilters(!showMobileFilters)}
@@ -642,12 +618,15 @@ const deleteEvent = async (eventId: string) => {
                   <Filter size={18} />
                   <span>Filters & Search</span>
                 </div>
-                <ChevronDown size={18} className={`transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                  size={18}
+                  className={`transition-transform ${showMobileFilters ? "rotate-180" : ""}`}
+                />
               </button>
             </div>
 
-            {/* Filters and Search - Desktop */}
-            <div className={`${showMobileFilters ? 'block' : 'hidden'} lg:block mb-6 sm:mb-8`}>
+            {/* ---------- FILTERS & SEARCH (Desktop always visible, mobile toggled) ---------- */}
+            <div className={`${showMobileFilters ? "block" : "hidden"} lg:block mb-6 sm:mb-8`}>
               <div className="flex flex-col lg:flex-row gap-4">
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
@@ -697,16 +676,13 @@ const deleteEvent = async (eventId: string) => {
               </div>
             </div>
 
-            {/* Loading State */}
-            {loading && (
+            {/* ---------- LOADING / EMPTY / EVENTS GRID ---------- */}
+            {loading ? (
               <div className="flex flex-col justify-center items-center py-20 sm:py-32">
                 <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-t-4 border-b-4 border-purple-500 mb-3 sm:mb-4"></div>
                 <p className="text-gray-400 text-sm sm:text-base">Loading your events...</p>
               </div>
-            )}
-
-            {/* Empty State */}
-            {!loading && filteredEvents.length === 0 && (
+            ) : filteredEvents.length === 0 ? (
               <div className="text-center py-12 sm:py-20">
                 <div className="inline-flex items-center justify-center w-20 h-20 sm:w-32 sm:h-32 bg-gray-800/50 border-2 border-dashed border-gray-700 rounded-3xl mb-6 sm:mb-8">
                   <Calendar size={32} className="sm:w-14 sm:h-14 text-gray-600" />
@@ -725,19 +701,19 @@ const deleteEvent = async (eventId: string) => {
                   Create Your First Event
                 </button>
               </div>
-            )}
-
-            {/* Events Grid */}
-            {!loading && filteredEvents.length > 0 && (
+            ) : (
               <>
                 <div className="mb-4 sm:mb-6 flex justify-between items-center">
                   <p className="text-gray-400 text-sm sm:text-base">
-                    Showing <span className="text-white font-semibold">{filteredEvents.length}</span> event{filteredEvents.length !== 1 ? 's' : ''}
+                    Showing{" "}
+                    <span className="text-white font-semibold">{filteredEvents.length}</span> event
+                    {filteredEvents.length !== 1 ? "s" : ""}
                   </p>
                   <div className="text-xs sm:text-sm text-gray-500">
-                    Sorted by: {sortBy.replace('-', ' ')}
+                    Sorted by: {sortBy.replace("-", " ")}
                   </div>
                 </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
                   {filteredEvents.map((event) => {
                     const imageUrl =
@@ -914,12 +890,14 @@ const deleteEvent = async (eventId: string) => {
                             </div>
                           </div>
 
-                          {/* Ticket tier preview - Only show on larger screens */}
-                          {hasTiers && window.innerWidth >= 640 && (
+                          {/* Ticket tier preview - Now visible on all screens */}
+                          {hasTiers && (
                             <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-white/10">
                               <div className="flex justify-between items-center mb-2 sm:mb-3">
                                 <p className="text-xs text-gray-400">Ticket Tiers</p>
-                                <span className="text-xs text-gray-500">{ticketTiersCount} tier{ticketTiersCount !== 1 ? 's' : ''}</span>
+                                <span className="text-xs text-gray-500">
+                                  {ticketTiersCount} tier{ticketTiersCount !== 1 ? "s" : ""}
+                                </span>
                               </div>
                               <div className="space-y-1.5 sm:space-y-2">
                                 {event.ticketTiers?.slice(0, 2).map((tier: TicketTier, index: number) => (
@@ -928,14 +906,19 @@ const deleteEvent = async (eventId: string) => {
                                     className="flex justify-between items-center px-2 sm:px-3 py-1.5 sm:py-2 bg-white/5 rounded-lg"
                                   >
                                     <div>
-                                      <div className="text-xs sm:text-sm text-white truncate max-w-[120px] sm:max-w-none">{tier.tier_name}</div>
+                                      <div className="text-xs sm:text-sm text-white truncate max-w-[120px] sm:max-w-none">
+                                        {tier.tier_name}
+                                      </div>
                                       <div className="text-xs text-gray-400">
-                                        {formatCurrency(tier.price)} • {tier.quantity_sold}/{tier.quantity_total} sold
+                                        {formatCurrency(tier.price)} • {tier.quantity_sold}/
+                                        {tier.quantity_total} sold
                                       </div>
                                     </div>
                                     <div className="text-xs text-gray-400">
                                       {tier.quantity_sold > 0 ? (
-                                        <span className="text-green-400">{formatCurrency(tier.price * tier.quantity_sold)}</span>
+                                        <span className="text-green-400">
+                                          {formatCurrency(tier.price * tier.quantity_sold)}
+                                        </span>
                                       ) : (
                                         "No sales"
                                       )}
@@ -945,7 +928,8 @@ const deleteEvent = async (eventId: string) => {
                                 {ticketTiersCount > 2 && (
                                   <div className="text-center pt-1 sm:pt-2">
                                     <span className="text-xs text-gray-500">
-                                      +{ticketTiersCount - 2} more tier{ticketTiersCount - 2 !== 1 ? 's' : ''}
+                                      +{ticketTiersCount - 2} more tier
+                                      {ticketTiersCount - 2 !== 1 ? "s" : ""}
                                     </span>
                                   </div>
                                 )}
@@ -961,7 +945,7 @@ const deleteEvent = async (eventId: string) => {
                             >
                               <Edit size={12} className="sm:w-4 sm:h-4" /> Manage
                             </button>
-                            
+
                             <button
                               onClick={() => navigate(`/organizer/event/${event.id}`)}
                               className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 sm:py-2.5 rounded-lg flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium transition"
@@ -980,7 +964,7 @@ const deleteEvent = async (eventId: string) => {
         </div>
       </div>
 
-      {/* Delete confirmation modal */}
+      {/* ---------- DELETE CONFIRMATION MODAL ---------- */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 border border-white/10 rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 max-w-md w-full">

@@ -1,6 +1,5 @@
-// src/pages/EventDetails.tsx - COMPLETE UPDATE with ID & Slug support
+// src/pages/EventDetails.tsx - COMPLETE UPDATE with ID & Slug support + Subaccounts
 'use client';
-
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
@@ -9,8 +8,12 @@ import {
   Calendar,
   MapPin,
   Ticket,
+  ShieldCheck,
   Loader2,
   X,
+  ImageOff,
+  Youtube,
+  Instagram,
   CreditCard,
   Smartphone,
   Building2,
@@ -79,6 +82,29 @@ interface TicketTier {
   is_active?: boolean;
 }
 
+interface FeeBreakdown {
+  item: string;
+  amount: number;
+  percentage?: number;
+}
+
+interface FeeCalculation {
+  baseAmount: number;
+  serviceFee: number;
+  vatFee: number;
+  platformFee: number;
+  processingFee: number;
+  stampDuty: number; // 👈 Add this line here
+  totalAmount: number;
+  totalAmountInNGN: number;
+  breakdown: {
+    item: string;
+    amount: number;
+    percentage?: number;
+  }[];
+}
+
+
 interface GuestArtist {
   id: string;
   event_id: string;
@@ -104,6 +130,7 @@ interface EventDetailsType {
   title: string;
   date: string;
   time?: string;
+  category?: string;
   location: string;
   venue?: string;
   image: string;
@@ -119,6 +146,9 @@ interface EventDetailsType {
   };
   guest_artists?: GuestArtist[];
   fee_strategy?: 'pass_to_attendees' | 'absorb_fees';
+  // Subaccount fields for payment splitting
+  organizer_subaccount_code?: string;      // Paystack subaccount code
+  organizer_flutterwave_subaccount?: string; // Flutterwave subaccount ID
 }
 
 // Ride service type
@@ -438,95 +468,95 @@ const getVatRate = (countryCode?: string): number => {
 };
 
 // Calculate fees based on strategy
-interface FeeCalculation {
-  baseAmount: number;
-  serviceFee: number;
-  vatFee: number;
-  platformFee: number;
-  processingFee: number;
-  totalAmount: number;
-  totalAmountInNGN: number;
-  breakdown: {
-    item: string;
-    amount: number;
-    percentage?: number;
-  }[];
-}
 const calculateFees = (
   baseAmount: number,
   feeStrategy: 'pass_to_attendees' | 'absorb_fees' = 'pass_to_attendees',
   currency: Currency = 'NGN',
-  processingFee: number = 0,
-  country?: string
+  country: string = 'NGN'
 ): FeeCalculation => {
   // 🆓 FREE TICKET – absolutely no fees
-  if (baseAmount === 0) {
-    return {
-      baseAmount: 0,
-      serviceFee: 0,
-      vatFee: 0,
-      platformFee: 0,
-      processingFee: 0,
-      totalAmount: 0,
-      totalAmountInNGN: 0,
-      breakdown: [{ item: 'Ticket Price', amount: 0 }]
-    };
+ if (baseAmount === 0) {
+  return {
+    baseAmount: 0,       // ₦0
+    serviceFee: 0,       // ₦0
+    vatFee: 0,           // ₦0
+    platformFee: 0,      // ₦0
+    processingFee: 0,    // ₦0
+    stampDuty: 0,        // ₦0
+    totalAmount: 0,      // ₦0
+    totalAmountInNGN: 0, // ₦0
+    breakdown: [{ item: 'Ticket Price', amount: 0 }]
+  };
+}
+
+// Example logic for a ₦5,000 ticket:
+// baseAmount: 5000
+// serviceFee: 250
+// vatFee: 32.16
+// totalAmount: 5282.16 
+
+  // 2026 Nigerian Financial Standards (NRS/EMTL Compliance)
+  const SERVICE_FEE_PERCENT = 5; 
+  const GATEWAY_RATE = 0.015;    
+  const GATEWAY_FLAT = baseAmount < 2500 ? 0 : 100; 
+  const VAT_RATE = 0.075; // 7.5% mandatory on service fees
+  const GATEWAY_CAP = 2000;       
+  const STAMP_DUTY_THRESHOLD = 10000;
+  const STAMP_DUTY_AMOUNT = 50;
+
+  // 1. Core Calculations
+  const serviceFee = (baseAmount * SERVICE_FEE_PERCENT) / 100;
+  
+  // Gateway fee is calculated on (Ticket + Your Service Fee)
+  let gatewayProcessingFee = ((baseAmount + serviceFee) * GATEWAY_RATE) + GATEWAY_FLAT;
+  
+  // Paystack/Flutterwave Local Cap
+  if (gatewayProcessingFee > GATEWAY_CAP) gatewayProcessingFee = GATEWAY_CAP;
+
+  // VAT applied ONLY to service & processing fees (Legal Requirement)
+  const vatFee = (serviceFee + gatewayProcessingFee) * VAT_RATE;
+
+  // Electronic Money Transfer Levy (Stamp Duty) applies to transactions ₦10k+
+  const stampDuty = (baseAmount + serviceFee) >= STAMP_DUTY_THRESHOLD ? STAMP_DUTY_AMOUNT : 0;
+
+  // 2. Determine Strategy Totals
+  const totalFees = serviceFee + gatewayProcessingFee + vatFee + stampDuty;
+  const totalAmount = feeStrategy === 'pass_to_attendees' ? baseAmount + totalFees : baseAmount;
+
+  // 3. Build Full Breakdown
+  const breakdown: any[] = [
+    { item: 'Ticket Price', amount: baseAmount },
+    { item: `Service Fee (${SERVICE_FEE_PERCENT}%)`, amount: serviceFee, percentage: SERVICE_FEE_PERCENT },
+    { item: 'Processing Fee (1.5% + 100)', amount: gatewayProcessingFee },
+    { item: `VAT (7.5% on Fees)`, amount: vatFee, percentage: 7.5 }
+  ];
+
+  if (stampDuty > 0) {
+    breakdown.push({ item: 'Stamp Duty (EMTL)', amount: stampDuty });
   }
 
-  const vatRate = getVatRate(country);
-  
+  // Add the "Credit" line if the organizer absorbs the cost
   if (feeStrategy === 'absorb_fees') {
-    const vatFee = (baseAmount * vatRate) / 100;
-    const totalAmount = baseAmount + vatFee + processingFee;
-    
-    const baseAmountInNGN = convertToNGN(baseAmount, currency);
-    const vatFeeInNGN = convertToNGN(vatFee, currency);
-    const processingFeeInNGN = convertToNGN(processingFee, currency);
-    const totalAmountInNGN = baseAmountInNGN + vatFeeInNGN + processingFeeInNGN;
-    
-    return {
-      baseAmount,
-      serviceFee: 0,
-      vatFee,
-      platformFee: (baseAmount * PLATFORM_FEE_PERCENT) / 100,
-      processingFee,
-      totalAmount,
-      totalAmountInNGN,
-      breakdown: [
-        { item: 'Ticket Price', amount: baseAmount },
-        ...(vatFee > 0 ? [{ item: `VAT (${vatRate}%)`, amount: vatFee, percentage: vatRate }] : []),
-        ...(processingFee > 0 ? [{ item: 'Processing Fee', amount: processingFee }] : [])
-      ]
-    };
-  } else {
-    const serviceFee = (baseAmount * SERVICE_FEE_PERCENT) / 100;
-    const subtotal = baseAmount + serviceFee;
-    const vatFee = (subtotal * vatRate) / 100;
-    const totalAmount = subtotal + vatFee + processingFee;
-    
-    const baseAmountInNGN = convertToNGN(baseAmount, currency);
-    const serviceFeeInNGN = convertToNGN(serviceFee, currency);
-    const vatFeeInNGN = convertToNGN(vatFee, currency);
-    const processingFeeInNGN = convertToNGN(processingFee, currency);
-    const totalAmountInNGN = baseAmountInNGN + serviceFeeInNGN + vatFeeInNGN + processingFeeInNGN;
-    
-    return {
-      baseAmount,
-      serviceFee,
-      vatFee,
-      platformFee: (baseAmount * PLATFORM_FEE_PERCENT) / 100,
-      processingFee,
-      totalAmount,
-      totalAmountInNGN,
-      breakdown: [
-        { item: 'Ticket Price', amount: baseAmount },
-        { item: `Service Fee (${SERVICE_FEE_PERCENT}%)`, amount: serviceFee, percentage: SERVICE_FEE_PERCENT },
-        ...(vatFee > 0 ? [{ item: `VAT (${vatRate}%)`, amount: vatFee, percentage: vatRate }] : []),
-        ...(processingFee > 0 ? [{ item: 'Processing Fee', amount: processingFee }] : [])
-      ]
-    };
+    breakdown.push({ 
+      item: 'Fees Covered by Organizer', 
+      amount: -totalFees 
+    });
   }
+
+  // 4. Final Return (Satisfies FeeCalculation Interface)
+  return {
+    baseAmount,
+    serviceFee,
+    vatFee,
+    platformFee: serviceFee,
+    processingFee: gatewayProcessingFee,
+    stampDuty, // ✅ Fixed: Added required property
+    totalAmount,
+    totalAmountInNGN: totalAmount,
+    breakdown
+  };
 };
+
 
 // Get ride service deep link
 const getRideDeepLink = (ride: RideService, eventLocation: string, lat?: number, lng?: number): string => {
@@ -721,8 +751,8 @@ const sendTicketEmail = async (
         to: email,
         name: name,
         eventTitle: event.title,
-        eventDate: formatEventDate(event.date),
-        eventTime: formatTime(event.time || ""),
+        eventDate: event.date,          // raw date string like "2025-12-31"
+        eventTime: event.time || "",     // raw time string like "19:30",
         eventVenue: event.venue || event.location,
         tickets: [{
           ticketType: tier.name,
@@ -863,8 +893,7 @@ export default function EventDetails() {
       baseAmount,
       event?.fee_strategy || 'pass_to_attendees',
       selectedCurrency,
-      processingFee,
-      selectedCountry
+      selectedCountry // This is now the 4th argument, matching the 'country' parameter
     );
     
     setFeeCalculation(calculation);
@@ -896,196 +925,202 @@ export default function EventDetails() {
     return convertToNGN(processingFee, selectedCurrency);
   }, [processingFee, selectedCurrency]);
 
-  // ================ UPDATED EVENT FETCHING ================
+  // ================ UPDATED EVENT FETCHING (with subaccount fields) ================
   // Handles BOTH ID and Slug with graceful fallback
-useEffect(() => {
-  const fetchEventAndArtists = async () => {
-    if (!slug) {
-      setLoading(false);
-      return;
-    }
-
-    console.log("🔍 Looking up event with identifier:", slug);
-
-    try {
-      let eventData: any = null;
-      
-      // ===== STEP 1: Check if identifier is a valid UUID =====
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
-      
-      if (isUuid) {
-        // Only try by ID if it's a valid UUID (prevents 400 errors)
-        const { data: idData, error: idError } = await supabase
-          .from("events")
-          .select(`
-            id,
-            title,
-            date,
-            time,
-            location,
-            venue,
-            image,
-            description,
-            lat,
-            lng,
-            slug
-          `)
-          .eq("id", slug)
-          .maybeSingle();
-
-        if (!idError && idData) {
-          eventData = idData;
-          console.log(`✅ Event found by ID: ${idData.id}`);
-        }
+  useEffect(() => {
+    const fetchEventAndArtists = async () => {
+      if (!slug) {
+        setLoading(false);
+        return;
       }
 
-      // ===== STEP 2: If not found by ID (or wasn't UUID), try by slug =====
-      if (!eventData) {
-        const { data: slugData, error: slugError } = await supabase
-          .from("events")
-          .select(`
-            id,
-            title,
-            date,
-            time,
-            location,
-            venue,
-            image,
-            description,
-            lat,
-            lng,
-            slug
-          `)
-          .eq("slug", slug)
-          .maybeSingle();
+      console.log("🔍 Looking up event with identifier:", slug);
 
-        if (!slugError && slugData) {
-          eventData = slugData;
-          console.log(`✅ Event found by slug: ${slugData.slug}`);
-        }
-      }
-
-      // ===== If no event found, throw error =====
-      if (!eventData) {
-        console.error("❌ Event not found with identifier:", slug);
-        throw new Error("Event not found");
-      }
-
-      // ===== STEP 3: Try to fetch fee_strategy (column may not exist yet) =====
-      let feeStrategy: 'pass_to_attendees' | 'absorb_fees' = 'pass_to_attendees';
       try {
-        const { data: feeData } = await supabase
-          .from("events")
-          .select("fee_strategy")
-          .eq("id", eventData.id)
-          .maybeSingle();
+        let eventData: any = null;
+        
+        // ===== STEP 1: Check if identifier is a valid UUID =====
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+        
+        if (isUuid) {
+          // Only try by ID if it's a valid UUID (prevents 400 errors)
+          const { data: idData, error: idError } = await supabase
+            .from("events")
+            .select(`
+              id,
+              title,
+              date,
+              time,
+              location,
+              venue,
+              image,
+              description,
+              lat,
+              lng,
+              slug,
+              organizer_subaccount_code,
+              organizer_flutterwave_subaccount
+            `)
+            .eq("id", slug)
+            .maybeSingle();
 
-        if (feeData?.fee_strategy === 'absorb_fees') {
-          feeStrategy = 'absorb_fees';
-          console.log("📊 Fee strategy found:", feeStrategy);
+          if (!idError && idData) {
+            eventData = idData;
+            console.log(`✅ Event found by ID: ${idData.id}`);
+          }
         }
-      } catch (feeErr) {
-        console.warn("⚠️ fee_strategy column not available yet, using default");
+
+        // ===== STEP 2: If not found by ID (or wasn't UUID), try by slug =====
+        if (!eventData) {
+          const { data: slugData, error: slugError } = await supabase
+            .from("events")
+            .select(`
+              id,
+              title,
+              date,
+              time,
+              location,
+              venue,
+              image,
+              description,
+              lat,
+              lng,
+              slug,
+              organizer_subaccount_code,
+              organizer_flutterwave_subaccount
+            `)
+            .eq("slug", slug)
+            .maybeSingle();
+
+          if (!slugError && slugData) {
+            eventData = slugData;
+            console.log(`✅ Event found by slug: ${slugData.slug}`);
+          }
+        }
+
+        // ===== If no event found, throw error =====
+        if (!eventData) {
+          console.error("❌ Event not found with identifier:", slug);
+          throw new Error("Event not found");
+        }
+
+        // ===== STEP 3: Try to fetch fee_strategy (column may not exist yet) =====
+        let feeStrategy: 'pass_to_attendees' | 'absorb_fees' = 'pass_to_attendees';
+        try {
+          const { data: feeData } = await supabase
+            .from("events")
+            .select("fee_strategy")
+            .eq("id", eventData.id)
+            .maybeSingle();
+
+          if (feeData?.fee_strategy === 'absorb_fees') {
+            feeStrategy = 'absorb_fees';
+            console.log("📊 Fee strategy found:", feeStrategy);
+          }
+        } catch (feeErr) {
+          console.warn("⚠️ fee_strategy column not available yet, using default");
+        }
+
+        // ===== STEP 4: Fetch guest artists =====
+        const { data: guestArtistsData, error: artistsError } = await supabase
+          .from("guest_artistes")
+          .select(`
+            id,
+            event_id,
+            name,
+            role,
+            image_url,
+            social_media,
+            bio,
+            created_at,
+            updated_at
+          `)
+          .eq("event_id", eventData.id)
+          .order("created_at", { ascending: true });
+
+        if (artistsError) {
+          console.error("Error fetching guest artists:", artistsError);
+        }
+
+        const processedArtists: GuestArtist[] = (guestArtistsData || []).map((artist: any) => ({
+          id: artist.id,
+          event_id: artist.event_id,
+          name: artist.name,
+          role: artist.role,
+          image_url: artist.image_url,
+          bio: artist.bio,
+          social_media: typeof artist.social_media === 'string' 
+            ? JSON.parse(artist.social_media)
+            : (artist.social_media || {}),
+          created_at: artist.created_at,
+          updated_at: artist.updated_at
+        }));
+
+        setGuestArtists(processedArtists);
+
+        // ===== STEP 5: Fetch ticket tiers =====
+        const { data: ticketTiersData } = await supabase
+          .from("ticketTiers")
+          .select(`
+            id,
+            tier_name,
+            price,
+            description,
+            quantity_total,
+            quantity_sold,
+            is_active
+          `)
+          .eq("event_id", eventData.id)
+          .eq("is_active", true);
+
+        const ticketTiers: TicketTier[] = (ticketTiersData || []).map((t: any) => ({
+          id: t.id,
+          name: t.tier_name,
+          price: t.price ?? 0,
+          description: t.description ?? "",
+          quantity_available: t.quantity_total ?? null,
+          quantity_sold: t.quantity_sold ?? 0,
+          is_active: t.is_active ?? true
+        }));
+
+        const displayTiers = ticketTiers.length > 0 ? ticketTiers : [{
+          id: "default-" + eventData.id,
+          name: "General Admission",
+          price: 0,
+          description: "Standard admission ticket",
+          quantity_available: 100,
+          quantity_sold: 0,
+          is_active: true
+        }];
+
+        // ===== STEP 6: Set event state =====
+        setEvent({
+          ...eventData,
+          ticketTiers: displayTiers,
+          guest_artists: processedArtists,
+          fee_strategy: feeStrategy,
+          organizer_subaccount_code: eventData.organizer_subaccount_code,
+          organizer_flutterwave_subaccount: eventData.organizer_flutterwave_subaccount
+        });
+
+        // Initialize quantities for each tier
+        const initQuantities: { [key: string]: number } = {};
+        displayTiers.forEach(tier => {
+          if (tier.id) initQuantities[tier.id] = 1;
+        });
+        setQuantities(initQuantities);
+
+        setNotFound(false);
+      } catch (err) {
+        console.error("❌ Event fetch error:", err);
+        setNotFound(true);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      // ===== STEP 4: Fetch guest artists =====
-      const { data: guestArtistsData, error: artistsError } = await supabase
-        .from("guest_artistes")
-        .select(`
-          id,
-          event_id,
-          name,
-          role,
-          image_url,
-          social_media,
-          bio,
-          created_at,
-          updated_at
-        `)
-        .eq("event_id", eventData.id)
-        .order("created_at", { ascending: true });
-
-      if (artistsError) {
-        console.error("Error fetching guest artists:", artistsError);
-      }
-
-      const processedArtists: GuestArtist[] = (guestArtistsData || []).map((artist: any) => ({
-        id: artist.id,
-        event_id: artist.event_id,
-        name: artist.name,
-        role: artist.role,
-        image_url: artist.image_url,
-        bio: artist.bio,
-        social_media: typeof artist.social_media === 'string' 
-          ? JSON.parse(artist.social_media)
-          : (artist.social_media || {}),
-        created_at: artist.created_at,
-        updated_at: artist.updated_at
-      }));
-
-      setGuestArtists(processedArtists);
-
-      // ===== STEP 5: Fetch ticket tiers =====
-      const { data: ticketTiersData } = await supabase
-        .from("ticketTiers")
-        .select(`
-          id,
-          tier_name,
-          price,
-          description,
-          quantity_total,
-          quantity_sold,
-          is_active
-        `)
-        .eq("event_id", eventData.id)
-        .eq("is_active", true);
-
-      const ticketTiers: TicketTier[] = (ticketTiersData || []).map((t: any) => ({
-        id: t.id,
-        name: t.tier_name,
-        price: t.price ?? 0,
-        description: t.description ?? "",
-        quantity_available: t.quantity_total ?? null,
-        quantity_sold: t.quantity_sold ?? 0,
-        is_active: t.is_active ?? true
-      }));
-
-      const displayTiers = ticketTiers.length > 0 ? ticketTiers : [{
-        id: "default-" + eventData.id,
-        name: "General Admission",
-        price: 0,
-        description: "Standard admission ticket",
-        quantity_available: 100,
-        quantity_sold: 0,
-        is_active: true
-      }];
-
-      // ===== STEP 6: Set event state =====
-      setEvent({
-        ...eventData,
-        ticketTiers: displayTiers,
-        guest_artists: processedArtists,
-        fee_strategy: feeStrategy
-      });
-
-      // Initialize quantities for each tier
-      const initQuantities: { [key: string]: number } = {};
-      displayTiers.forEach(tier => {
-        if (tier.id) initQuantities[tier.id] = 1;
-      });
-      setQuantities(initQuantities);
-
-      setNotFound(false);
-    } catch (err) {
-      console.error("❌ Event fetch error:", err);
-      setNotFound(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  fetchEventAndArtists();
-}, [slug]);
+    fetchEventAndArtists();
+  }, [slug]);
   // ================ END OF UPDATED FETCHING ================
 
   // Update document title
@@ -1180,56 +1215,91 @@ useEffect(() => {
     }
   }, [formErrors]);
 
-  // Paystack Payment Handler
-  const handlePaystackPayment = useCallback(async (orderId: string, tier: TicketTier, quantity: number) => {
-    if (!event || !window.PaystackPop || !feeCalculation) {
-      throw new Error("Payment gateway not available");
+  // Paystack Payment Handler (with subaccount support)
+// Paystack Payment Handler (with exact flat split) – Updated with production API URL
+const handlePaystackPayment = useCallback(async (orderId: string, tier: TicketTier, quantity: number) => {
+  if (!event || !window.PaystackPop || !feeCalculation) {
+    throw new Error("Payment gateway not available");
+  }
+
+  const totalAmountKobo = Math.round(Number(feeCalculation.totalAmount) * 100);
+  let organizerShareKobo = Math.round(Number(feeCalculation.baseAmount) * 100);
+
+  // Adjust organizer share if fees are absorbed by organizer
+  if (event.fee_strategy === 'absorb_fees') {
+    const totalFees = feeCalculation.serviceFee + feeCalculation.processingFee + feeCalculation.vatFee + (feeCalculation.stampDuty || 0);
+    organizerShareKobo = Math.round((Number(feeCalculation.baseAmount) - totalFees) * 100);
+  }
+
+  const cleanEmail = formData.email.trim().toLowerCase();
+  const uniqueRef = `STH-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+  const metadata = {
+    custom_fields: [
+      { display_name: "Event", variable_name: "event_name", value: event.title },
+      { display_name: "Order ID", variable_name: "order_id", value: orderId },
+      { display_name: "Service Fee", variable_name: "service_fee", value: feeCalculation.serviceFee.toFixed(2) },
+      { display_name: "Statutory VAT", variable_name: "vat_fee", value: feeCalculation.vatFee.toFixed(2) }
+    ]
+  };
+
+  let split_code = null;
+  if (event.organizer_subaccount_code && organizerShareKobo > 0) {
+    // Safety: organizer share must be less than total
+    if (organizerShareKobo >= totalAmountKobo) {
+      throw new Error("Organizer share exceeds or equals total transaction amount.");
     }
 
-    const amountInKobo = Math.round(feeCalculation.totalAmount * 100);
-    const cleanEmail = formData.email.trim().toLowerCase();
-    const uniqueRef = `STH-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    try {
+      const response = await fetch(`${API_URL}/api/paystack/create-split`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subaccountCode: event.organizer_subaccount_code.trim(),
+          flatAmount: organizerShareKobo, // now correct for both strategies
+          currency: 'NGN',
+        }),
+      });
 
-    return new Promise((resolve, reject) => {
-      const paystackConfig = {
-        key: PAYSTACK_PUBLIC_KEY.trim(),
-        email: cleanEmail,
-        amount: amountInKobo,
-        currency: 'NGN',
-        ref: uniqueRef,
-        metadata: {
-          custom_fields: [
-            { display_name: "Event", variable_name: "event_name", value: event.title },
-            { display_name: "Ticket Tier", variable_name: "tier_name", value: tier.name },
-            { display_name: "Quantity", variable_name: "quantity", value: quantity.toString() },
-            { display_name: "Order ID", variable_name: "order_id", value: orderId },
-            { display_name: "Fee Strategy", variable_name: "fee_strategy", value: event.fee_strategy || 'pass_to_attendees' },
-            { display_name: "Service Fee", variable_name: "service_fee", value: feeCalculation.serviceFee.toString() },
-            { display_name: "VAT Fee", variable_name: "vat_fee", value: feeCalculation.vatFee.toString() },
-            { display_name: "Total NGN", variable_name: "total_ngn", value: feeCalculation.totalAmountInNGN.toString() }
-          ]
-        },
-        callback: (response: any) => {
-          console.log("✅ Paystack payment successful:", response);
-          resolve(response);
-        },
-        onClose: () => {
-          console.log("❌ Paystack payment cancelled");
-          setCheckoutLoading(false);
-          reject(new Error("Payment cancelled by user"));
-        }
-      };
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Split creation failed');
+      split_code = data.split_code;
+    } catch (error: any) {
+      console.error('❌ Split Error:', error);
+      throw new Error(`Payment Setup Error: ${error.message}`);
+    }
+  }
 
-      try {
-        const handler = window.PaystackPop.setup(paystackConfig);
-        handler.openIframe();
-      } catch (error: any) {
-        reject(new Error("Failed to initialize Paystack: " + error.message));
+  return new Promise((resolve, reject) => {
+    const paystackConfig: any = {
+      key: PAYSTACK_PUBLIC_KEY.trim(),
+      email: cleanEmail,
+      amount: totalAmountKobo,
+      currency: 'NGN',
+      ref: uniqueRef,
+      metadata: metadata,
+      ...(split_code ? { split_code } : { subaccount: event.organizer_subaccount_code }),
+      bearer: 'account', // main account pays transaction fees
+      callback: (response: any) => resolve(response),
+      onClose: () => {
+        setCheckoutLoading(false);
+        reject(new Error("Transaction cancelled"));
       }
-    });
-  }, [event, formData, feeCalculation]);
+    };
 
-  // Flutterwave Payment Handler
+    try {
+      const handler = window.PaystackPop.setup(paystackConfig);
+      handler.openIframe();
+    } catch (error: any) {
+      reject(new Error("Initialization Failed: " + error.message));
+    }
+  });
+}, [event, formData, feeCalculation]);
+
+
+
+
+  // Flutterwave Payment Handler (with subaccount support)
   const handleFlutterwavePayment = useCallback(async (orderId: string, tier: TicketTier, quantity: number) => {
     if (!event || !FLUTTERWAVE_PUBLIC_KEY || !feeCalculation) {
       throw new Error("Flutterwave configuration error");
@@ -1237,7 +1307,7 @@ useEffect(() => {
 
     const finalAmount = feeCalculation.totalAmount;
 
-    const config = {
+    const config: any = {
       public_key: FLUTTERWAVE_PUBLIC_KEY,
       tx_ref: orderId,
       amount: finalAmount,
@@ -1269,6 +1339,17 @@ useEffect(() => {
         vat_rate: getVatRate(selectedCountry)
       }
     };
+
+    // Add subaccount if available
+    if (event.organizer_flutterwave_subaccount) {
+      config.subaccounts = [
+        {
+          id: event.organizer_flutterwave_subaccount,
+          // Optionally set split_type, split_value if needed
+        }
+      ];
+      console.log("📊 Using Flutterwave subaccount:", event.organizer_flutterwave_subaccount);
+    }
 
     return new Promise((resolve, reject) => {
       if (window.FlutterwaveCheckout) {
@@ -1413,203 +1494,204 @@ useEffect(() => {
   }, [event, formData, selectedCurrency, exchangeRates, feeCalculation, closeCheckout, navigate]);
 
   // Checkout submit handler
- const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
-  e.preventDefault();
+  const handleCheckoutSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  if (!checkoutData || !event || !validateForm() || !feeCalculation) {
-    console.error("Checkout validation failed");
-    return;
-  }
-
-  setCheckoutLoading(true);
-
-  try {
-    const tier = event.ticketTiers?.find(t => t.id === checkoutData.tier.id);
-    if (!tier || !tier.id) {
-      throw new Error("Invalid ticket tier selection");
-    }
-
-    const tierId = tier.id;
-    const tierName = tier.name;
-    const quantity = checkoutData.quantity || 1;
-    
-    let orderId = checkoutData.orderId;
-    if (!orderId || orderId === "undefined" || orderId === "null") {
-      orderId = `STH-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-      checkoutData.orderId = orderId;
-    }
-    
-    console.log("✅ Processing order:", { 
-      orderId, 
-      gateway: selectedGateway, 
-      currency: selectedCurrency,
-      amount: feeCalculation.totalAmount,
-      amountInNGN: feeCalculation.totalAmountInNGN,
-      serviceFee: feeCalculation.serviceFee,
-      vatFee: feeCalculation.vatFee,
-      feeStrategy: event.fee_strategy
-    });
-
-    // ============ FIXED STOCK CHECK ============
-    // Skip stock check for default tiers (they don't exist in the ticketTiers table)
-    const isDefaultTier = tierId.toString().startsWith('default-');
-    let remaining = Infinity; // Assume plenty available
-
-    if (!isDefaultTier) {
-      try {
-        const { data: stockCheck, error: stockError } = await supabase
-          .from("ticketTiers")
-          .select("quantity_total, quantity_sold")
-          .eq("id", tierId)
-          .single();
-
-        if (stockError || !stockCheck) {
-          console.warn("⚠️ Stock check failed – assuming tickets are available", { tierId, error: stockError });
-          // Do not throw – proceed with purchase
-        } else {
-          remaining = (stockCheck.quantity_total || 0) - (stockCheck.quantity_sold || 0);
-          if (remaining < quantity) {
-            throw new Error(`Sold out! Only ${remaining} tickets left.`);
-          }
-        }
-      } catch (stockErr) {
-        console.warn("⚠️ Stock check exception – assuming availability", stockErr);
-        // Continue anyway
-      }
-    }
-    // ============================================
-
-    // Free ticket flow - NO FEES ON FREE TICKETS
-    if (feeCalculation.totalAmount === 0) {
-      const freeRef = `STH-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-
-      console.log("🆓 FREE TICKET FLOW STARTED - NO FEES");
-      console.log("🆓 Order ID:", orderId);
-
-      const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
-        const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
-        const qr_code_url = await QRCode.toDataURL(qrData);
-
-        const ticketData = {
-          event_id: event.id,
-          tier_id: tierId,
-          tier_name: tierName,
-          full_name: formData.fullName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
-          ticket_type: tierName,
-          price: 0,
-          amount_in_ngn: 0,
-          service_fee: 0,
-          vat_fee: 0,
-          processing_fee: 0,
-          qr_code_url,
-          reference: freeRef,
-          order_id: orderId,
-          purchased_at: new Date().toISOString().replace('Z', ''),
-          buyer_email: formData.email.trim(),
-          created_at: new Date().toISOString(),
-          quantity: 1,
-          tier_description: tier?.description || tierName,
-          payment_gateway: 'free',
-          currency: 'NGN',
-          fee_strategy: event.fee_strategy || 'pass_to_attendees'
-        };
-
-        return await insertTicket(ticketData);
-      });
-
-      await Promise.all(insertPromises);
-
-      const verification = await verifyTicketsInDatabase(orderId, freeRef);
-
-      if (!verification.tickets || verification.tickets.length === 0) {
-        throw new Error(`Failed to create tickets. Please contact support with Order ID: ${orderId}`);
-      }
-
-      console.log(`✅ ${verification.totalQuantity} free tickets verified in database`);
-
-      // Only try to update tier quantity if it's a real tier
-      if (!isDefaultTier) {
-        await updateTierQuantity(tierId, quantity);
-      }
-
-      await sendTicketEmail(
-        freeRef,
-        formData.email,
-        formData.fullName,
-        event,
-        tier,
-        quantity,
-        'NGN',
-        0,
-        0,
-        0,
-        0,
-        event.fee_strategy || 'pass_to_attendees'
-      );
-
-      const params = new URLSearchParams({
-        free: "true",
-        title: event.title,
-        location: event.location,
-        venue: event.venue || event.location,
-        date: formatEventDate(event.date),
-        time: formatTime(event.time || ""),
-        type: tierName,
-        qty: quantity.toString(),
-        price: "₦0",
-        serviceFee: "₦0",
-        vatFee: "₦0",
-        feeStrategy: event.fee_strategy || 'pass_to_attendees',
-        lat: event.lat?.toString() || "0",
-        lng: event.lng?.toString() || "0",
-        orderId: orderId
-      }).toString();
-
-      closeCheckout();
-      navigate(`/bag/${orderId}?${params}`);
+    if (!checkoutData || !event || !validateForm() || !feeCalculation) {
+      console.error("Checkout validation failed");
       return;
     }
 
-    // Paid ticket flow
-    let paymentResponse;
-    if (selectedGateway === 'paystack') {
-      paymentResponse = await handlePaystackPayment(orderId, tier, quantity);
-    } else if (selectedGateway === 'flutterwave') {
-      paymentResponse = await handleFlutterwavePayment(orderId, tier, quantity);
-    } else {
-      throw new Error("Invalid payment gateway selected");
+    setCheckoutLoading(true);
+
+    try {
+      const tier = event.ticketTiers?.find(t => t.id === checkoutData.tier.id);
+      if (!tier || !tier.id) {
+        throw new Error("Invalid ticket tier selection");
+      }
+
+      const tierId = tier.id;
+      const tierName = tier.name;
+      const quantity = checkoutData.quantity || 1;
+      
+      let orderId = checkoutData.orderId;
+      if (!orderId || orderId === "undefined" || orderId === "null") {
+        orderId = `STH-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+        checkoutData.orderId = orderId;
+      }
+      
+      console.log("✅ Processing order:", { 
+        orderId, 
+        gateway: selectedGateway, 
+        currency: selectedCurrency,
+        amount: feeCalculation.totalAmount,
+        amountInNGN: feeCalculation.totalAmountInNGN,
+        serviceFee: feeCalculation.serviceFee,
+        vatFee: feeCalculation.vatFee,
+        feeStrategy: event.fee_strategy
+      });
+
+      // ============ FIXED STOCK CHECK ============
+      // Skip stock check for default tiers (they don't exist in the ticketTiers table)
+      const isDefaultTier = tierId.toString().startsWith('default-');
+      let remaining = Infinity; // Assume plenty available
+
+      if (!isDefaultTier) {
+        try {
+          const { data: stockCheck, error: stockError } = await supabase
+            .from("ticketTiers")
+            .select("quantity_total, quantity_sold")
+            .eq("id", tierId)
+            .single();
+
+          if (stockError || !stockCheck) {
+            console.warn("⚠️ Stock check failed – assuming tickets are available", { tierId, error: stockError });
+            // Do not throw – proceed with purchase
+          } else {
+            remaining = (stockCheck.quantity_total || 0) - (stockCheck.quantity_sold || 0);
+            if (remaining < quantity) {
+              throw new Error(`Sold out! Only ${remaining} tickets left.`);
+            }
+          }
+        } catch (stockErr) {
+          console.warn("⚠️ Stock check exception – assuming availability", stockErr);
+          // Continue anyway
+        }
+      }
+      // ============================================
+
+      // Free ticket flow - NO FEES ON FREE TICKETS
+      if (feeCalculation.totalAmount === 0) {
+        const freeRef = `STH-FREE-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+        console.log("🆓 FREE TICKET FLOW STARTED - NO FEES");
+        console.log("🆓 Order ID:", orderId);
+
+        const insertPromises = Array.from({ length: quantity }).map(async (_, i) => {
+          const qrData = `${event.id}|${tierId}|${Date.now()}|${i}`;
+          const qr_code_url = await QRCode.toDataURL(qrData);
+
+          const ticketData = {
+            event_id: event.id,
+            tier_id: tierId,
+            tier_name: tierName,
+            full_name: formData.fullName.trim(),
+            email: formData.email.trim(),
+            phone: formData.phone.trim(),
+            ticket_type: tierName,
+            price: 0,
+            amount_in_ngn: 0,
+            service_fee: 0,
+            vat_fee: 0,
+            processing_fee: 0,
+            qr_code_url,
+            reference: freeRef,
+            order_id: orderId,
+            purchased_at: new Date().toISOString().replace('Z', ''),
+            buyer_email: formData.email.trim(),
+            created_at: new Date().toISOString(),
+            quantity: 1,
+            tier_description: tier?.description || tierName,
+            payment_gateway: 'free',
+            currency: 'NGN',
+            fee_strategy: event.fee_strategy || 'pass_to_attendees'
+          };
+
+          return await insertTicket(ticketData);
+        });
+
+        await Promise.all(insertPromises);
+
+        const verification = await verifyTicketsInDatabase(orderId, freeRef);
+
+        if (!verification.tickets || verification.tickets.length === 0) {
+          throw new Error(`Failed to create tickets. Please contact support with Order ID: ${orderId}`);
+        }
+
+        console.log(`✅ ${verification.totalQuantity} free tickets verified in database`);
+
+        // Only try to update tier quantity if it's a real tier
+        if (!isDefaultTier) {
+          await updateTierQuantity(tierId, quantity);
+        }
+
+        await sendTicketEmail(
+          freeRef,
+          formData.email,
+          formData.fullName,
+          event,
+          tier,
+          quantity,
+          'NGN',
+          0,
+          0,
+          0,
+          0,
+          event.fee_strategy || 'pass_to_attendees'
+        );
+
+        const params = new URLSearchParams({
+          free: "true",
+          title: event.title,
+          location: event.location,
+          venue: event.venue || event.location,
+          date: formatEventDate(event.date),
+          time: formatTime(event.time || ""),
+          type: tierName,
+          qty: quantity.toString(),
+          price: "₦0",
+          serviceFee: "₦0",
+          vatFee: "₦0",
+          feeStrategy: event.fee_strategy || 'pass_to_attendees',
+          lat: event.lat?.toString() || "0",
+          lng: event.lng?.toString() || "0",
+          orderId: orderId
+        }).toString();
+
+        closeCheckout();
+        navigate(`/bag/${orderId}?${params}`);
+        return;
+      }
+
+      // Paid ticket flow
+      let paymentResponse;
+      if (selectedGateway === 'paystack') {
+        paymentResponse = await handlePaystackPayment(orderId, tier, quantity);
+      } else if (selectedGateway === 'flutterwave') {
+        paymentResponse = await handleFlutterwavePayment(orderId, tier, quantity);
+      } else {
+        throw new Error("Invalid payment gateway selected");
+      }
+
+      await processSuccessfulPayment(paymentResponse, orderId, tier, quantity, selectedGateway);
+
+    } catch (err: any) {
+      console.error("❌ Checkout Failure:", err);
+      
+      const errorMessage = err.message !== "Payment cancelled by user" 
+        ? `${err.message}\n\nPlease try:\n1. Checking your internet connection\n2. Refreshing the page\n3. Using a different browser\n\nIf the problem persists, contact support with:\n- Order ID: ${checkoutData?.orderId || 'N/A'}\n- Email: ${formData.email}`
+        : "Payment was cancelled";
+
+      if (errorMessage !== "Payment was cancelled") {
+        alert(errorMessage);
+      }
+      setCheckoutLoading(false);
     }
+  }, [
+    checkoutData,
+    event,
+    formData,
+    validateForm,
+    closeCheckout,
+    navigate,
+    selectedGateway,
+    selectedCurrency,
+    feeCalculation,
+    handlePaystackPayment,
+    handleFlutterwavePayment,
+    processSuccessfulPayment
+  ]);
 
-    await processSuccessfulPayment(paymentResponse, orderId, tier, quantity, selectedGateway);
-
-  } catch (err: any) {
-    console.error("❌ Checkout Failure:", err);
-    
-    const errorMessage = err.message !== "Payment cancelled by user" 
-      ? `${err.message}\n\nPlease try:\n1. Checking your internet connection\n2. Refreshing the page\n3. Using a different browser\n\nIf the problem persists, contact support with:\n- Order ID: ${checkoutData?.orderId || 'N/A'}\n- Email: ${formData.email}`
-      : "Payment was cancelled";
-
-    if (errorMessage !== "Payment was cancelled") {
-      alert(errorMessage);
-    }
-    setCheckoutLoading(false);
-  }
-}, [
-  checkoutData,
-  event,
-  formData,
-  validateForm,
-  closeCheckout,
-  navigate,
-  selectedGateway,
-  selectedCurrency,
-  feeCalculation,
-  handlePaystackPayment,
-  handleFlutterwavePayment,
-  processSuccessfulPayment
-]);
   // Country selector component
   const CountrySelector = () => {
     const countries = [
@@ -1746,49 +1828,82 @@ useEffect(() => {
           <div className="space-y-6 sm:space-y-8">
             {/* Event Image */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl sm:shadow-2xl"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="relative group rounded-[2.5rem] overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] bg-gray-100"
             >
-              <div className="relative w-full h-64 sm:h-80 lg:h-96 xl:h-[500px]">
+              <div className="relative w-full h-[400px] sm:h-[500px] lg:h-[600px] xl:h-[650px]">
+                {/* High-Resolution Image with Parallax-ready scaling */}
                 <img
                   src={event.image || PLACEHOLDER_IMAGE}
                   alt={event.title}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     target.src = PLACEHOLDER_IMAGE;
                     setImageError(true);
                   }}
-                  loading="lazy"
-                  onLoad={() => setImageError(false)}
                 />
-                {imageError && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100">
-                    <div className="text-center p-6 sm:p-8">
-                      <Calendar className="w-12 h-12 sm:w-16 sm:h-16 text-purple-300 mx-auto mb-3 sm:mb-4" />
-                      <p className="text-gray-600 font-medium text-sm sm:text-base">Event Image</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
 
-              <div className="absolute top-3 sm:top-4 left-3 sm:left-4 flex flex-wrap gap-1 sm:gap-2">
-                {event.ticketTiers?.some(t => parsePrice(t.price).isFree) && (
-                  <span className="px-2 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-bold rounded-full flex items-center gap-1">
-                    <Tag className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> FREE
-                  </span>
-                )}
-                <span className="px-2 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-blue-500 to-cyan-600 text-white text-xs font-bold rounded-full flex items-center gap-1">
-                  <Globe className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> GLOBAL
-                </span>
-                {event.fee_strategy === 'absorb_fees' && (
-                  <span className="px-2 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs font-bold rounded-full flex items-center gap-1">
-                    <Receipt className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> FEES INCLUDED
-                  </span>
-                )}
+                {/* Smart Overlays: Top-down for visibility, Bottom-up for depth */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
+
+                {/* Floating Badges - 2026 Glassmorphism Style */}
+                <div className="absolute top-6 left-6 flex flex-wrap gap-3 z-20">
+                  {event.ticketTiers?.some(t => parsePrice(t.price).isFree) && (
+                    <div className="px-4 py-2 bg-emerald-500/20 backdrop-blur-md border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                      Free Entry Available
+                    </div>
+                  )}
+                  
+                  <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-2">
+                    <Globe className="w-3 h-3" /> Global Event
+                  </div>
+
+                  {event.fee_strategy === 'absorb_fees' && (
+                    <div className="px-4 py-2 bg-amber-500/20 backdrop-blur-md border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-2">
+                      <Receipt className="w-3 h-3" /> No Extra Fees
+                    </div>
+                  )}
+                </div>
+
+                {/* Right-side Quick Actions */}
+                <div className="absolute top-6 right-6 flex flex-col gap-3 z-20">
+                  <button 
+                    onClick={() => navigator.share?.({ title: event.title, url: window.location.href })}
+                    className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center text-white hover:bg-white hover:text-black transition-all duration-300"
+                  >
+                    <Share2 className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Bottom Hero Content: Category & Title Shadow */}
+                <div className="absolute bottom-10 left-10 right-10 z-20">
+                   <motion.div 
+                     initial={{ y: 20, opacity: 0 }} 
+                     animate={{ y: 0, opacity: 1 }}
+                     transition={{ delay: 0.3 }}
+                   >
+                     <span className="text-purple-400 font-black text-xs uppercase tracking-[0.4em] mb-4 block">
+                       {event.category || ''}
+                     </span>
+                     <h1 className="text-4xl sm:text-6xl font-black text-white leading-tight max-w-4xl drop-shadow-2xl">
+                       {event.title}
+                     </h1>
+                   </motion.div>
+                </div>
               </div>
+
+              {/* Image Error State */}
+              {imageError && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+                  <div className="text-center">
+                    <ImageOff className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+                    <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Visual Unavailable</p>
+                  </div>
+                </div>
+              )}
             </motion.div>
 
             {/* Event Details */}
@@ -1796,174 +1911,163 @@ useEffect(() => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 shadow-xl"
+              className="relative bg-white rounded-[2.5rem] p-6 sm:p-8 lg:p-10 shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-gray-50 overflow-hidden"
             >
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-gray-900 mb-4 sm:mb-6">
-                {event.title}
-              </h1>
+              {/* Glassy Background Accents */}
+              <div className="absolute -top-24 -right-24 w-48 h-48 bg-purple-100/50 rounded-full blur-3xl" />
+              
+              <div className="relative z-10">
+                {/* Event Badge & Title */}
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
+                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">Tickets Available</span>
+                  </div>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    {event.category || 'Event'}
+                  </span>
+                </div>
 
-              <div className="space-y-3 sm:space-y-4">
-                <div className="flex items-start gap-2 sm:gap-3">
-                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-gray-800 text-sm sm:text-base">
-                      {formatEventDate(event.date)}
-                      {event.time && ` at ${formatTime(event.time)}`}
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-gray-900 leading-[1.1] mb-8">
+                  {event.title}
+                </h1>
+
+                {/* Info Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
+                  {/* Date & Time Block */}
+                  <div className="group flex items-center gap-4 p-4 rounded-3xl bg-gray-50 hover:bg-purple-50 transition-colors">
+                    <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center text-purple-600 group-hover:scale-110 transition-transform">
+                      <Calendar className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">When</p>
+                      <p className="font-bold text-gray-900 text-sm sm:text-base">
+                        {formatEventDate(event.date)}
+                        {event.time && <span className="text-purple-600 ml-1">@ {formatTime(event.time)}</span>}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Location Block */}
+                  <div className="group flex items-center gap-4 p-4 rounded-3xl bg-gray-50 hover:bg-blue-50 transition-colors">
+                    <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
+                      <MapPin className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Where</p>
+                      <p className="font-bold text-gray-900 text-sm sm:text-base truncate">{event.location}</p>
+                      {event.venue && event.venue !== event.location && (
+                        <p className="text-[11px] text-gray-500 font-medium truncate">{event.venue}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* About Section */}
+                {event.description && (
+                  <div className="relative pt-8 border-t border-gray-100">
+                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-[0.2em] mb-4">
+                      The Experience
+                    </h3>
+                    <p className="text-gray-600 leading-relaxed text-sm sm:text-base whitespace-pre-line">
+                      {event.description}
                     </p>
-                    {!event.time && <p className="text-gray-600 text-sm">Time to be announced</p>}
+                    
+                    {/* Decorative Quote Mark */}
+                    <div className="absolute top-6 right-0 text-gray-100 select-none">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14.017 21L14.017 18C14.017 16.8954 14.9124 16 16.017 16H19.017C19.5693 16 20.017 15.5523 20.017 15V9C20.017 8.44772 19.5693 8 19.017 8H15.017C14.4647 8 14.017 7.55228 14.017 7V5C14.017 4.44772 14.4647 4 15.017 4H19.017C21.2261 4 23.017 5.79086 23.017 8V15C23.017 18.3137 20.3307 21 17.017 21H14.017ZM1.017 21L1.017 18C1.017 16.8954 1.91243 16 3.017 16H6.017C6.56929 16 7.017 15.5523 7.017 15V9C7.017 8.44772 6.56929 8 6.017 8H2.017C1.46472 8 1.017 7.55228 1.017 7V5C1.017 4.44772 1.46472 4 2.017 4H6.017C8.22614 4 10.017 5.79086 10.017 8V15C10.017 18.3137 7.33072 21 4.017 21H1.017Z" />
+                      </svg>
+                    </div>
                   </div>
-                </div>
-
-                <div className="flex items-start gap-2 sm:gap-3">
-                  <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-gray-800 text-sm sm:text-base">{event.location}</p>
-                    {event.venue && event.venue !== event.location && (
-                      <p className="text-gray-600 text-sm">{event.venue}</p>
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
-
-              {event.description && (
-                <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-gray-100">
-                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">About This Event</h3>
-                  <p className="text-gray-700 whitespace-pre-line text-sm sm:text-base">{event.description}</p>
-                </div>
-              )}
             </motion.div>
 
             {/* Guest Artists Section */}
             {guestArtists.length > 0 && (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl"
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="mt-12 space-y-8"
               >
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <div>
-                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
-                      <Users className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" />
-                      Featured Artists
+                <div className="flex items-end justify-between px-2">
+                  <div className="space-y-1">
+                    <h3 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+                      <div className="w-2 h-8 bg-purple-600 rounded-full" />
+                      The Lineup
                     </h3>
-                    <p className="text-gray-600 text-sm mt-1">Meet the talented artists performing at this event</p>
+                    <p className="text-gray-500 font-medium text-sm sm:text-base">Experience world-class performances</p>
                   </div>
-                  <div className="px-2 py-1 sm:px-3 sm:py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold rounded-full">
-                    {guestArtists.length} Artist{guestArtists.length !== 1 ? 's' : ''}
+                  <div className="hidden sm:block px-4 py-2 bg-purple-50 rounded-2xl border border-purple-100">
+                    <span className="text-purple-700 font-bold text-sm">
+                      {guestArtists.length} Headliners
+                    </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  {guestArtists.map((artist: GuestArtist, index) => {
-                    const socialLinks = artist.social_media || {};
-
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {guestArtists.map((artist, index) => {
+                    const social = artist.social_media || {};
                     return (
                       <motion.div
                         key={artist.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className="group bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl sm:rounded-2xl p-4 sm:p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                        whileHover={{ y: -8 }}
+                        className="group relative bg-white border border-gray-100 rounded-[2.5rem] overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-500"
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-                          <div className="relative">
-                            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden border-2 border-white shadow-md">
-                              <img
-                                src={artist.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=7c3aed&color=fff&bold=true&size=128`}
-                                alt={artist.name}
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=7c3aed&color=fff&bold=true&size=128`;
-                                }}
-                              />
-                            </div>
-                            {artist.role && (
-                              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold rounded-full whitespace-nowrap">
+                        {/* Artist Cover/Image Area */}
+                        <div className="relative h-64 overflow-hidden">
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
+                          <img
+                            src={artist.image_url || `https://ui-avatars.com/api/?name=${artist.name}&background=7c3aed&color=fff`}
+                            alt={artist.name}
+                            className="w-full h-full object-cover grayscale-[30%] group-hover:grayscale-0 group-hover:scale-110 transition-all duration-700"
+                          />
+                          
+                          {/* Floating Role Badge */}
+                          {artist.role && (
+                            <div className="absolute top-4 right-4 z-20 px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full">
+                              <span className="text-white text-[10px] font-black uppercase tracking-widest">
                                 {artist.role}
-                              </div>
-                            )}
-                          </div>
+                              </span>
+                            </div>
+                          )}
 
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-gray-900 text-lg sm:text-xl group-hover:text-purple-700 transition-colors mb-2">
+                          {/* Bottom Overlay Name */}
+                          <div className="absolute bottom-4 left-6 z-20">
+                            <h4 className="text-2xl font-black text-white leading-tight drop-shadow-lg">
                               {artist.name}
                             </h4>
-                            
-                            {artist.bio && (
-                              <p className="text-sm text-gray-600 mb-4 line-clamp-3">
-                                {artist.bio}
-                              </p>
-                            )}
+                          </div>
+                        </div>
 
-                            {Object.keys(socialLinks).length > 0 && (
-                              <div className="flex gap-3 sm:gap-4">
-                                {'instagram' in socialLinks && socialLinks.instagram && (
-                                  <a
-                                    href={socialLinks.instagram}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-gray-500 hover:text-pink-600 transition-colors"
-                                    title="Instagram"
-                                  >
-                                    <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
-                                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-                                    </svg>
-                                  </a>
-                                )}
-                                {'twitter' in socialLinks && socialLinks.twitter && (
-                                  <a
-                                    href={socialLinks.twitter}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-gray-500 hover:text-blue-500 transition-colors"
-                                    title="Twitter"
-                                  >
-                                    <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
-                                      <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.213c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
-                                    </svg>
-                                  </a>
-                                )}
-                                {'facebook' in socialLinks && socialLinks.facebook && (
-                                  <a
-                                    href={socialLinks.facebook}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-gray-500 hover:text-blue-700 transition-colors"
-                                    title="Facebook"
-                                  >
-                                    <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
-                                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                                    </svg>
-                                  </a>
-                                )}
-                                {'website' in socialLinks && socialLinks.website && (
-                                  <a
-                                    href={socialLinks.website}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-gray-500 hover:text-purple-600 transition-colors"
-                                    title="Website"
-                                  >
-                                    <ExternalLink className="w-5 h-5 sm:w-6 sm:h-6" />
-                                  </a>
-                                )}
-                                {'youtube' in socialLinks && socialLinks.youtube && (
-                                  <a
-                                    href={socialLinks.youtube}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-gray-500 hover:text-red-600 transition-colors"
-                                    title="YouTube"
-                                  >
-                                    <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
-                                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                                    </svg>
-                                  </a>
-                                )}
-                              </div>
-                            )}
+                        {/* Artist Info Content */}
+                        <div className="p-6 pt-4 space-y-4">
+                          <p className="text-gray-500 text-sm leading-relaxed line-clamp-2 italic font-medium">
+                            "{artist.bio || "Performing live at the main stage."}"
+                          </p>
+
+                          {/* Social Action Strip */}
+                          <div className="flex items-center justify-between pt-2">
+                            <div className="flex gap-4">
+                              {social.instagram && (
+                                <a href={social.instagram} target="_blank" className="text-gray-400 hover:text-pink-500 transition-colors">
+                                  <Instagram className="w-5 h-5" />
+                                </a>
+                              )}
+                              {social.youtube && (
+                                <a href={social.youtube} target="_blank" className="text-gray-400 hover:text-red-600 transition-colors">
+                                  <Youtube className="w-5 h-5" />
+                                </a>
+                              )}
+                              {social.twitter && (
+                                <a href={social.twitter} target="_blank" className="text-gray-400 hover:text-blue-400 transition-colors">
+                                  <X className="w-5 h-5" />
+                                </a>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </motion.div>
@@ -2423,288 +2527,296 @@ useEffect(() => {
       </div>
 
       {/* Checkout Modal */}
-{showCheckout && checkoutData && selectedTier && feeCalculation && (
-  <Modal>
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-1 sm:p-2 md:p-4"
-      onClick={closeCheckout}
-    >
-      <motion.div
-        initial={{ scale: 0.9, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        className="bg-white rounded-xl sm:rounded-2xl lg:rounded-3xl w-full max-w-xs sm:max-w-sm md:max-w-lg lg:max-w-2xl max-h-[95vh] overflow-y-auto mx-2 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-4 sm:p-5 lg:p-6 flex justify-between items-center">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-xl sm:text-2xl lg:text-3xl font-black truncate">Checkout</h2>
-            <p className="text-base sm:text-xl opacity-90 truncate">
-              {checkoutData.tier.name} × {checkoutData.quantity}
-            </p>
-            {event.fee_strategy && (
-              <p className="text-sm opacity-80 mt-1">
-                {event.fee_strategy === 'absorb_fees' 
-                  ? 'Organizer is covering service fees'
-                  : 'Service fees apply'
-                }
-              </p>
-            )}
-          </div>
-          <button
+      {showCheckout && checkoutData && selectedTier && feeCalculation && (
+        <Modal>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-1 sm:p-2 md:p-4"
             onClick={closeCheckout}
-            className="p-1.5 sm:p-2 hover:bg-white/20 rounded-lg ml-2 flex-shrink-0"
-            aria-label="Close checkout"
           >
-            <X className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
-          </button>
-        </div>
-
-        <div className="p-3 sm:p-5 lg:p-6 md:p-8">
-          <form onSubmit={handleCheckoutSubmit}>
-            {/* Country Selector - ONLY FOR PAID TICKETS */}
-            {feeCalculation.totalAmount !== 0 && <CountrySelector />}
-
-            {/* Payment Gateway Selection - ONLY FOR PAID TICKETS */}
-            {feeCalculation.totalAmount !== 0 && (
-              <div className="mt-6 mb-6 p-3 sm:p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl sm:rounded-2xl border border-blue-100">
-                <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
-                  Select Payment Gateway
-                </h3>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                  {PAYMENT_GATEWAYS.map((gateway) => {
-                    const Icon = gateway.icon;
-                    return (
-                      <button
-                        key={gateway.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedGateway(gateway.id as PaymentGateway);
-                          if (gateway.id === 'paystack') {
-                            setSelectedCurrency('NGN');
-                          } else {
-                            setSelectedCurrency('USD');
-                          }
-                        }}
-                        className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border-2 transition-all ${
-                          selectedGateway === gateway.id
-                            ? `${gateway.color} border-${gateway.color.replace('bg-', 'border-')} text-white`
-                            : 'bg-white border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 sm:gap-3">
-                          <div className={`w-8 h-8 sm:w-10 sm:h-10 ${selectedGateway === gateway.id ? 'bg-white/20' : gateway.color} rounded-full flex items-center justify-center flex-shrink-0`}>
-                            <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                          </div>
-                          <div className="text-left min-w-0 flex-1">
-                            <div className="font-bold text-sm sm:text-base truncate">{gateway.name}</div>
-                            <div className="text-xs sm:text-sm opacity-80 truncate">{gateway.description}</div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                
-                {/* Currency info - ONLY FOR PAID FLUTTERWAVE */}
-                {selectedGateway === 'flutterwave' && feeCalculation.totalAmount !== 0 && (
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      <Banknote className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600" />
-                      <span className="text-xs sm:text-sm text-gray-700">
-                        Selected: {selectedCurrency} ({getCurrencySymbol(selectedCurrency)})
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowCurrencySelector(true)}
-                      className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium"
-                    >
-                      Change Currency
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Form Fields - ALWAYS SHOWN */}
-            <div className="space-y-3 sm:space-y-4">
-              <div>
-                <input
-                  type="text"
-                  placeholder="Full Name *"
-                  value={formData.fullName}
-                  onChange={(e) => handleInputChange('fullName', e.target.value)}
-                  className={`w-full px-3 py-3 sm:px-4 sm:py-4 border rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm sm:text-base ${
-                    formErrors.fullName ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  required
-                />
-                {formErrors.fullName && (
-                  <p className="text-red-500 text-xs sm:text-sm mt-1 ml-1">Please enter your full name</p>
-                )}
-              </div>
-
-              <div>
-                <input
-                  type="email"
-                  placeholder="Email Address *"
-                  value={formData.email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
-                  className={`w-full px-3 py-3 sm:px-4 sm:py-4 border rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm sm:text-base ${
-                    formErrors.email ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  required
-                />
-                {formErrors.email && (
-                  <p className="text-red-500 text-xs sm:text-sm mt-1 ml-1">Please enter a valid email</p>
-                )}
-              </div>
-
-              <div>
-                <input
-                  type="tel"
-                  placeholder="Phone Number *"
-                  value={formData.phone}
-                  onChange={(e) => handleInputChange('phone', e.target.value)}
-                  className={`w-full px-3 py-3 sm:px-4 sm:py-4 border rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm sm:text-base ${
-                    formErrors.phone ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  required
-                />
-                {formErrors.phone && (
-                  <p className="text-red-500 text-xs sm:text-sm mt-1 ml-1">Please enter a valid phone number</p>
-                )}
-              </div>
-            </div>
-
-            {/* Privacy Policy - ALWAYS SHOWN */}
-            <div className="mt-4 p-3 bg-purple-50 rounded-lg sm:rounded-xl">
-              <div className="flex items-start gap-2 sm:gap-3">
-                <input
-                  type="checkbox"
-                  id="privacy-policy"
-                  checked={acceptPrivacy}
-                  onChange={(e) => setAcceptPrivacy(e.target.checked)}
-                  className="mt-1 w-4 h-4 sm:w-5 sm:h-5 text-purple-600 rounded focus:ring-purple-500"
-                  required
-                />
-                <div className="flex-1">
-                  <label htmlFor="privacy-policy" className="text-gray-700 font-medium text-sm sm:text-base">
-                    I agree to the Privacy Policy and Terms of Service
-                  </label>
-                  <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                    By checking this box, you agree to our data collection and usage practices.
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-xl sm:rounded-2xl lg:rounded-3xl w-full max-w-xs sm:max-w-sm md:max-w-lg lg:max-w-2xl max-h-[95vh] overflow-y-auto mx-2 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-4 sm:p-5 lg:p-6 flex justify-between items-center">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-black truncate">Checkout</h2>
+                  <p className="text-base sm:text-xl opacity-90 truncate">
+                    {checkoutData.tier.name} × {checkoutData.quantity}
                   </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Order Summary with Fee Breakdown - ALWAYS SHOWN */}
-            {feeCalculation && (
-              <div className="mt-6 p-4 bg-gray-50 rounded-xl sm:rounded-2xl space-y-3 sm:space-y-4">
-                <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800">Order Summary</h3>
-                
-                <div className="space-y-2 sm:space-y-3">
-                  {/* Fee Strategy - ALWAYS SHOWN */}
                   {event.fee_strategy && (
-                    <div className="mb-3 p-2 bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg border border-amber-200">
-                      <div className="flex items-center gap-2">
-                        <Receipt className="w-4 h-4 text-amber-600" />
-                        <span className="text-sm font-medium text-amber-800">
-                          {event.fee_strategy === 'absorb_fees' 
-                            ? 'Service fees are covered by the organizer'
-                            : 'Service fees apply to your purchase'
-                          }
-                        </span>
+                    <p className="text-sm opacity-80 mt-1">
+                      {event.fee_strategy === 'absorb_fees' 
+                        ? 'Organizer is covering service fees'
+                        : 'Service fees apply'
+                      }
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={closeCheckout}
+                  className="p-1.5 sm:p-2 hover:bg-white/20 rounded-lg ml-2 flex-shrink-0"
+                  aria-label="Close checkout"
+                >
+                  <X className="w-5 h-5 sm:w-6 sm:h-6 lg:w-8 lg:h-8" />
+                </button>
+              </div>
+
+              <div className="p-3 sm:p-5 lg:p-6 md:p-8">
+                <form onSubmit={handleCheckoutSubmit}>
+                  {/* Country Selector - ONLY FOR PAID TICKETS */}
+                  {feeCalculation.totalAmount !== 0 && <CountrySelector />}
+
+                  {/* Payment Gateway Selection - ONLY FOR PAID TICKETS */}
+                  {feeCalculation.totalAmount !== 0 && (
+                    <div className="mt-6 mb-6 p-3 sm:p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl sm:rounded-2xl border border-blue-100">
+                      <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
+                        Select Payment Gateway
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                        {PAYMENT_GATEWAYS.map((gateway) => {
+                          const Icon = gateway.icon;
+                          return (
+                            <button
+                              key={gateway.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedGateway(gateway.id as PaymentGateway);
+                                if (gateway.id === 'paystack') {
+                                  setSelectedCurrency('NGN');
+                                } else {
+                                  setSelectedCurrency('USD');
+                                }
+                              }}
+                              className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border-2 transition-all ${
+                                selectedGateway === gateway.id
+                                  ? `${gateway.color} border-${gateway.color.replace('bg-', 'border-')} text-white`
+                                  : 'bg-white border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 sm:gap-3">
+                                <div className={`w-8 h-8 sm:w-10 sm:h-10 ${selectedGateway === gateway.id ? 'bg-white/20' : gateway.color} rounded-full flex items-center justify-center flex-shrink-0`}>
+                                  <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                                </div>
+                                <div className="text-left min-w-0 flex-1">
+                                  <div className="font-bold text-sm sm:text-base truncate">{gateway.name}</div>
+                                  <div className="text-xs sm:text-sm opacity-80 truncate">{gateway.description}</div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
+                      
+                      {/* Currency info - ONLY FOR PAID FLUTTERWAVE */}
+                      {selectedGateway === 'flutterwave' && feeCalculation.totalAmount !== 0 && (
+                        <div className="mt-3 flex items-center justify-between">
+                          <div className="flex items-center gap-1 sm:gap-2">
+                            <Banknote className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600" />
+                            <span className="text-xs sm:text-sm text-gray-700">
+                              Selected: {selectedCurrency} ({getCurrencySymbol(selectedCurrency)})
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrencySelector(true)}
+                            className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium"
+                          >
+                            Change Currency
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Itemized Breakdown */}
-                  {feeCalculation.breakdown.map((item, index) => (
-                    <div key={index} className="flex justify-between items-center">
-                      <span className="text-gray-600 text-sm sm:text-base">
-                        {item.item}
-                        {item.percentage !== undefined && (
-                          <span className="ml-1 text-xs text-gray-500">
-                            ({item.percentage}%)
-                          </span>
-                        )}
-                      </span>
-                      <span className="font-medium text-sm sm:text-base">
-                        {formatCurrency(item.amount, selectedCurrency)}
-                      </span>
+                  {/* Form Fields - ALWAYS SHOWN */}
+                  <div className="space-y-3 sm:space-y-4">
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Full Name *"
+                        value={formData.fullName}
+                        onChange={(e) => handleInputChange('fullName', e.target.value)}
+                        className={`w-full px-3 py-3 sm:px-4 sm:py-4 border rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm sm:text-base ${
+                          formErrors.fullName ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
+                      />
+                      {formErrors.fullName && (
+                        <p className="text-red-500 text-xs sm:text-sm mt-1 ml-1">Please enter your full name</p>
+                      )}
                     </div>
-                  ))}
-                  
-                  {/* Total */}
-                  <div className="pt-3 sm:pt-4 border-t border-gray-200">
-                    <div className="flex justify-between text-base sm:text-xl font-bold text-purple-600">
-                      <span>Total Amount</span>
-                      <span>{formatCurrency(feeCalculation.totalAmount, selectedCurrency)}</span>
+
+                    <div>
+                      <input
+                        type="email"
+                        placeholder="Email Address *"
+                        value={formData.email}
+                        onChange={(e) => handleInputChange('email', e.target.value)}
+                        className={`w-full px-3 py-3 sm:px-4 sm:py-4 border rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm sm:text-base ${
+                          formErrors.email ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
+                      />
+                      {formErrors.email && (
+                        <p className="text-red-500 text-xs sm:text-sm mt-1 ml-1">Please enter a valid email</p>
+                      )}
                     </div>
-                    
-                    {/* Equivalent in NGN - ONLY FOR PAID TICKETS */}
-                    {selectedCurrency !== 'NGN' && feeCalculation.totalAmount !== 0 && (
-                      <div className="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-500">
-                        Equivalent to: {formatCurrency(feeCalculation.totalAmountInNGN, 'NGN')} Nigerian Naira
-                      </div>
-                    )}
-                    
-                    {/* Free ticket notice */}
-                    {feeCalculation.totalAmount === 0 && (
-                      <div className="mt-2 p-2 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200">
-                        <p className="text-sm text-emerald-800 text-center font-medium">
-                          No fees on free tickets! Complete your order.
+
+                    <div>
+                      <input
+                        type="tel"
+                        placeholder="Phone Number *"
+                        value={formData.phone}
+                        onChange={(e) => handleInputChange('phone', e.target.value)}
+                        className={`w-full px-3 py-3 sm:px-4 sm:py-4 border rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm sm:text-base ${
+                          formErrors.phone ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        required
+                      />
+                      {formErrors.phone && (
+                        <p className="text-red-500 text-xs sm:text-sm mt-1 ml-1">Please enter a valid phone number</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Privacy Policy - ALWAYS SHOWN */}
+                  <div className="mt-4 p-3 bg-purple-50 rounded-lg sm:rounded-xl">
+                    <div className="flex items-start gap-2 sm:gap-3">
+                      <input
+                        type="checkbox"
+                        id="privacy-policy"
+                        checked={acceptPrivacy}
+                        onChange={(e) => setAcceptPrivacy(e.target.checked)}
+                        className="mt-1 w-4 h-4 sm:w-5 sm:h-5 text-purple-600 rounded focus:ring-purple-500"
+                        required
+                      />
+                      <div className="flex-1">
+                        <label htmlFor="privacy-policy" className="text-gray-700 font-medium text-sm sm:text-base">
+                          I agree to the Privacy Policy and Terms of Service
+                        </label>
+                        <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                          By checking this box, you agree to our data collection and usage practices.
                         </p>
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={checkoutLoading || !acceptPrivacy}
-              className="mt-4 sm:mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-base sm:text-xl py-3 sm:py-4 rounded-xl sm:rounded-2xl flex justify-center items-center gap-2 hover:shadow-xl transition disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {checkoutLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 sm:w-6 sm:h-6 animate-spin" />
-                  <span className="text-sm sm:text-base">Processing...</span>
-                </>
-              ) : feeCalculation.totalAmount === 0 ? (
-                <span className="text-sm sm:text-base">Get Free Ticket</span>
-              ) : selectedGateway === 'paystack' ? (
-                <span className="text-sm sm:text-base">Pay with Paystack</span>
-              ) : (
-                <span className="text-sm sm:text-base">Pay with Flutterwave</span>
-              )}
-            </button>
+                  {/* Order Summary with Fee Breakdown - ALWAYS SHOWN */}
+                  {feeCalculation && (
+                    <div className="mt-6 p-5 bg-white border border-gray-100 rounded-3xl shadow-sm space-y-5">
+                      {/* Header */}
+                      <div className="flex justify-between items-center pb-2 border-b border-gray-50">
+                        <h3 className="text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Order Summary</h3>
+                        <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                      </div>
 
-            {/* Security Badges - ALWAYS SHOWN */}
-            <div className="mt-4 sm:mt-6 flex items-center justify-center gap-3 sm:gap-6 flex-wrap">
-              <div className="flex items-center gap-1 sm:gap-2 text-gray-500 text-xs sm:text-sm">
-                <Shield className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span>256-bit SSL Secure</span>
+                      <div className="space-y-4">
+                        {/* Itemized Breakdown */}
+                        <div className="space-y-3">
+                          {feeCalculation.breakdown.map((item, index) => (
+                            <div key={index} className="flex justify-between items-start">
+                              <div className="flex flex-col">
+                                <span className={`text-sm ${item.item.includes('Price') ? 'text-gray-900 font-bold' : 'text-gray-500 font-medium'}`}>
+                                  {item.item}
+                                </span>
+                                {/* Statutory Sub-labels for 2026 Compliance */}
+                                {item.item.includes('VAT') && (
+                                  <span className="text-[10px] text-purple-500 font-bold uppercase leading-none mt-1">
+                                    7.5% Tax applied to fees only
+                                  </span>
+                                )}
+                                {item.item.includes('Stamp') && (
+                                  <span className="text-[10px] text-blue-500 font-bold uppercase leading-none mt-1">
+                                    Statutory Govt Levy (EMTL)
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`text-sm font-black ${item.item.includes('Price') ? 'text-gray-900' : 'text-gray-700'}`}>
+                                {formatCurrency(item.amount, selectedCurrency)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Final Total Section */}
+                        <div className="pt-5 border-t border-dashed border-gray-200">
+                          <div className="flex justify-between items-end">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Amount Due</span>
+                              <span className="text-xs text-gray-400 italic">Fully Inclusive</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-3xl font-black text-purple-600 tracking-tighter leading-none">
+                                {formatCurrency(feeCalculation.totalAmount, selectedCurrency)}
+                              </div>
+                              {/* Multi-currency support */}
+                              {selectedCurrency !== 'NGN' && feeCalculation.totalAmount !== 0 && (
+                                <div className="mt-1 text-[11px] font-bold text-gray-400">
+                                  ≈ {formatCurrency(feeCalculation.totalAmountInNGN, 'NGN')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Free Ticket Visual */}
+                          {feeCalculation.totalAmount === 0 && (
+                            <div className="mt-4 p-3 bg-emerald-50 text-emerald-700 rounded-2xl text-center text-[10px] font-black tracking-widest uppercase border border-emerald-100">
+                              Complimentary Ticket • No Fees
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Compliance Footer */}
+                      <p className="text-[9px] text-center text-gray-400 px-4 leading-tight">
+                        Secure payment processed via Paystack/Flutterwave. Fees include statutory 7.5% VAT and ₦50 EMTL where applicable under Nigerian Tax Law 2026.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={checkoutLoading || !acceptPrivacy}
+                    className="mt-4 sm:mt-6 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-base sm:text-xl py-3 sm:py-4 rounded-xl sm:rounded-2xl flex justify-center items-center gap-2 hover:shadow-xl transition disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {checkoutLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 sm:w-6 sm:h-6 animate-spin" />
+                        <span className="text-sm sm:text-base">Processing...</span>
+                      </>
+                    ) : feeCalculation.totalAmount === 0 ? (
+                      <span className="text-sm sm:text-base">Get Free Ticket</span>
+                    ) : selectedGateway === 'paystack' ? (
+                      <span className="text-sm sm:text-base">Pay with Paystack</span>
+                    ) : (
+                      <span className="text-sm sm:text-base">Pay with Flutterwave</span>
+                    )}
+                  </button>
+
+                  {/* Security Badges - ALWAYS SHOWN */}
+                  <div className="mt-4 sm:mt-6 flex items-center justify-center gap-3 sm:gap-6 flex-wrap">
+                    <div className="flex items-center gap-1 sm:gap-2 text-gray-500 text-xs sm:text-sm">
+                      <Shield className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span>256-bit SSL Secure</span>
+                    </div>
+                    <div className="flex items-center gap-1 sm:gap-2 text-gray-500 text-xs sm:text-sm">
+                      <BadgeCheck className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span>PCI DSS Compliant</span>
+                    </div>
+                  </div>
+                </form>
               </div>
-              <div className="flex items-center gap-1 sm:gap-2 text-gray-500 text-xs sm:text-sm">
-                <BadgeCheck className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span>PCI DSS Compliant</span>
-              </div>
-            </div>
-          </form>
-        </div>
-      </motion.div>
-    </motion.div>
-  </Modal>
-)}
+            </motion.div>
+          </motion.div>
+        </Modal>
+      )}
 
       {/* Currency Selector Modal */}
       {showCurrencySelector && (

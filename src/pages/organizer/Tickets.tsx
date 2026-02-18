@@ -712,22 +712,35 @@ export default function OrganizerTickets() {
 
   return (
     <div className="flex min-h-screen bg-gray-950">
-      {/* Sidebar - Mobile Slide In */}
-      {/* <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ease-in-out ${
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
-      } md:translate-x-0 md:static md:z-auto`}>
+      {/* Sidebar - Mobile Only Slide In */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ease-in-out md:hidden ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <Sidebar role="organizer" />
-      </div> */}
+      </div>
 
-      {/* Overlay */}
+      {/* Overlay - visible only on mobile when sidebar is open */}
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {/* Mobile Header */}
+        {/* Mobile Header with Hamburger Menu */}
         <div className="md:hidden p-4 border-b border-white/10 flex items-center justify-between">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 text-white hover:bg-white/10 rounded-lg transition"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <h1 className="text-white font-bold text-lg">Tickets</h1>
+          <div className="w-10" /> {/* Spacer for alignment */}
         </div>
 
         <div className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-900 via-purple-900/10 to-gray-900">
@@ -736,8 +749,12 @@ export default function OrganizerTickets() {
             <div className="mb-6 sm:mb-8 lg:mb-10">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">Ticket Management</h1>
-                  <p className="text-gray-400 text-sm sm:text-base">View, verify, and manage all ticket sales</p>
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
+                    Ticket Management
+                  </h1>
+                  <p className="text-gray-400 text-sm sm:text-base">
+                    View, verify, and manage all ticket sales
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3">
                   <button
@@ -745,7 +762,7 @@ export default function OrganizerTickets() {
                     disabled={loading}
                     className="flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white transition text-sm sm:text-base"
                   >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
                     <span className="hidden sm:inline">Refresh</span>
                   </button>
                   <div className="relative">
@@ -776,20 +793,75 @@ export default function OrganizerTickets() {
               {/* Stats Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3 sm:gap-4 mb-6 sm:mb-8">
                 {[
-                  { label: "Total Revenue", value: `₦${stats.totalRevenue.toLocaleString()}`, icon: DollarSign, color: "purple" },
-                  { label: "Tickets Sold", value: stats.ticketsSold, icon: Ticket, color: "blue" },
-                  { label: "Unique Buyers", value: stats.uniqueBuyers, icon: Users, color: "green" },
-                  { label: "Verified", value: stats.verifiedTickets, icon: CheckCircle, color: "emerald" },
-                  { label: "Pending", value: stats.pendingVerification, icon: AlertCircle, color: "yellow" },
-                  { label: "Last 24h", value: stats.recent24h, icon: Clock, color: "pink" },
-                  { label: "Free Tickets", value: stats.freeTickets, icon: Tag, color: "emerald" },
-                  { label: "Paid Tickets", value: stats.paidTickets, icon: DollarSign, color: "green" }
+                  {
+                    label: "Total Revenue",
+                    value: `₦${stats.totalRevenue.toLocaleString()}`,
+                    icon: DollarSign,
+                    color: "purple"
+                  },
+                  {
+                    label: "Tickets Sold",
+                    value: stats.ticketsSold,
+                    icon: Ticket,
+                    color: "blue"
+                  },
+                  {
+                    label: "Unique Buyers",
+                    value: stats.uniqueBuyers,
+                    icon: Users,
+                    color: "green"
+                  },
+                  {
+                    label: "Verified",
+                    value: stats.verifiedTickets,
+                    icon: CheckCircle,
+                    color: "emerald"
+                  },
+                  {
+                    label: "Pending",
+                    value: stats.pendingVerification,
+                    icon: AlertCircle,
+                    color: "yellow"
+                  },
+                  {
+                    label: "Last 24h",
+                    value: stats.recent24h,
+                    icon: Clock,
+                    color: "pink"
+                  },
+                  {
+                    label: "Free Tickets",
+                    value: stats.freeTickets,
+                    icon: Tag,
+                    color: "emerald"
+                  },
+                  {
+                    label: "Paid Tickets",
+                    value: stats.paidTickets,
+                    icon: DollarSign,
+                    color: "green"
+                  }
                 ].map((stat, index) => (
-                  <div key={index} className={`bg-gradient-to-br from-${stat.color}-500/10 to-${stat.color === 'purple' ? 'pink' : stat.color === 'blue' ? 'cyan' : stat.color === 'green' ? 'emerald' : stat.color === 'yellow' ? 'orange' : stat.color}-500/10 backdrop-blur-xl border border-${stat.color}-500/20 rounded-xl sm:rounded-2xl p-3 sm:p-4`}>
+                  <div
+                    key={index}
+                    className={`bg-gradient-to-br from-${stat.color}-500/10 to-${
+                      stat.color === "purple"
+                        ? "pink"
+                        : stat.color === "blue"
+                        ? "cyan"
+                        : stat.color === "green"
+                        ? "emerald"
+                        : stat.color === "yellow"
+                        ? "orange"
+                        : stat.color
+                    }-500/10 backdrop-blur-xl border border-${stat.color}-500/20 rounded-xl sm:rounded-2xl p-3 sm:p-4`}
+                  >
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-gray-400 text-xs sm:text-sm">{stat.label}</p>
-                        <p className="text-lg sm:text-xl font-bold text-white mt-1">{stat.value}</p>
+                        <p className="text-lg sm:text-xl font-bold text-white mt-1">
+                          {stat.value}
+                        </p>
                       </div>
                       <stat.icon className={`text-${stat.color}-400`} size={20} />
                     </div>
@@ -803,7 +875,10 @@ export default function OrganizerTickets() {
               <div className="flex flex-col lg:flex-row gap-4">
                 {/* Search */}
                 <div className="flex-1 relative">
-                  <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
+                  <Search
+                    className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-gray-500"
+                    size={20}
+                  />
                   <input
                     type="text"
                     placeholder="Search tickets..."
@@ -820,7 +895,11 @@ export default function OrganizerTickets() {
                 >
                   <Filter className="w-5 h-5" />
                   <span className="hidden sm:inline">Filters</span>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform ${
+                      showFilters ? "rotate-180" : ""
+                    }`}
+                  />
                 </button>
               </div>
 
@@ -828,7 +907,9 @@ export default function OrganizerTickets() {
               {showFilters && (
                 <div className="mt-4 p-4 sm:p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl sm:rounded-2xl">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-base sm:text-lg font-bold text-white">Filter Tickets</h3>
+                    <h3 className="text-base sm:text-lg font-bold text-white">
+                      Filter Tickets
+                    </h3>
                     <button
                       onClick={clearFilters}
                       className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:text-white transition"
@@ -838,18 +919,25 @@ export default function OrganizerTickets() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                     <div>
-                      <label className="block text-gray-400 text-sm mb-2">Verification Status</label>
+                      <label className="block text-gray-400 text-sm mb-2">
+                        Verification Status
+                      </label>
                       <div className="flex flex-wrap gap-2">
-                        {["all", "verified", "pending"].map(status => (
+                        {["all", "verified", "pending"].map((status) => (
                           <button
                             key={status}
                             onClick={() => setFilterStatus(status)}
-                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${filterStatus === status
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                              }`}
+                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${
+                              filterStatus === status
+                                ? "bg-purple-600 text-white"
+                                : "bg-white/5 text-gray-400 hover:bg-white/10"
+                            }`}
                           >
-                            {status === "all" ? "All" : status === "verified" ? "Verified" : "Pending"}
+                            {status === "all"
+                              ? "All"
+                              : status === "verified"
+                              ? "Verified"
+                              : "Pending"}
                           </button>
                         ))}
                       </div>
@@ -862,22 +950,27 @@ export default function OrganizerTickets() {
                         className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-purple-500/60 text-sm sm:text-base"
                       >
                         <option value="all">All Events</option>
-                        {eventsList.map(event => (
-                          <option key={event} value={event}>{event}</option>
+                        {eventsList.map((event) => (
+                          <option key={event} value={event}>
+                            {event}
+                          </option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-gray-400 text-sm mb-2">Ticket Type</label>
+                      <label className="block text-gray-400 text-sm mb-2">
+                        Ticket Type
+                      </label>
                       <div className="flex flex-wrap gap-2">
-                        {["all", "free", "paid"].map(type => (
+                        {["all", "free", "paid"].map((type) => (
                           <button
                             key={type}
                             onClick={() => setFilterType(type)}
-                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${filterType === type
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                              }`}
+                            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition ${
+                              filterType === type
+                                ? "bg-purple-600 text-white"
+                                : "bg-white/5 text-gray-400 hover:bg-white/10"
+                            }`}
                           >
                             {type === "all" ? "All" : type === "free" ? "Free" : "Paid"}
                           </button>
@@ -892,7 +985,8 @@ export default function OrganizerTickets() {
             {/* Results Count */}
             <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <p className="text-gray-400 text-sm sm:text-base">
-                Showing <span className="text-white font-medium">{filteredTickets.length}</span> of{" "}
+                Showing{" "}
+                <span className="text-white font-medium">{filteredTickets.length}</span> of{" "}
                 <span className="text-white font-medium">{tickets.length}</span> tickets
               </p>
               {filteredTickets.length > 0 && (
@@ -911,16 +1005,25 @@ export default function OrganizerTickets() {
               <div className="text-center py-16 sm:py-20">
                 <Ticket size={48} className="mx-auto text-gray-600 mb-4 sm:mb-6" />
                 <h3 className="text-xl sm:text-2xl font-bold text-white mb-3">
-                  {searchTerm || filterStatus !== "all" || filterEvent !== "all" || filterType !== "all"
+                  {searchTerm ||
+                  filterStatus !== "all" ||
+                  filterEvent !== "all" ||
+                  filterType !== "all"
                     ? "No matching tickets found"
                     : "No tickets sold yet"}
                 </h3>
                 <p className="text-gray-400 text-sm sm:text-base mb-6 max-w-md mx-auto">
-                  {searchTerm || filterStatus !== "all" || filterEvent !== "all" || filterType !== "all"
+                  {searchTerm ||
+                  filterStatus !== "all" ||
+                  filterEvent !== "all" ||
+                  filterType !== "all"
                     ? "Try adjusting your search or filters"
                     : "Tickets will appear here when attendees purchase from your events"}
                 </p>
-                {(searchTerm || filterStatus !== "all" || filterEvent !== "all" || filterType !== "all") && (
+                {(searchTerm ||
+                  filterStatus !== "all" ||
+                  filterEvent !== "all" ||
+                  filterType !== "all") && (
                   <button
                     onClick={clearFilters}
                     className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl text-white font-medium transition"
@@ -942,13 +1045,28 @@ export default function OrganizerTickets() {
 
       {/* QR Modal */}
       {selectedQR && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedQR(null)}>
-          <div className="bg-gray-900 border border-white/20 rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-sm w-full text-center" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Ticket QR Code</h3>
-            <img src={selectedQR} alt="QR Code" className="w-48 h-48 sm:w-64 sm:h-64 mx-auto mb-6 rounded-xl" />
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedQR(null)}
+        >
+          <div
+            className="bg-gray-900 border border-white/20 rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-sm w-full text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
+              Ticket QR Code
+            </h3>
+            <img
+              src={selectedQR}
+              alt="QR Code"
+              className="w-48 h-48 sm:w-64 sm:h-64 mx-auto mb-6 rounded-xl"
+            />
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                onClick={() => { downloadQR(selectedQR, "ticket"); setSelectedQR(null); }}
+                onClick={() => {
+                  downloadQR(selectedQR, "ticket");
+                  setSelectedQR(null);
+                }}
                 className="flex-1 bg-purple-600 hover:bg-purple-700 px-4 sm:px-6 py-3 rounded-xl text-white font-medium transition"
               >
                 Download QR
@@ -967,11 +1085,18 @@ export default function OrganizerTickets() {
       {/* Ticket Details Modal */}
       {selectedTicket && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-gray-900 border border-white/20 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-gray-900 border border-white/20 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-4 sm:mb-6">
               <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Ticket Details</h2>
-                <p className="text-gray-400 text-sm sm:text-base">Complete information for {selectedTicket.ticket_number}</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
+                  Ticket Details
+                </h2>
+                <p className="text-gray-400 text-sm sm:text-base">
+                  Complete information for {selectedTicket.ticket_number}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedTicket(null)}
@@ -991,24 +1116,32 @@ export default function OrganizerTickets() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Event Name</p>
-                    <p className="text-white font-medium text-sm sm:text-base">{selectedTicket.event_title}</p>
+                    <p className="text-white font-medium text-sm sm:text-base">
+                      {selectedTicket.event_title}
+                    </p>
                   </div>
                   {selectedTicket.event_date && (
                     <div>
                       <p className="text-gray-400 text-xs sm:text-sm">Event Date</p>
-                      <p className="text-white font-medium text-sm sm:text-base">{formatDate(selectedTicket.event_date)}</p>
+                      <p className="text-white font-medium text-sm sm:text-base">
+                        {formatDate(selectedTicket.event_date)}
+                      </p>
                     </div>
                   )}
                   {selectedTicket.event_venue && (
                     <div>
                       <p className="text-gray-400 text-xs sm:text-sm">Venue</p>
-                      <p className="text-white font-medium text-sm sm:text-base">{selectedTicket.event_venue}</p>
+                      <p className="text-white font-medium text-sm sm:text-base">
+                        {selectedTicket.event_venue}
+                      </p>
                     </div>
                   )}
                   {selectedTicket.event_location && (
                     <div>
                       <p className="text-gray-400 text-xs sm:text-sm">Location</p>
-                      <p className="text-white font-medium text-sm sm:text-base">{selectedTicket.event_location}</p>
+                      <p className="text-white font-medium text-sm sm:text-base">
+                        {selectedTicket.event_location}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1024,9 +1157,16 @@ export default function OrganizerTickets() {
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Ticket Number</p>
                     <div className="flex items-center gap-2">
-                      <code className="text-white font-mono font-bold text-sm sm:text-base">{selectedTicket.ticket_number}</code>
+                      <code className="text-white font-mono font-bold text-sm sm:text-base">
+                        {selectedTicket.ticket_number}
+                      </code>
                       <button
-                        onClick={() => copyToClipboard(selectedTicket.ticket_number, "Ticket number")}
+                        onClick={() =>
+                          copyToClipboard(
+                            selectedTicket.ticket_number,
+                            "Ticket number"
+                          )
+                        }
                         className="p-1 hover:bg-white/10 rounded"
                       >
                         <Copy className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
@@ -1035,20 +1175,27 @@ export default function OrganizerTickets() {
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Ticket Type</p>
-                    <p className="text-white font-medium text-sm sm:text-base">{selectedTicket.ticket_type}</p>
+                    <p className="text-white font-medium text-sm sm:text-base">
+                      {selectedTicket.ticket_type}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Quantity</p>
-                    <p className="text-white font-medium text-sm sm:text-base">{selectedTicket.quantity}</p>
+                    <p className="text-white font-medium text-sm sm:text-base">
+                      {selectedTicket.quantity}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Status</p>
                     <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${selectedTicket.verified_at
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-yellow-500/20 text-yellow-300'
-                        }`}>
-                        {selectedTicket.verified_at ? 'VERIFIED' : 'PENDING'}
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          selectedTicket.verified_at
+                            ? "bg-emerald-500/20 text-emerald-300"
+                            : "bg-yellow-500/20 text-yellow-300"
+                        }`}
+                      >
+                        {selectedTicket.verified_at ? "VERIFIED" : "PENDING"}
                       </span>
                       {!selectedTicket.verified_at && (
                         <button
@@ -1056,7 +1203,7 @@ export default function OrganizerTickets() {
                           disabled={verifyingTicket === selectedTicket.id}
                           className="px-2 py-1 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 rounded text-xs disabled:opacity-50 whitespace-nowrap"
                         >
-                          {verifyingTicket === selectedTicket.id ? '...' : 'Verify'}
+                          {verifyingTicket === selectedTicket.id ? "..." : "Verify"}
                         </button>
                       )}
                     </div>
@@ -1073,14 +1220,20 @@ export default function OrganizerTickets() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Full Name</p>
-                    <p className="text-white font-medium text-sm sm:text-base">{selectedTicket.buyer_name}</p>
+                    <p className="text-white font-medium text-sm sm:text-base">
+                      {selectedTicket.buyer_name}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Email</p>
                     <div className="flex items-center gap-2">
-                      <p className="text-white font-medium text-sm sm:text-base truncate">{selectedTicket.buyer_email}</p>
+                      <p className="text-white font-medium text-sm sm:text-base truncate">
+                        {selectedTicket.buyer_email}
+                      </p>
                       <button
-                        onClick={() => copyToClipboard(selectedTicket.buyer_email, "Email")}
+                        onClick={() =>
+                          copyToClipboard(selectedTicket.buyer_email, "Email")
+                        }
                         className="p-1 hover:bg-white/10 rounded flex-shrink-0"
                       >
                         <Copy className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
@@ -1099,14 +1252,20 @@ export default function OrganizerTickets() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Amount Paid</p>
-                    <p className="text-white font-medium text-sm sm:text-base">{formatCurrency(selectedTicket.price)}</p>
+                    <p className="text-white font-medium text-sm sm:text-base">
+                      {formatCurrency(selectedTicket.price)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Order ID</p>
                     <div className="flex items-center gap-2">
-                      <code className="text-white font-mono text-xs sm:text-sm truncate">{selectedTicket.order_id}</code>
+                      <code className="text-white font-mono text-xs sm:text-sm truncate">
+                        {selectedTicket.order_id}
+                      </code>
                       <button
-                        onClick={() => copyToClipboard(selectedTicket.order_id, "Order ID")}
+                        onClick={() =>
+                          copyToClipboard(selectedTicket.order_id, "Order ID")
+                        }
                         className="p-1 hover:bg-white/10 rounded flex-shrink-0"
                       >
                         <Copy className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
@@ -1116,9 +1275,13 @@ export default function OrganizerTickets() {
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Reference</p>
                     <div className="flex items-center gap-2">
-                      <code className="text-white font-mono text-xs sm:text-sm truncate">{selectedTicket.reference}</code>
+                      <code className="text-white font-mono text-xs sm:text-sm truncate">
+                        {selectedTicket.reference}
+                      </code>
                       <button
-                        onClick={() => copyToClipboard(selectedTicket.reference, "Reference")}
+                        onClick={() =>
+                          copyToClipboard(selectedTicket.reference, "Reference")
+                        }
                         className="p-1 hover:bg-white/10 rounded flex-shrink-0"
                       >
                         <Copy className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
@@ -1127,12 +1290,18 @@ export default function OrganizerTickets() {
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs sm:text-sm">Purchase Date</p>
-                    <p className="text-white font-medium text-sm sm:text-base">{formatDate(selectedTicket.purchased_at)}</p>
+                    <p className="text-white font-medium text-sm sm:text-base">
+                      {formatDate(selectedTicket.purchased_at)}
+                    </p>
                   </div>
                   {selectedTicket.verified_at && (
                     <div>
-                      <p className="text-gray-400 text-xs sm:text-sm">Verification Date</p>
-                      <p className="text-white font-medium text-sm sm:text-base">{formatDate(selectedTicket.verified_at)}</p>
+                      <p className="text-gray-400 text-xs sm:text-sm">
+                        Verification Date
+                      </p>
+                      <p className="text-white font-medium text-sm sm:text-base">
+                        {formatDate(selectedTicket.verified_at)}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1149,7 +1318,12 @@ export default function OrganizerTickets() {
                       <QrCode className="w-4 h-4" /> View QR
                     </button>
                     <button
-                      onClick={() => downloadQR(selectedTicket.qr_code_url!, `${selectedTicket.ticket_number}-QR`)}
+                      onClick={() =>
+                        downloadQR(
+                          selectedTicket.qr_code_url!,
+                          `${selectedTicket.ticket_number}-QR`
+                        )
+                      }
                       className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-white text-sm font-medium transition flex-1 sm:flex-none justify-center"
                     >
                       <Download className="w-4 h-4" /> Download QR
@@ -1169,7 +1343,9 @@ export default function OrganizerTickets() {
                     className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-white text-sm font-medium transition flex-1 sm:flex-none justify-center disabled:opacity-50"
                   >
                     <CheckCircle className="w-4 h-4" />
-                    {verifyingTicket === selectedTicket.id ? 'Verifying...' : 'Verify Ticket'}
+                    {verifyingTicket === selectedTicket.id
+                      ? "Verifying..."
+                      : "Verify Ticket"}
                   </button>
                 )}
               </div>

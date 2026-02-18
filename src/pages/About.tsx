@@ -112,7 +112,7 @@ const teamMembers: TeamMember[] = [
 const platformStats = [
   { value: "2026", label: "Launched", icon: Calendar, color: "text-purple-600", growth: "Ready now" },
   { value: "0%", label: "Commission", icon: DollarSign, color: "text-green-600", growth: "Free to start" },
-  { value: "Every Friday", label: "Payout Speed", icon: Clock, color: "text-blue-600", growth: "Guaranteed" },
+  { value: "24h", label: "Payout Speed", icon: Clock, color: "text-blue-600", growth: "Guaranteed" },
   { value: "30%", label: "Avg Sales Increase", icon: TrendingUp, color: "text-amber-600", growth: "For new organizers" },
   { value: "100%", label: "Fraud Protection", icon: Shield, color: "text-emerald-600", growth: "Verified QR" },
   { value: "7", label: "Team Members", icon: Users, color: "text-pink-600", growth: "Full team" },
@@ -671,7 +671,7 @@ export default function About() {
               </div>
               
               <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6">
-                <p className="text-3xl font-bold text-blue-400">Every Friday</p>
+                <p className="text-3xl font-bold text-blue-400">24h</p>
                 <p className="text-lg font-semibold">Payout Speed</p>
                 <p className="text-sm text-gray-400">Fastest in Nigeria</p>
               </div>

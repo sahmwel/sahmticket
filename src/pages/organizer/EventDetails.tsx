@@ -1,4 +1,4 @@
-// src/pages/organizer/EventDetails.tsx - UPDATED WITH GUEST ARTISTES
+// src/pages/organizer/EventDetails.tsx - UPDATED WITH FEE BREAKDOWN AND ENHANCED GUEST DETAILS
 import Sidebar from "../../components/Sidebar";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -29,11 +29,14 @@ import {
   Music,
   Mic,
   Star,
-  Image as ImageIcon,
+  ImageIcon,
   Instagram,
   Twitter,
   Youtube,
-  Headphones
+  Headphones,
+  Receipt,
+  Percent,
+  CreditCard
 } from "lucide-react";
 import { Toaster, toast } from "react-hot-toast";
 import QRCode from "react-qr-code";
@@ -93,12 +96,16 @@ interface Event {
   tags: string[] | null;
   slug: string | null;
   timezone?: string;
+  fee_strategy?: "pass_to_attendees" | "absorb_fees" | "split_fees";
   ticketTiers?: TicketTier[];
   purchases?: any[];
   total_tickets_sold: number;
   total_revenue: number;
   total_purchases: number;
   avg_ticket_price: number;
+  total_service_fee?: number;
+  total_vat_fee?: number;
+  total_processing_fee?: number;
 }
 
 interface Purchase {
@@ -118,7 +125,36 @@ interface Purchase {
   tier_name: string;
   tier_description: string | null;
   qr_code_url: string | null;
+  service_fee?: number;
+  vat_fee?: number;
+  processing_fee?: number;
+  fee_strategy?: string;
 }
+
+// Helper to extract username from social URL
+const extractUsername = (url: string, platform: string): string => {
+  try {
+    if (platform === 'instagram') {
+      const match = url.match(/instagram\.com\/([^/?]+)/);
+      return match ? `@${match[1]}` : url;
+    }
+    if (platform === 'twitter') {
+      const match = url.match(/twitter\.com\/([^/?]+)/);
+      return match ? `@${match[1]}` : url;
+    }
+    if (platform === 'youtube') {
+      const match = url.match(/youtube\.com\/(?:c|channel|user)\/([^/?]+)/);
+      return match ? match[1] : url;
+    }
+    if (platform === 'spotify') {
+      const match = url.match(/spotify\.com\/artist\/([^/?]+)/);
+      return match ? match[1] : url;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+};
 
 export default function OrganizerEventDetails() {
   const { id } = useParams<{ id: string }>();
@@ -132,6 +168,7 @@ export default function OrganizerEventDetails() {
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null);
   const [selectedGuest, setSelectedGuest] = useState<GuestArtiste | null>(null);
+  const [hoveredGuestId, setHoveredGuestId] = useState<string | null>(null);
 
   // Timezone mapping
   const TIMEZONES: Record<string, string> = {
@@ -249,194 +286,209 @@ export default function OrganizerEventDetails() {
   };
 
   // Fetch all event data
- useEffect(() => {
-  if (!id) return;
+  useEffect(() => {
+    if (!id) return;
 
-  const fetchEventData = async () => {
-    setLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-
-      // ===== Fetch event – explicitly select columns (avoid missing column errors) =====
-      const { data: eventData, error: eventError } = await supabase
-        .from("events")
-        .select(`
-          id,
-          title,
-          description,
-          date,
-          time,
-          location,
-          venue,
-          image,
-          lat,
-          lng,
-          organizer_id,
-          created_at,
-          updated_at,
-          status,
-          slug
-          // fee_strategy – add this later after column exists
-        `)
-        .eq("id", id)
-        .eq("organizer_id", session.user.id)
-        .single();
-
-      if (eventError) throw eventError;
-      if (!eventData) {
-        navigate("/organizer/my-events");
-        return;
-      }
-
-      // ===== Try to fetch fee_strategy separately (gracefully handle missing column) =====
-      let feeStrategy = 'pass_to_attendees';
+    const fetchEventData = async () => {
+      setLoading(true);
       try {
-        const { data: feeData } = await supabase
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          navigate("/auth");
+          return;
+        }
+
+        // ===== Fetch event – explicitly select columns (avoid missing column errors) =====
+        const { data: eventData, error: eventError } = await supabase
           .from("events")
-          .select("fee_strategy")
-          .eq("id", id)
-          .maybeSingle();
-        if (feeData?.fee_strategy) feeStrategy = feeData.fee_strategy;
-      } catch (feeErr) {
-        console.warn("⚠️ fee_strategy column not available, using default");
-      }
-
-      // ===== Fetch guest artists =====
-      const { data: artistesData, error: artistesError } = await supabase
-        .from("guest_artistes")
-        .select("*")
-        .eq("event_id", id)
-        .order("created_at", { ascending: true });
-
-      if (!artistesError && artistesData) {
-        setGuestArtistes(artistesData);
-      }
-
-      // ===== Fetch purchases (include fee columns if they exist) =====
-      let purchasesData: any[] = [];
-      let totalSold = 0;
-      let totalRevenue = 0;
-      let totalServiceFee = 0;
-      let totalVatFee = 0;
-      let totalProcessingFee = 0;
-
-      try {
-        // Try to select new fee columns – if they don't exist, fallback to basic select
-        const { data: purchases, error: purchasesError } = await supabase
-          .from("purchases")
           .select(`
-            id, 
-            quantity, 
-            price, 
-            purchased_at, 
-            full_name, 
-            email, 
-            tier_name, 
-            reference, 
-            qr_code_url,
-            service_fee,
-            vat_fee,
-            processing_fee,
-            fee_strategy
+            id,
+            title,
+            description,
+            date,
+            time,
+            location,
+            venue,
+            image,
+            cover_image,
+            lat,
+            lng,
+            organizer_id,
+            created_at,
+            updated_at,
+            status,
+            slug,
+            city,
+            state,
+            country,
+            category_id,
+            published_at,
+            featured,
+            trending,
+            isnew,
+            sponsored,
+            event_type,
+            virtual_link,
+            contact_email,
+            contact_phone,
+            tags,
+            timezone
           `)
-          .eq("event_id", id)
-          .order("purchased_at", { ascending: false });
+          .eq("id", id)
+          .eq("organizer_id", session.user.id)
+          .single();
 
-        if (!purchasesError && purchases) {
-          purchasesData = purchases;
-          setPurchases(purchasesData);
-          
-          purchasesData.forEach((purchase: any) => {
-            const quantity = parseInt(purchase.quantity) || 0;
-            const price = parseFloat(purchase.price) || 0;
-            totalSold += quantity;
-            totalRevenue += price * quantity;
-            totalServiceFee += parseFloat(purchase.service_fee) || 0;
-            totalVatFee += parseFloat(purchase.vat_fee) || 0;
-            totalProcessingFee += parseFloat(purchase.processing_fee) || 0;
-          });
+        if (eventError) throw eventError;
+        if (!eventData) {
+          navigate("/organizer/my-events");
+          return;
         }
-      } catch (purchaseErr) {
-        // Fallback: select without fee columns
-        console.warn("⚠️ Fee columns missing in purchases, using basic query");
-        const { data: purchases, error: purchasesError } = await supabase
-          .from("purchases")
-          .select("id, quantity, price, purchased_at, full_name, email, tier_name, reference, qr_code_url")
-          .eq("event_id", id)
-          .order("purchased_at", { ascending: false });
 
-        if (!purchasesError && purchases) {
-          purchasesData = purchases;
-          setPurchases(purchasesData);
-          
-          purchasesData.forEach((purchase: any) => {
-            const quantity = parseInt(purchase.quantity) || 0;
-            const price = parseFloat(purchase.price) || 0;
-            totalSold += quantity;
-            totalRevenue += price * quantity;
-          });
+        // ===== Try to fetch fee_strategy separately (gracefully handle missing column) =====
+        let feeStrategy: "pass_to_attendees" | "absorb_fees" | "split_fees" = "pass_to_attendees";
+        try {
+          const { data: feeData } = await supabase
+            .from("events")
+            .select("fee_strategy")
+            .eq("id", id)
+            .maybeSingle();
+          if (feeData?.fee_strategy) feeStrategy = feeData.fee_strategy as any;
+        } catch (feeErr) {
+          console.warn("⚠️ fee_strategy column not available, using default");
         }
-      }
 
-      // ===== Fetch ticket tiers =====
-      let ticketTiers: TicketTier[] = [];
-      try {
-        const { data: tiersData, error: tiersError } = await supabase
-          .from("ticketTiers")
-          .select("id, tier_name, price, quantity_sold, quantity_total, is_active, created_at")
-          .eq("event_id", id);
+        // ===== Fetch guest artists =====
+        const { data: artistesData, error: artistesError } = await supabase
+          .from("guest_artistes")
+          .select("*")
+          .eq("event_id", id)
+          .order("created_at", { ascending: true });
 
-        if (!tiersError && tiersData) {
-          ticketTiers = tiersData;
-          
-          // If no purchases, get sold counts from tiers
-          if (totalSold === 0) {
-            tiersData.forEach((tier: any) => {
-              const sold = parseInt(tier.quantity_sold) || 0;
-              const price = parseFloat(tier.price) || 0;
-              totalSold += sold;
-              totalRevenue += price * sold;
+        if (!artistesError && artistesData) {
+          setGuestArtistes(artistesData);
+        }
+
+        // ===== Fetch purchases (include fee columns if they exist) =====
+        let purchasesData: Purchase[] = [];
+        let totalSold = 0;
+        let totalRevenue = 0;
+        let totalServiceFee = 0;
+        let totalVatFee = 0;
+        let totalProcessingFee = 0;
+
+        try {
+          // Try to select new fee columns – if they don't exist, fallback to basic select
+          const { data: purchases, error: purchasesError } = await supabase
+            .from("purchases")
+            .select(`
+              id, 
+              quantity, 
+              price, 
+              purchased_at, 
+              full_name, 
+              email, 
+              tier_name, 
+              reference, 
+              qr_code_url,
+              service_fee,
+              vat_fee,
+              processing_fee,
+              fee_strategy
+            `)
+            .eq("event_id", id)
+            .order("purchased_at", { ascending: false });
+
+          if (!purchasesError && purchases) {
+            purchasesData = purchases;
+            setPurchases(purchasesData);
+            
+            purchasesData.forEach((purchase: any) => {
+              const quantity = parseInt(purchase.quantity) || 0;
+              const price = parseFloat(purchase.price) || 0;
+              totalSold += quantity;
+              totalRevenue += price * quantity;
+              totalServiceFee += parseFloat(purchase.service_fee) || 0;
+              totalVatFee += parseFloat(purchase.vat_fee) || 0;
+              totalProcessingFee += parseFloat(purchase.processing_fee) || 0;
+            });
+          }
+        } catch (purchaseErr) {
+          // Fallback: select without fee columns
+          console.warn("⚠️ Fee columns missing in purchases, using basic query");
+          const { data: purchases, error: purchasesError } = await supabase
+            .from("purchases")
+            .select("id, quantity, price, purchased_at, full_name, email, tier_name, reference, qr_code_url")
+            .eq("event_id", id)
+            .order("purchased_at", { ascending: false });
+
+          if (!purchasesError && purchases) {
+            purchasesData = purchases;
+            setPurchases(purchasesData);
+            
+            purchasesData.forEach((purchase: any) => {
+              const quantity = parseInt(purchase.quantity) || 0;
+              const price = parseFloat(purchase.price) || 0;
+              totalSold += quantity;
+              totalRevenue += price * quantity;
             });
           }
         }
-      } catch (err) {
-        console.error("Could not fetch ticket tiers:", err);
+
+        // ===== Fetch ticket tiers =====
+        let ticketTiers: TicketTier[] = [];
+        try {
+          const { data: tiersData, error: tiersError } = await supabase
+            .from("ticketTiers")
+            .select("id, tier_name, description, price, quantity_total, quantity_sold, is_active, created_at")
+            .eq("event_id", id);
+
+          if (!tiersError && tiersData) {
+            ticketTiers = tiersData;
+            
+            // If no purchases, get sold counts from tiers
+            if (totalSold === 0) {
+              tiersData.forEach((tier: any) => {
+                const sold = parseInt(tier.quantity_sold) || 0;
+                const price = parseFloat(tier.price) || 0;
+                totalSold += sold;
+                totalRevenue += price * sold;
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Could not fetch ticket tiers:", err);
+        }
+
+        // ===== Calculate average ticket price =====
+        const avgTicketPrice = totalSold > 0 ? totalRevenue / totalSold : 0;
+
+        // ===== Enrich event object =====
+        const enrichedEvent: Event = {
+          ...eventData,
+          fee_strategy: feeStrategy,
+          ticketTiers,
+          purchases: purchasesData,
+          total_tickets_sold: totalSold,
+          total_revenue: totalRevenue,
+          total_service_fee: totalServiceFee,
+          total_vat_fee: totalVatFee,
+          total_processing_fee: totalProcessingFee,
+          total_purchases: purchasesData.length,
+          avg_ticket_price: avgTicketPrice,
+        };
+
+        setEvent(enrichedEvent);
+      } catch (error) {
+        console.error("Error fetching event:", error);
+        toast.error("Failed to load event data");
+        navigate("/organizer/my-events");
+      } finally {
+        setLoading(false);
       }
+    };
 
-      // ===== Calculate average ticket price =====
-      const avgTicketPrice = totalSold > 0 ? totalRevenue / totalSold : 0;
-
-      // ===== Enrich event object =====
-      const enrichedEvent: Event = {
-        ...eventData,
-        fee_strategy: feeStrategy,
-        ticketTiers,
-        purchases: purchasesData,
-        total_tickets_sold: totalSold,
-        total_revenue: totalRevenue,
-        total_service_fee: totalServiceFee,
-        total_vat_fee: totalVatFee,
-        total_processing_fee: totalProcessingFee,
-        total_purchases: purchasesData.length,
-        avg_ticket_price: avgTicketPrice,
-      };
-
-      setEvent(enrichedEvent);
-    } catch (error) {
-      console.error("Error fetching event:", error);
-      toast.error("Failed to load event data");
-      navigate("/organizer/my-events");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  fetchEventData();
-}, [id, navigate]);
+    fetchEventData();
+  }, [id, navigate]);
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -532,14 +584,14 @@ export default function OrganizerEventDetails() {
         <div className="lg:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-72 bg-gray-950 border-r border-white/10">
-            <Sidebar />
+            <Sidebar role="organizer" />
           </div>
         </div>
       )}
 
       {/* Sidebar for Desktop */}
       <div className="hidden lg:block">
-        <Sidebar />
+        <Sidebar role="organizer" />
       </div>
 
       {/* Main Content */}
@@ -672,6 +724,52 @@ export default function OrganizerEventDetails() {
                 </div>
               </div>
             </div>
+
+            {/* Fee Breakdown (if available) */}
+            {(event.total_service_fee || event.total_vat_fee || event.total_processing_fee) && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-400 text-xs sm:text-sm">Service Fees</p>
+                      <p className="text-xl sm:text-2xl font-bold text-white mt-1">
+                        {formatCurrency(event.total_service_fee || 0)}
+                      </p>
+                    </div>
+                    <div className="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center">
+                      <Percent className="text-amber-400 w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-400 text-xs sm:text-sm">VAT</p>
+                      <p className="text-xl sm:text-2xl font-bold text-white mt-1">
+                        {formatCurrency(event.total_vat_fee || 0)}
+                      </p>
+                    </div>
+                    <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                      <Receipt className="text-blue-400 w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-400 text-xs sm:text-sm">Processing Fees</p>
+                      <p className="text-xl sm:text-2xl font-bold text-white mt-1">
+                        {formatCurrency(event.total_processing_fee || 0)}
+                      </p>
+                      <p className="text-gray-400 text-xs mt-1">Strategy: {event.fee_strategy?.replace(/_/g, ' ') || 'pass to attendees'}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
+                      <CreditCard className="text-purple-400 w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Tabs */}
             <div className="flex flex-wrap border-b border-white/10 mb-6 sm:mb-8">
@@ -982,8 +1080,10 @@ export default function OrganizerEventDetails() {
                       {guestArtistes.map((artiste) => (
                         <div 
                           key={artiste.id} 
-                          className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition cursor-pointer"
+                          className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition cursor-pointer relative"
                           onClick={() => setSelectedGuest(artiste)}
+                          onMouseEnter={() => setHoveredGuestId(artiste.id)}
+                          onMouseLeave={() => setHoveredGuestId(null)}
                         >
                           <div className="flex items-start gap-3 sm:gap-4">
                             <div className="w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-800">
@@ -1009,57 +1109,75 @@ export default function OrganizerEventDetails() {
                                   <p className="text-purple-400 text-xs sm:text-sm mt-0.5">{artiste.role}</p>
                                 </div>
                               </div>
-                              {artiste.bio && (
-                                <p className="text-gray-400 text-xs sm:text-sm mt-2 line-clamp-2">{artiste.bio}</p>
-                              )}
                               
-                              {/* Social Media Icons */}
-                              {artiste.social_media && (
-                                <div className="flex gap-2 mt-3">
-                                  {artiste.social_media.instagram && (
-                                    <a 
-                                      href={artiste.social_media.instagram} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="text-gray-400 hover:text-pink-400 transition"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Instagram size={14} className="sm:w-4 sm:h-4" />
-                                    </a>
-                                  )}
-                                  {artiste.social_media.twitter && (
-                                    <a 
-                                      href={artiste.social_media.twitter} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="text-gray-400 hover:text-blue-400 transition"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Twitter size={14} className="sm:w-4 sm:h-4" />
-                                    </a>
-                                  )}
-                                  {artiste.social_media.youtube && (
-                                    <a 
-                                      href={artiste.social_media.youtube} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="text-gray-400 hover:text-red-400 transition"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Youtube size={14} className="sm:w-4 sm:h-4" />
-                                    </a>
-                                  )}
-                                  {artiste.social_media.spotify && (
-                                    <a 
-                                      href={artiste.social_media.spotify} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="text-gray-400 hover:text-green-400 transition"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Headphones size={14} className="sm:w-4 sm:h-4" />
-                                    </a>
-                                  )}
+                              {/* Social Media Icons with usernames on hover */}
+                              <div className="flex gap-2 mt-3">
+                                {artiste.social_media?.instagram && (
+                                  <a 
+                                    href={artiste.social_media.instagram} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-gray-400 hover:text-pink-400 transition relative group"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={extractUsername(artiste.social_media.instagram, 'instagram')}
+                                  >
+                                    <Instagram size={14} className="sm:w-4 sm:h-4" />
+                                    <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
+                                      {extractUsername(artiste.social_media.instagram, 'instagram')}
+                                    </span>
+                                  </a>
+                                )}
+                                {artiste.social_media?.twitter && (
+                                  <a 
+                                    href={artiste.social_media.twitter} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-gray-400 hover:text-blue-400 transition relative group"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={extractUsername(artiste.social_media.twitter, 'twitter')}
+                                  >
+                                    <Twitter size={14} className="sm:w-4 sm:h-4" />
+                                    <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
+                                      {extractUsername(artiste.social_media.twitter, 'twitter')}
+                                    </span>
+                                  </a>
+                                )}
+                                {artiste.social_media?.youtube && (
+                                  <a 
+                                    href={artiste.social_media.youtube} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-gray-400 hover:text-red-400 transition relative group"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={extractUsername(artiste.social_media.youtube, 'youtube')}
+                                  >
+                                    <Youtube size={14} className="sm:w-4 sm:h-4" />
+                                    <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
+                                      {extractUsername(artiste.social_media.youtube, 'youtube')}
+                                    </span>
+                                  </a>
+                                )}
+                                {artiste.social_media?.spotify && (
+                                  <a 
+                                    href={artiste.social_media.spotify} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-gray-400 hover:text-green-400 transition relative group"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={extractUsername(artiste.social_media.spotify, 'spotify')}
+                                  >
+                                    <Headphones size={14} className="sm:w-4 sm:h-4" />
+                                    <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
+                                      {extractUsername(artiste.social_media.spotify, 'spotify')}
+                                    </span>
+                                  </a>
+                                )}
+                              </div>
+
+                              {/* Bio preview on hover */}
+                              {artiste.bio && hoveredGuestId === artiste.id && (
+                                <div className="absolute left-0 right-0 bottom-full mb-2 mx-4 p-3 bg-gray-800 border border-gray-700 rounded-lg shadow-xl text-xs text-gray-300 z-20">
+                                  <p className="line-clamp-3">{artiste.bio}</p>
                                 </div>
                               )}
                             </div>
@@ -1184,6 +1302,10 @@ export default function OrganizerEventDetails() {
                           : "0%"}
                       </p>
                     </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">Service Fees Collected</p>
+                      <p className="text-white text-2xl font-bold mt-1">{formatCurrency(event.total_service_fee || 0)}</p>
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <div>
@@ -1198,11 +1320,16 @@ export default function OrganizerEventDetails() {
                         {purchaseCount > 0 ? (event.total_tickets_sold / purchaseCount).toFixed(1) : "0"}
                       </p>
                     </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">VAT + Processing Fees</p>
+                      <p className="text-white text-2xl font-bold mt-1">
+                        {formatCurrency((event.total_vat_fee || 0) + (event.total_processing_fee || 0))}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <p className="text-gray-400 text-xs sm:text-sm mt-6">
-                  Detailed analytics including sales trends, customer demographics, and performance metrics
-                  will be available in a future update.
+                  Fee Strategy: <span className="text-purple-400 font-medium">{event.fee_strategy?.replace(/_/g, ' ') || 'pass to attendees'}</span>
                 </p>
               </div>
             )}
@@ -1259,6 +1386,12 @@ export default function OrganizerEventDetails() {
                   <p className="text-gray-400 text-xs sm:text-sm">Reference</p>
                   <p className="text-white font-mono text-xs sm:text-sm">{selectedPurchase.reference}</p>
                 </div>
+                {selectedPurchase.service_fee !== undefined && (
+                  <div>
+                    <p className="text-gray-400 text-xs sm:text-sm">Service Fee Paid</p>
+                    <p className="text-white text-sm sm:text-base">{formatCurrency(selectedPurchase.service_fee || 0)}</p>
+                  </div>
+                )}
               </div>
               
               <div className="flex gap-3 mt-6">
@@ -1330,6 +1463,7 @@ export default function OrganizerEventDetails() {
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-gray-400 hover:text-pink-400 transition"
+                      title={extractUsername(selectedGuest.social_media.instagram, 'instagram')}
                     >
                       <Instagram size={20} />
                     </a>
@@ -1340,6 +1474,7 @@ export default function OrganizerEventDetails() {
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-gray-400 hover:text-blue-400 transition"
+                      title={extractUsername(selectedGuest.social_media.twitter, 'twitter')}
                     >
                       <Twitter size={20} />
                     </a>
@@ -1350,6 +1485,7 @@ export default function OrganizerEventDetails() {
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-gray-400 hover:text-red-400 transition"
+                      title={extractUsername(selectedGuest.social_media.youtube, 'youtube')}
                     >
                       <Youtube size={20} />
                     </a>
@@ -1360,6 +1496,7 @@ export default function OrganizerEventDetails() {
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-gray-400 hover:text-green-400 transition"
+                      title={extractUsername(selectedGuest.social_media.spotify, 'spotify')}
                     >
                       <Headphones size={20} />
                     </a>
