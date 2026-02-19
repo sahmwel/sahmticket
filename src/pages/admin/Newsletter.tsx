@@ -21,12 +21,14 @@ import {
 } from "lucide-react";
 import Modal from "../../components/Modal";
 
+
+
 interface Subscriber {
   id: string;
   email: string;
-  created_at: string;
+  created_at: string;        // mapped from subscribed_at
   status?: "active" | "unsubscribed";
-  source?: string;
+  // source removed – column doesn't exist in subscribers table
 }
 
 interface Stats {
@@ -59,52 +61,64 @@ export default function AdminNewsletter() {
   const navigate = useNavigate();
 
   const fetchSubscribers = useCallback(async () => {
-    try {
-      setRefreshing(true);
-      setError(null);
+  try {
+    setRefreshing(true);
+    setError(null);
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        navigate("/auth");
-        return;
-      }
-
-      // Fetch subscribers from newsletters table
-      const { data, error: fetchError } = await supabase
-        .from("newsletters")
-        .select("id, email, created_at, status, source")
-        .order("created_at", { ascending: false });
-
-      if (fetchError) throw fetchError;
-
-      const typedData = (data || []).map((item: any) => ({
-        id: item.id,
-        email: item.email,
-        created_at: item.created_at,
-        status: item.status || "active",
-        source: item.source || "website",
-      }));
-
-      setSubscribers(typedData);
-
-      // Calculate stats
-      const total = typedData.length;
-      const active = typedData.filter(s => s.status === "active").length;
-      const unsubscribed = typedData.filter(s => s.status === "unsubscribed").length;
-      const now = new Date();
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const newThisMonth = typedData.filter(s => s.created_at >= firstDayOfMonth).length;
-
-      setStats({ total, active, unsubscribed, newThisMonth });
-    } catch (err: any) {
-      console.error("Fetch subscribers error:", err);
-      setError(err.message);
-      toast.error("Failed to load subscribers");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      navigate("/auth");
+      return;
     }
-  }, [navigate]);
+
+    // ✅ Select the actual column names only (no aliasing)
+    const { data, error: fetchError } = await supabase
+      .from("subscribers")
+      .select("id, email, subscribed_at, status")
+      .order("subscribed_at", { ascending: false });
+
+    if (fetchError) throw fetchError;
+
+    // ✅ Map subscribed_at to created_at
+    const typedData = (data || []).map((item: any) => ({
+      id: item.id,
+      email: item.email,
+      created_at: item.subscribed_at,   // rename here
+      status: item.status || "active",
+    }));
+
+    setSubscribers(typedData);
+
+    // Calculate stats
+        // Ensure typedData is recognized as a Subscriber array
+    const total = (typedData as Subscriber[]).length;
+
+    const active = (typedData as Subscriber[]).filter(
+      (s: Subscriber) => s.status === "active"
+    ).length;
+
+    const unsubscribed = (typedData as Subscriber[]).filter(
+      (s: Subscriber) => s.status === "unsubscribed"
+    ).length;
+
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    const newThisMonth = (typedData as Subscriber[]).filter(
+      (s: Subscriber) => s.created_at >= firstDayOfMonth
+    ).length;
+
+
+    setStats({ total, active, unsubscribed, newThisMonth });
+  } catch (err: any) {
+    console.error("Fetch subscribers error:", err);
+    setError(err.message);
+    toast.error("Failed to load subscribers");
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+}, [navigate]);
 
   useEffect(() => {
     fetchSubscribers();
@@ -174,7 +188,7 @@ export default function AdminNewsletter() {
     if (!selectedSubscriber) return;
     try {
       const { error } = await supabase
-        .from("newsletters")
+        .from("subscribers")
         .delete()
         .eq("id", selectedSubscriber.id);
 
@@ -192,7 +206,7 @@ export default function AdminNewsletter() {
     const newStatus = subscriber.status === "active" ? "unsubscribed" : "active";
     try {
       const { error } = await supabase
-        .from("newsletters")
+        .from("subscribers")
         .update({ status: newStatus })
         .eq("id", subscriber.id);
 
@@ -206,12 +220,11 @@ export default function AdminNewsletter() {
   };
 
   const exportCSV = () => {
-    const headers = ["Email", "Subscribed At", "Status", "Source"];
+    const headers = ["Email", "Subscribed At", "Status"]; // removed "Source"
     const rows = filteredSubscribers.map(s => [
       s.email,
       new Date(s.created_at).toLocaleString(),
       s.status,
-      s.source || "",
     ]);
     const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv" });
@@ -278,7 +291,7 @@ export default function AdminNewsletter() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 lg:ml-64">
         <Navbar role="admin" />
         <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-900 via-purple-900/5 to-gray-900">
           <main className="p-4 sm:p-6 lg:p-8 xl:p-10">
@@ -404,7 +417,7 @@ export default function AdminNewsletter() {
                       <th className="px-6 py-3 font-medium">Email</th>
                       <th className="px-6 py-3 font-medium">Subscribed At</th>
                       <th className="px-6 py-3 font-medium">Status</th>
-                      <th className="px-6 py-3 font-medium">Source</th>
+                      {/* Removed Source column */}
                       <th className="px-6 py-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -418,7 +431,7 @@ export default function AdminNewsletter() {
                             {sub.status || "active"}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-gray-400">{sub.source || "—"}</td>
+                        {/* Removed Source cell */}
                         <td className="px-6 py-4">
                           <div className="relative">
                             <button
@@ -463,7 +476,7 @@ export default function AdminNewsletter() {
                     ))}
                     {filteredSubscribers.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
+                        <td colSpan={4} className="px-6 py-8 text-center text-gray-400">
                           No subscribers found
                         </td>
                       </tr>

@@ -16,6 +16,7 @@ import {
   FileText,
   CreditCard,
   Bell,
+  Mail,
   Menu,
   X
 } from "lucide-react";
@@ -30,46 +31,46 @@ interface SidebarProps {
 export default function Sidebar({ role, isMobileOpen, onMobileClose }: SidebarProps) {
   const [activeGroup, setActiveGroup] = useState<string>("");
 
-  const adminLinks = [
-    {
-      title: "Dashboard",
-      links: [
-        { name: "Overview", path: "/admin/dashboard", icon: <LayoutDashboard size={18} /> },
-        { name: "Analytics", path: "/admin/analytics", icon: <BarChart3 size={18} /> },
-      ]
-    },
-    {
-      title: "Content Management",
-      links: [
-        { name: "Events", path: "/admin/events", icon: <Calendar size={18} /> },
-        { name: "Categories", path: "/admin/categories", icon: <List size={18} /> },
-        { name: "Featured", path: "/admin/featured", icon: <Bell size={18} /> },
-      ]
-    },
-    {
-      title: "User Management",
-      links: [
-        { name: "Users", path: "/admin/users", icon: <Users size={18} /> },
-        { name: "Organizers", path: "/admin/organizers", icon: <Shield size={18} /> },
-      ]
-    },
-    {
-      title: "Financial",
-      links: [
-        { name: "Tickets", path: "/admin/tickets", icon: <Ticket size={18} /> },
-        { name: "Transactions", path: "/admin/transactions", icon: <CreditCard size={18} /> },
-        { name: "Reports", path: "/admin/reports", icon: <FileText size={18} /> },
-      ]
-    },
-    {
-      title: "System",
-      links: [
-        { name: "Settings", path: "/admin/settings", icon: <Settings size={18} /> },
-        { name: "Logs", path: "/admin/logs", icon: <FileText size={18} /> },
-      ]
-    }
-  ];
-
+const adminLinks = [
+  {
+    title: "Dashboard",
+    links: [
+      { name: "Overview", path: "/admin/dashboard", icon: <LayoutDashboard size={18} /> },
+      { name: "Analytics", path: "/admin/analytics", icon: <BarChart3 size={18} /> },
+    ]
+  },
+  {
+    title: "Content Management",
+    links: [
+      { name: "Events", path: "/admin/events", icon: <Calendar size={18} /> },
+      { name: "Categories", path: "/admin/categories", icon: <List size={18} /> },
+      { name: "Featured", path: "/admin/featured", icon: <Bell size={18} /> },
+      { name: "Newsletter", path: "/admin/newsletter", icon: <Mail size={18} /> }, // <-- new link
+    ]
+  },
+  {
+    title: "User Management",
+    links: [
+      { name: "Users", path: "/admin/users", icon: <Users size={18} /> },
+      { name: "Organizers", path: "/admin/organizers", icon: <Shield size={18} /> },
+    ]
+  },
+  {
+    title: "Financial",
+    links: [
+      { name: "Tickets", path: "/admin/tickets", icon: <Ticket size={18} /> },
+      { name: "Transactions", path: "/admin/transactions", icon: <CreditCard size={18} /> },
+      { name: "Reports", path: "/admin/reports", icon: <FileText size={18} /> },
+    ]
+  },
+  {
+    title: "System",
+    links: [
+      { name: "Settings", path: "/admin/settings", icon: <Settings size={18} /> },
+      { name: "Logs", path: "/admin/logs", icon: <FileText size={18} /> },
+    ]
+  }
+];
   const organizerLinks = [
     {
       title: "Overview",
