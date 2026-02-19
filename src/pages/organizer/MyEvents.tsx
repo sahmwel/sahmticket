@@ -194,7 +194,7 @@ export default function OrganizerMyEvents() {
 
   const navigate = useNavigate();
 
-  // ---------- FETCH EVENTS ----------
+  // ---------- FETCH EVENTS (UPDATED) ----------
   const fetchEvents = async () => {
     const {
       data: { session },
@@ -228,26 +228,26 @@ export default function OrganizerMyEvents() {
         let totalRevenue = 0;
         let ticketTiers: TicketTier[] = [];
 
-        // Fetch purchases
+        // ✅ Fetch tickets to get accurate sales and revenue
         try {
-          const { data: purchases, error: purchasesError } = await supabase
-            .from("purchases")
-            .select("quantity, price")
+          const { data: tickets, error: ticketsError } = await supabase
+            .from("tickets")
+            .select("quantity, amount_in_ngn")
             .eq("event_id", event.id);
 
-          if (!purchasesError && purchases && purchases.length > 0) {
-            purchases.forEach((purchase: any) => {
-              const quantity = parseInt(purchase.quantity) || 0;
-              const price = parseFloat(purchase.price) || 0;
-              totalSold += quantity;
-              totalRevenue += price * quantity;
+          if (!ticketsError && tickets && tickets.length > 0) {
+            tickets.forEach((ticket: any) => {
+              const qty = ticket.quantity || 1;
+              const amount = ticket.amount_in_ngn || 0;
+              totalSold += qty;
+              totalRevenue += amount;
             });
           }
         } catch (err) {
-          console.warn("Could not fetch purchases:", err);
+          console.warn("Could not fetch tickets:", err);
         }
 
-        // Fetch ticket tiers
+        // ✅ Fetch ticket tiers for display (not for totals if tickets exist)
         try {
           const { data: tiersData, error: tiersError } = await supabase
             .from("ticketTiers")
@@ -268,6 +268,7 @@ export default function OrganizerMyEvents() {
               updated_at: tier.updated_at,
             }));
 
+            // Only use tiers if no tickets found (fallback)
             if (totalSold === 0) {
               tiersData.forEach((tier: any) => {
                 const sold = parseInt(tier.quantity_sold) || 0;
@@ -281,7 +282,7 @@ export default function OrganizerMyEvents() {
           console.log("ticketTiers table not accessible");
         }
 
-        // Check JSONB column
+        // Fallback to JSONB column if still no data
         if (totalSold === 0 && event.ticketTiers && Array.isArray(event.ticketTiers)) {
           ticketTiers = event.ticketTiers
             .filter((tier: any) => tier)

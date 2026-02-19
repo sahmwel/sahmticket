@@ -731,18 +731,6 @@ export default function OrganizerTickets() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {/* Mobile Header with Hamburger Menu */}
-        <div className="md:hidden p-4 border-b border-white/10 flex items-center justify-between">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 text-white hover:bg-white/10 rounded-lg transition"
-          >
-            <Menu className="w-6 h-6" />
-          </button>
-          <h1 className="text-white font-bold text-lg">Tickets</h1>
-          <div className="w-10" /> {/* Spacer for alignment */}
-        </div>
-
         <div className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-900 via-purple-900/10 to-gray-900">
           <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             {/* Header */}

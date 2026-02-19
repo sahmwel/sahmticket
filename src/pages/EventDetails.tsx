@@ -271,12 +271,10 @@ const RIDE_SERVICES: RideService[] = [
     name: 'Uber',
     icon: CarIcon,
     color: 'bg-black',
-    appUrl: 'https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=TARGET_LOCATION&dropoff[latitude]=TARGET_LAT&dropoff[longitude]=TARGET_LNG',
-    websiteUrl: 'https://www.uber.com/',
-    description: 'Book a ride with Uber - available in 70+ countries',
-    estimatedPrice: '₦1,500 - ₦4,000',
-    estimatedTime: '5-15 min',
-    availableCountries: ['Nigeria', 'USA', 'UK', 'Canada', 'Australia', 'South Africa', 'Ghana', 'Kenya', '100+ countries'],
+    appUrl: 'https://m.uber.com[latitude]={LAT}&dropoff[longitude]={LNG}&dropoff[formatted_address]={ADDR}',
+    websiteUrl: 'https://www.uber.com',
+    description: 'Global standard for reliable rides.',
+    availableCountries: ['Nigeria', 'USA', 'UK', 'South Africa', 'Ghana', '100+ countries'],
     rideTypes: ['UberX', 'Uber Comfort', 'Uber Black', 'UberXL']
   },
   {
@@ -284,48 +282,41 @@ const RIDE_SERVICES: RideService[] = [
     name: 'Bolt',
     icon: Car,
     color: 'bg-teal-600',
-    appUrl: 'https://bolt.eu/ride/?pickup_lat=CURRENT_LAT&pickup_lng=CURRENT_LNG&destination_lat=TARGET_LAT&destination_lng=TARGET_LNG',
-    websiteUrl: 'https://bolt.eu/',
-    description: 'Affordable rides in Europe and Africa',
-    estimatedPrice: '₦1,200 - ₦3,500',
-    estimatedTime: '3-10 min',
-    availableCountries: ['Nigeria', 'UK', 'France', 'Germany', 'Poland', 'South Africa', 'Kenya', 'Ghana', '40+ countries'],
-    rideTypes: ['Bolt', 'Bolt Premier', 'Bolt Van']
+    appUrl: 'https://bolt.eu{LAT}&destination_lng={LNG}',
+    websiteUrl: 'https://bolt.eu',
+    description: 'Fast and affordable local rides.',
+    availableCountries: ['Nigeria', 'UK', 'France', 'Germany', 'South Africa', '40+ countries'],
+    rideTypes: ['Bolt', 'Bolt Premier', 'Bolt Lite', 'Bolt Van']
   },
   {
     id: 'indrive',
     name: 'inDrive',
     icon: Navigation2,
     color: 'bg-orange-500',
-    appUrl: 'https://indriver.com/',
-    description: 'Negotiate your ride price - popular in emerging markets',
-    estimatedPrice: 'Negotiable',
-    estimatedTime: '5-20 min',
-    availableCountries: ['Nigeria', 'Brazil', 'Mexico', 'India', 'Russia', 'Kazakhstan', '20+ countries'],
-    rideTypes: ['Economy', 'Comfort', 'Business']
+    appUrl: 'https://indriver.com',
+    description: 'Negotiate your fare directly with the driver.',
+    availableCountries: ['Nigeria', 'Brazil', 'Mexico', 'India', '20+ countries'],
+    rideTypes: ['Economy', 'Comfort', 'City']
   },
   {
     id: 'lyft',
     name: 'Lyft',
     icon: Car,
     color: 'bg-pink-500',
-    appUrl: 'https://lyft.com/ride',
-    description: 'Popular ride-hailing service in North America',
-    estimatedPrice: '$15 - $40',
-    estimatedTime: '5-15 min',
-    availableCountries: ['USA', 'Canada'],
-    rideTypes: ['Lyft', 'Lyft XL', 'Lux Black']
+    appUrl: 'https://lyft.com{LAT}&lng={LNG}',
+    websiteUrl: 'https://www.lyft.com',
+    description: 'Popular choice in North America and expanding markets.',
+    availableCountries: ['USA', 'Canada', 'UK'],
+    rideTypes: ['Lyft', 'Lyft XL', 'Extra Comfort', 'Black']
   },
   {
     id: 'taxify',
     name: 'Taxify',
     icon: Car,
     color: 'bg-blue-500',
-    appUrl: 'https://taxify.eu/',
-    description: 'European ride-hailing service (now part of Bolt)',
-    estimatedPrice: '€10 - €30',
-    estimatedTime: '5-15 min',
-    availableCountries: ['UK', 'France', 'Germany', 'Spain', 'Italy', 'Portugal'],
+    appUrl: 'https://bolt.eu',
+    description: 'Legacy brand for Bolt in Europe and Africa.',
+    availableCountries: ['UK', 'France', 'Germany', 'Poland', 'Portugal'],
     rideTypes: ['Taxify', 'Taxify Business']
   },
   {
@@ -333,14 +324,13 @@ const RIDE_SERVICES: RideService[] = [
     name: 'Public Transport',
     icon: Bus,
     color: 'bg-purple-600',
-    appUrl: 'https://www.google.com/maps/dir/Current+Location/TARGET_LOCATION/@TARGET_LAT,TARGET_LNG,15z/data=!4m2!4m1!3e3',
-    description: 'Buses, trains, and metros near the venue',
-    estimatedPrice: '₦200 - ₦1,000',
-    estimatedTime: 'Varies',
+    appUrl: 'https://www.google.com{LAT},{LNG}&travelmode=transit',
+    description: 'Local buses (BRT), trains, and metros.',
     availableCountries: ['All Countries'],
     rideTypes: ['Bus', 'Train', 'Metro', 'Tram']
   }
 ];
+
 
 // Get processing fee helper
 const getProcessingFee = (gateway: typeof PAYMENT_GATEWAYS[0], currency: Currency): number => {
@@ -697,36 +687,12 @@ const verifyTicketsInDatabase = async (orderId: string, reference?: string) => {
 };
 
 const updateTierQuantity = async (tierId: string | undefined, quantity: number) => {
-  try {
-    if (!tierId) {
-      console.error("No tier ID provided for quantity update");
-      return;
-    }
-
-    const { data: tier, error: fetchError } = await supabase
-      .from("ticketTiers")
-      .select("quantity_sold")
-      .eq("id", tierId)
-      .single();
-
-    if (fetchError) {
-      console.error("Failed to fetch tier:", fetchError);
-      return;
-    }
-
-    const newQuantitySold = (tier.quantity_sold || 0) + quantity;
-    const { error: updateError } = await supabase
-      .from("ticketTiers")
-      .update({ quantity_sold: newQuantitySold })
-      .eq("id", tierId);
-
-    if (updateError) {
-      console.error("Failed to update tier quantity:", updateError);
-    }
-
-  } catch (err) {
-    console.error("Failed to update tier:", err);
-  }
+  if (!tierId) throw new Error("No tier ID provided");
+  const { error } = await supabase.rpc('increment_ticket_sold', {
+    tier_id: tierId,
+    inc: quantity
+  });
+  if (error) throw error;
 };
 
 const sendTicketEmail = async (

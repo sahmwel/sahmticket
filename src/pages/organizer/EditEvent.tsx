@@ -1,15 +1,16 @@
-// src/pages/organizer/EditEvent.tsx - UPDATED WITH GUEST ARTISTES
+// src/pages/organizer/EditEvent.tsx - COMPLETE VERSION (matches CreateEvent features)
 import Sidebar from "../../components/Sidebar";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
-import { 
-  Upload, X, Plus, CheckCircle, AlertCircle, 
+import {
+  Upload, X, Plus, CheckCircle, AlertCircle,
   Calendar, MapPin, Image as ImageIcon, Menu,
   Tag, Globe, DollarSign, Users, Save, Clock,
   ArrowLeft, Loader2, Eye, ChevronDown, Music,
   Mic, UserPlus, Trash2, Globe as GlobeIcon,
-  Navigation, Map, Star
+  Navigation, Map, Star, CreditCard, Receipt,
+  Banknote, Currency
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
@@ -25,6 +26,8 @@ interface TicketTier {
   description: string;
   quantity: string;
   quantity_sold?: number;
+  original_currency?: string;
+  original_price?: number;
 }
 
 interface GuestArtiste {
@@ -72,9 +75,20 @@ interface EventData {
   created_at?: string;
   updated_at?: string;
   slug?: string;
+  lat?: number;
+  lng?: number;
   base_currency?: string;
   timezone?: string;
+  fee_strategy?: 'pass_to_attendees' | 'absorb_fees';
+  organizer_subaccount_code?: string;
+  organizer_flutterwave_subaccount?: string;
 }
+
+// Currency types
+type CurrencyType = 'NGN' | 'USD' | 'GBP' | 'EUR' | 'GHS' | 'KES' | 'ZAR' | 'CAD';
+
+// Fee Strategy type
+type FeeStrategy = 'pass_to_attendees' | 'absorb_fees';
 
 // Timezones for different countries
 const TIMEZONES: Record<string, string> = {
@@ -86,6 +100,29 @@ const TIMEZONES: Record<string, string> = {
   'Kenya': 'EAT (UTC+3)',
   'South Africa': 'SAST (UTC+2)',
   'Canada': 'EST (UTC-5)'
+};
+
+// Exchange rates
+const EXCHANGE_RATES: Record<CurrencyType, number> = {
+  NGN: 1,
+  USD: 1600,
+  GBP: 2000,
+  EUR: 1700,
+  GHS: 100,
+  KES: 12,
+  ZAR: 85,
+  CAD: 1200
+};
+
+const CURRENCY_INFO: Record<CurrencyType, { name: string; symbol: string; flag: string }> = {
+  NGN: { name: "Nigerian Naira", symbol: "₦", flag: "🇳🇬" },
+  USD: { name: "US Dollar", symbol: "$", flag: "🇺🇸" },
+  GBP: { name: "British Pound", symbol: "£", flag: "🇬🇧" },
+  EUR: { name: "Euro", symbol: "€", flag: "🇪🇺" },
+  GHS: { name: "Ghanaian Cedi", symbol: "GH₵", flag: "🇬🇭" },
+  KES: { name: "Kenyan Shilling", symbol: "KSh", flag: "🇰🇪" },
+  ZAR: { name: "South African Rand", symbol: "R", flag: "🇿🇦" },
+  CAD: { name: "Canadian Dollar", symbol: "C$", flag: "🇨🇦" }
 };
 
 // Guest artiste roles
@@ -121,45 +158,17 @@ const COMPLETE_CATEGORIES = [
   { id: 15, name: "🍔 Food & Drink Tastings" },
   { id: 16, name: "🏖️ Beach Party" },
   { id: 17, name: "🏊 Pool Party" },
-  { id: 18, name: "🎭 Themed Costume Party" },
-  { id: 19, name: "🎬 Movie Nights" },
-  { id: 20, name: "🎮 Gaming Events" },
-  { id: 21, name: "📚 Book Clubs" },
-  { id: 22, name: "🚗 Car Meets & Auto Shows" },
-  { id: 23, name: "🛍️ Pop-up Shops & Markets" },
-  { id: 24, name: "🌸 Garden Parties" },
-  { id: 25, name: "🎤 Karaoke Night" },
-  { id: 26, name: "🎲 Board Game Night" },
-  { id: 27, name: "🍷 Wine Tasting" },
-  { id: 28, name: "🎨 Art Exhibitions" },
-  { id: 29, name: "💃 Salsa & Dance Parties" },
-  { id: 30, name: "🧘 Wellness & Yoga Retreats" },
-  { id: 31, name: "🎓 Graduation Parties" },
-  { id: 32, name: "👶 Baby Showers" },
-  { id: 33, name: "🛒 Garage Sales" },
-  { id: 34, name: "🔬 Science & Tech Meetups" },
-  { id: 35, name: "🎣 Outdoor & Adventure" },
-  { id: 36, name: "🎪 Circus & Carnival" },
-  { id: 37, name: "👻 Halloween Party" },
-  { id: 38, name: "🎄 Christmas Party" },
-  { id: 39, name: "🎆 New Year's Eve Party" },
-  { id: 40, name: "🎇 Fireworks Display" },
-  { id: 41, name: "🚴 Marathon & Races" },
-  { id: 42, name: "🎸 Open Mic Night" },
-  { id: 43, name: "🖼️ Museum Exhibits" },
-  { id: 44, name: "🌍 Cultural Festivals" },
-  { id: 45, name: "🍻 Pub Crawl" },
-  { id: 46, name: "🛥️ Boat Party" },
-  { id: 47, name: "🎪 Fair & Carnival" },
-  { id: 48, name: "🧩 Puzzle & Escape Rooms" },
-  { id: 49, name: "🎳 Bowling Night" },
-  { id: 50, name: "⛸️ Ice Skating Parties" }
+  { id: 19, name: "🎭 Themed Costume Party" },
+  { id: 20, name: "🎤 Karaoke Night" },
+  { id: 21, name: "👻 Halloween Party" },
+  { id: 22, name: "🎄 Christmas Party" },
+  { id: 23, name: "🎆 New Year's Eve Party" }
 ];
 
 export default function EditEvent() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  
+
   // Form state
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -180,18 +189,18 @@ export default function EditEvent() {
   ]);
 
   // Guest Artistes State
-  const [guestArtistes, setGuestArtistes] = useState<GuestArtiste[]>([
-    {
-      id: "1",
-      name: "",
-      role: "Headliner",
-      image_url: "",
-      imageFile: null,
-      imagePreview: null,
-      bio: "",
-      social_media: {}
-    }
-  ]);
+  const [guestArtistes, setGuestArtistes] = useState<GuestArtiste[]>([]);
+
+  // Currency State
+  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyType>('NGN');
+  const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
+
+  // Fee Strategy State
+  const [feeStrategy, setFeeStrategy] = useState<FeeStrategy>('pass_to_attendees');
+
+  // Subaccount Codes
+  const [organizerSubaccountCode, setOrganizerSubaccountCode] = useState("");
+  const [organizerFlutterwaveSubaccount, setOrganizerFlutterwaveSubaccount] = useState("");
 
   // Coordinates State
   const [latitude, setLatitude] = useState<string>("");
@@ -242,6 +251,16 @@ export default function EditEvent() {
     const sold = tier.quantity_sold || 0;
     return total - sold;
   }, []);
+
+  const formatPrice = (price: string): string => {
+    const numPrice = parseFloat(price) || 0;
+    const symbol = CURRENCY_INFO[selectedCurrency].symbol;
+
+    if (selectedCurrency === 'NGN') {
+      return `${symbol}${numPrice.toLocaleString()}`;
+    }
+    return `${symbol}${numPrice.toFixed(2)}`;
+  };
 
   // Geocoding function
   const geocodeAddressOnBlur = async () => {
@@ -298,6 +317,24 @@ export default function EditEvent() {
     }
   };
 
+  // Update country based on currency
+  useEffect(() => {
+    const currencyToCountryMap: Record<CurrencyType, string> = {
+      NGN: "Nigeria",
+      USD: "United States",
+      GBP: "United Kingdom",
+      EUR: "European Union",
+      GHS: "Ghana",
+      KES: "Kenya",
+      ZAR: "South Africa",
+      CAD: "Canada"
+    };
+
+    if (currencyToCountryMap[selectedCurrency]) {
+      setCountry(currencyToCountryMap[selectedCurrency]);
+    }
+  }, [selectedCurrency]);
+
   // Load event data
   useEffect(() => {
     if (!id) return;
@@ -328,13 +365,11 @@ export default function EditEvent() {
         setOriginalEvent(event);
         setEventStatus(event.status || "draft");
 
-        // Populate form fields
+        // Populate basic fields
         setTitle(event.title || "");
-        
         if (event.date) {
           const dateObj = new Date(event.date);
           setDate(dateObj.toISOString().split('T')[0]);
-          
           if (event.time) {
             setTime(event.time);
           } else {
@@ -343,7 +378,6 @@ export default function EditEvent() {
             setTime(`${hours}:${minutes}`);
           }
         }
-        
         setVenue(event.venue || "");
         setAddress(event.location || "");
         setCity(event.city || "");
@@ -362,6 +396,20 @@ export default function EditEvent() {
         setContactPhone(event.contact_phone || "");
         setTags(event.tags || []);
 
+        // Set currency, fee strategy, subaccounts
+        if (event.base_currency) {
+          setSelectedCurrency(event.base_currency as CurrencyType);
+        }
+        if (event.fee_strategy) {
+          setFeeStrategy(event.fee_strategy as FeeStrategy);
+        }
+        if (event.organizer_subaccount_code) {
+          setOrganizerSubaccountCode(event.organizer_subaccount_code);
+        }
+        if (event.organizer_flutterwave_subaccount) {
+          setOrganizerFlutterwaveSubaccount(event.organizer_flutterwave_subaccount);
+        }
+
         // Load coordinates
         if (event.lat && event.lng) {
           setLatitude(event.lat.toString());
@@ -371,7 +419,6 @@ export default function EditEvent() {
 
         // Load ticket tiers
         let tiers: TicketTier[] = [];
-        
         if (event.ticketTiers && Array.isArray(event.ticketTiers)) {
           tiers = event.ticketTiers.map((tier: any, index: number) => ({
             id: tier.id || `tier-${index}`,
@@ -379,14 +426,14 @@ export default function EditEvent() {
             price: tier.price?.toString() || "0",
             description: tier.description || "",
             quantity: tier.quantity_available?.toString() || tier.quantity_total?.toString() || "100",
-            quantity_sold: tier.quantity_sold || 0
+            quantity_sold: tier.quantity_sold || 0,
+            original_currency: tier.original_currency || event.base_currency || 'NGN',
+            original_price: tier.original_price || parseFloat(tier.price) || 0
           }));
         }
-        
         if (tiers.length === 0) {
           tiers = [{ id: "1", name: "General Admission", price: "0", description: "Standard admission", quantity: "100" }];
         }
-        
         setTicketTiers(tiers);
 
         // Load guest artistes
@@ -444,12 +491,12 @@ export default function EditEvent() {
 
   // Ticket Tier Functions
   const addTicketTier = useCallback(() => {
-    setTicketTiers(prev => [...prev, { 
-      id: Date.now().toString(), 
-      name: "", 
-      price: "0", 
-      description: "", 
-      quantity: "100" 
+    setTicketTiers(prev => [...prev, {
+      id: Date.now().toString(),
+      name: "",
+      price: "0",
+      description: "",
+      quantity: "100"
     }]);
   }, []);
 
@@ -459,8 +506,8 @@ export default function EditEvent() {
     }
   }, [ticketTiers.length]);
 
-  const updateTier = useCallback((id: string, field: keyof Omit<TicketTier, "id" | "quantity_sold">, value: string) => {
-    setTicketTiers(prev => prev.map(t => 
+  const updateTier = useCallback((id: string, field: keyof Omit<TicketTier, "id" | "quantity_sold" | "original_currency" | "original_price">, value: string) => {
+    setTicketTiers(prev => prev.map(t =>
       t.id === id ? { ...t, [field]: value } : t
     ));
   }, []);
@@ -480,16 +527,14 @@ export default function EditEvent() {
   }, []);
 
   const removeGuestArtiste = useCallback((id: string) => {
-    if (guestArtistes.length > 1) {
-      setGuestArtistes(prev => {
-        const artiste = prev.find(g => g.id === id);
-        if (artiste?.imagePreview) {
-          URL.revokeObjectURL(artiste.imagePreview);
-        }
-        return prev.filter(g => g.id !== id);
-      });
-    }
-  }, [guestArtistes.length]);
+    setGuestArtistes(prev => {
+      const artiste = prev.find(g => g.id === id);
+      if (artiste?.imagePreview) {
+        URL.revokeObjectURL(artiste.imagePreview);
+      }
+      return prev.filter(g => g.id !== id);
+    });
+  }, []);
 
   const updateGuestArtiste = useCallback((id: string, field: keyof GuestArtiste | `social_media.${string}`, value: string) => {
     setGuestArtistes(prev => prev.map(g => {
@@ -598,6 +643,56 @@ export default function EditEvent() {
     }
   };
 
+  // Currency dropdown component
+  const CurrencyDropdown = () => (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-xl">{CURRENCY_INFO[selectedCurrency].flag}</span>
+          <div className="text-left">
+            <div className="font-medium">{selectedCurrency}</div>
+            <div className="text-xs text-gray-400">{CURRENCY_INFO[selectedCurrency].name}</div>
+          </div>
+        </div>
+        <ChevronDown className={`w-5 h-5 transition-transform ${showCurrencyDropdown ? 'rotate-180' : ''}`} />
+      </button>
+
+      {showCurrencyDropdown && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowCurrencyDropdown(false)} />
+          <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+            <div className="p-2 max-h-60 overflow-y-auto">
+              {Object.entries(CURRENCY_INFO).map(([currency, info]) => (
+                <button
+                  key={currency}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCurrency(currency as CurrencyType);
+                    setShowCurrencyDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/10 transition ${selectedCurrency === currency ? 'bg-purple-500/20 text-purple-300' : 'text-white'}`}
+                >
+                  <span className="text-xl">{info.flag}</span>
+                  <div className="flex-1">
+                    <div className="font-medium">{currency}</div>
+                    <div className="text-xs text-gray-400">{info.name}</div>
+                  </div>
+                  {selectedCurrency === currency && (
+                    <CheckCircle className="w-5 h-5 text-purple-400" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   // Save event
   const handleSave = async () => {
     setError("");
@@ -657,18 +752,18 @@ export default function EditEvent() {
 
       const userId = session.user.id;
       let banner_url = existingBanner;
-      
+
       // Upload new banner if selected
       if (bannerFile) {
         const ext = bannerFile.name.split(".").pop();
         const fileName = `${userId}/${Date.now()}.${ext}`;
-        
+
         const { error: uploadError } = await supabase.storage
           .from("event-banners")
           .upload(fileName, bannerFile, { upsert: true });
-        
+
         if (uploadError) throw uploadError;
-        
+
         const { data: urlData } = supabase.storage
           .from("event-banners")
           .getPublicUrl(fileName);
@@ -686,14 +781,20 @@ export default function EditEvent() {
         }
       }
 
-      // Prepare ticket tiers data
+      // Prepare ticket tiers data with original currency and price
       const ticketTiersData = validTiers.map(tier => {
+        const priceInSelectedCurrency = parseFloat(tier.price) || 0;
+        let priceInNGN = priceInSelectedCurrency;
+        if (selectedCurrency !== 'NGN') {
+          priceInNGN = priceInSelectedCurrency * EXCHANGE_RATES[selectedCurrency];
+        }
+
         let quantity_sold = 0;
         let originalId = tier.id;
-        
+
         // Preserve existing sales
         if (originalEvent?.ticketTiers && Array.isArray(originalEvent.ticketTiers)) {
-          const existingTier = originalEvent.ticketTiers.find((t: any) => 
+          const existingTier = originalEvent.ticketTiers.find((t: any) =>
             t.id === tier.id || t.name?.toLowerCase() === tier.name.toLowerCase()
           );
           if (existingTier) {
@@ -701,16 +802,18 @@ export default function EditEvent() {
             originalId = existingTier.id || tier.id;
           }
         }
-        
+
         return {
           id: originalId,
           name: tier.name.trim(),
           tier_name: tier.name.trim(),
-          price: parseFloat(tier.price) || 0,
+          price: priceInNGN,
           description: tier.description.trim() || "",
           quantity_total: parseInt(tier.quantity) || 100,
           quantity_sold: quantity_sold,
-          is_active: true
+          is_active: true,
+          original_currency: selectedCurrency,
+          original_price: priceInSelectedCurrency
         };
       });
 
@@ -730,52 +833,51 @@ export default function EditEvent() {
         }));
 
       // Build update data
-// Build update data – WITHOUT slug
-const updateData: any = {
-  title: title.trim(),
-  description: description.trim() || null,
-  category_id: categoryId || null,
-  date: `${date}T${time || "18:00"}:00`,
-  time: time || "18:00",
-  venue: venue.trim(),
-  location: address.trim() || null,
-  city: city.trim() || null,
-  state: state.trim() || null,
-  country: country.trim() || "Nigeria",
-  event_type: eventType,
-  virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
-  contact_email: contactEmail.trim() || null,
-  contact_phone: contactPhone.trim() || null,
-  featured: featured,
-  trending: trending,
-  isnew: isNew,
-  sponsored: sponsored,
-  tags: tags.length > 0 ? tags : null,
-  updated_at: new Date().toISOString(),
-  timezone: currentTimezone,
-  lat: latNum,
-  lng: lngNum,
-  ticketTiers: ticketTiersData.map(tier => ({
-    id: tier.id,
-    name: tier.name,
-    price: tier.price,
-    description: tier.description,
-    quantity_total: tier.quantity_total,
-    quantity_sold: tier.quantity_sold,
-    is_active: tier.is_active
-  }))
-};
+      const updateData: any = {
+        title: title.trim(),
+        description: description.trim() || null,
+        category_id: categoryId || null,
+        date: `${date}T${time || "18:00"}:00`,
+        time: time || "18:00",
+        venue: venue.trim(),
+        location: address.trim() || null,
+        city: city.trim() || null,
+        state: state.trim() || null,
+        country: country.trim() || "Nigeria",
+        event_type: eventType,
+        virtual_link: eventType === "virtual" ? virtualLink.trim() : null,
+        contact_email: contactEmail.trim() || null,
+        contact_phone: contactPhone.trim() || null,
+        featured: featured,
+        trending: trending,
+        isnew: isNew,
+        sponsored: sponsored,
+        tags: tags.length > 0 ? tags : null,
+        updated_at: new Date().toISOString(),
+        timezone: currentTimezone,
+        lat: latNum,
+        lng: lngNum,
+        ticketTiers: ticketTiersData.map(tier => ({
+          id: tier.id,
+          name: tier.name,
+          price: tier.price,
+          description: tier.description,
+          quantity_total: tier.quantity_total,
+          quantity_sold: tier.quantity_sold,
+          is_active: tier.is_active,
+          original_currency: tier.original_currency,
+          original_price: tier.original_price
+        })),
+        base_currency: selectedCurrency,
+        fee_strategy: feeStrategy,
+        organizer_subaccount_code: organizerSubaccountCode.trim() || null,
+        organizer_flutterwave_subaccount: organizerFlutterwaveSubaccount.trim() || null
+      };
 
-// 🔐 Only set slug if it's missing (first-time assignment)
-if (!originalEvent?.slug) {
-  updateData.slug = generateSlug(title.trim());
-}
-
-// Update banner if changed
-if (banner_url) {
-  updateData.image = banner_url;
-  updateData.cover_image = banner_url;
-}
+      // Only set slug if it's missing (first-time assignment)
+      if (!originalEvent?.slug) {
+        updateData.slug = generateSlug(title.trim());
+      }
 
       // Update banner if changed
       if (banner_url) {
@@ -812,7 +914,7 @@ if (banner_url) {
 
       setSuccess(true);
       toast.success("Event updated successfully!");
-      
+
       setTimeout(() => {
         navigate("/organizer/my-events");
       }, 1500);
@@ -828,11 +930,11 @@ if (banner_url) {
   // Publish event
   const publishEvent = async () => {
     if (!id) return;
-    
+
     try {
       const { error } = await supabase
         .from("events")
-        .update({ 
+        .update({
           status: "published",
           published_at: new Date().toISOString()
         })
@@ -842,7 +944,7 @@ if (banner_url) {
 
       setEventStatus("published");
       toast.success("Event published successfully!");
-      
+
       setTimeout(() => {
         navigate("/organizer/my-events");
       }, 1500);
@@ -877,13 +979,15 @@ if (banner_url) {
         <div className="lg:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-72 bg-gray-950 border-r border-white/10">
-<Sidebar role="organizer" />          </div>
+            <Sidebar role="organizer" />
+          </div>
         </div>
       )}
 
       {/* Sidebar for Desktop */}
       <div className="hidden lg:block">
-<Sidebar role="organizer" />      </div>
+        <Sidebar role="organizer" />
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
@@ -903,7 +1007,7 @@ if (banner_url) {
                 <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-white">Edit Event</h1>
                 <p className="text-gray-400 text-xs sm:text-sm md:text-base">Update your event details</p>
               </div>
-              
+
               <div className="flex flex-wrap gap-2 sm:gap-3">
                 <button
                   onClick={() => navigate(`/event/${originalEvent?.slug || id}`)}
@@ -945,6 +1049,25 @@ if (banner_url) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
               {/* Left Column - Banner & Sidebar Info */}
               <div className="lg:col-span-1 space-y-4 sm:space-y-6">
+                {/* Currency Selection */}
+                <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
+                  <label className="text-white font-medium mb-3 block flex items-center gap-2">
+                    <Currency size={20} /> Base Currency *
+                  </label>
+                  <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">
+                    Select the currency for your ticket prices.
+                  </p>
+                  <CurrencyDropdown />
+
+                  {/* Exchange rate info */}
+                  <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                    <p className="text-xs sm:text-sm text-purple-300 font-medium mb-1">Exchange Rates:</p>
+                    <div className="text-xs text-purple-300/80">
+                      <p>1 {selectedCurrency} = ₦{EXCHANGE_RATES[selectedCurrency].toLocaleString()} NGN</p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Banner Upload */}
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
                   <label className="text-white font-medium mb-3 block text-sm sm:text-base">Event Banner</label>
@@ -953,8 +1076,8 @@ if (banner_url) {
                     onDragLeave={() => setDragActive(false)}
                     onDrop={handleDrop}
                     className={`relative border-2 border-dashed rounded-xl p-4 text-center transition-all ${
-                      dragActive 
-                        ? "border-purple-500 bg-purple-500/10" 
+                      dragActive
+                        ? "border-purple-500 bg-purple-500/10"
                         : "border-white/20 hover:border-purple-500/50"
                     }`}
                   >
@@ -965,12 +1088,12 @@ if (banner_url) {
                       onChange={(e) => e.target.files?.[0] && handleBannerChange(e.target.files[0])}
                       className="absolute inset-0 opacity-0 cursor-pointer"
                     />
-                    
+
                     {(bannerPreview || existingBanner) ? (
                       <div className="relative">
-                        <img 
-                          src={bannerPreview || existingBanner || ""} 
-                          alt="Event banner" 
+                        <img
+                          src={bannerPreview || existingBanner || ""}
+                          alt="Event banner"
                           className="w-full h-40 sm:h-48 md:h-56 object-cover rounded-lg"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop";
@@ -978,8 +1101,8 @@ if (banner_url) {
                         />
                         <div className="absolute top-2 right-2 flex gap-2">
                           <button
-                            onClick={() => { 
-                              setBannerFile(null); 
+                            onClick={() => {
+                              setBannerFile(null);
                               setBannerPreview(null);
                               setExistingBanner(null);
                             }}
@@ -987,7 +1110,7 @@ if (banner_url) {
                           >
                             <X size={14} className="text-white" />
                           </button>
-                          <label 
+                          <label
                             htmlFor="banner-upload"
                             className="bg-purple-600 hover:bg-purple-700 p-1.5 rounded-full transition cursor-pointer"
                           >
@@ -1012,8 +1135,8 @@ if (banner_url) {
                     <div>
                       <p className="text-gray-400 text-xs">Current Status</p>
                       <div className={`px-3 py-1.5 rounded-lg inline-block mt-1 text-xs ${
-                        eventStatus === "published" 
-                          ? "bg-green-500/20 text-green-300" 
+                        eventStatus === "published"
+                          ? "bg-green-500/20 text-green-300"
                           : "bg-yellow-500/20 text-yellow-300"
                       }`}>
                         {eventStatus.toUpperCase()}
@@ -1022,16 +1145,16 @@ if (banner_url) {
                     <div>
                       <p className="text-gray-400 text-xs">Created</p>
                       <p className="text-white text-sm">
-                        {originalEvent?.created_at 
-                          ? new Date(originalEvent.created_at).toLocaleDateString() 
+                        {originalEvent?.created_at
+                          ? new Date(originalEvent.created_at).toLocaleDateString()
                           : "N/A"}
                       </p>
                     </div>
                     <div>
                       <p className="text-gray-400 text-xs">Last Updated</p>
                       <p className="text-white text-sm">
-                        {originalEvent?.updated_at 
-                          ? new Date(originalEvent.updated_at).toLocaleDateString() 
+                        {originalEvent?.updated_at
+                          ? new Date(originalEvent.updated_at).toLocaleDateString()
                           : "Never"}
                       </p>
                     </div>
@@ -1050,37 +1173,37 @@ if (banner_url) {
                   <div className="space-y-2">
                     <label className="flex items-center justify-between text-white text-sm cursor-pointer">
                       <span>Featured Event</span>
-                      <input 
-                        type="checkbox" 
-                        checked={featured} 
-                        onChange={(e) => setFeatured(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={featured}
+                        onChange={(e) => setFeatured(e.target.checked)}
                         className="w-4 h-4 accent-purple-500"
                       />
                     </label>
                     <label className="flex items-center justify-between text-white text-sm cursor-pointer">
                       <span>Trending</span>
-                      <input 
-                        type="checkbox" 
-                        checked={trending} 
-                        onChange={(e) => setTrending(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={trending}
+                        onChange={(e) => setTrending(e.target.checked)}
                         className="w-4 h-4 accent-purple-500"
                       />
                     </label>
                     <label className="flex items-center justify-between text-white text-sm cursor-pointer">
                       <span>New Event</span>
-                      <input 
-                        type="checkbox" 
-                        checked={isNew} 
-                        onChange={(e) => setIsNew(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={isNew}
+                        onChange={(e) => setIsNew(e.target.checked)}
                         className="w-4 h-4 accent-purple-500"
                       />
                     </label>
                     <label className="flex items-center justify-between text-white text-sm cursor-pointer">
                       <span>Sponsored</span>
-                      <input 
-                        type="checkbox" 
-                        checked={sponsored} 
-                        onChange={(e) => setSponsored(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={sponsored}
+                        onChange={(e) => setSponsored(e.target.checked)}
                         className="w-4 h-4 accent-purple-500"
                       />
                     </label>
@@ -1092,23 +1215,23 @@ if (banner_url) {
                   <label className="text-white font-medium mb-3 block text-sm sm:text-base">Event Type</label>
                   <div className="space-y-2">
                     <label className="flex items-center gap-2 text-white text-sm cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="eventType" 
-                        value="physical" 
-                        checked={eventType === "physical"} 
-                        onChange={(e) => setEventType(e.target.value)} 
+                      <input
+                        type="radio"
+                        name="eventType"
+                        value="physical"
+                        checked={eventType === "physical"}
+                        onChange={(e) => setEventType(e.target.value)}
                         className="w-4 h-4 accent-purple-500"
                       />
                       <span>Physical Event</span>
                     </label>
                     <label className="flex items-center gap-2 text-white text-sm cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="eventType" 
-                        value="virtual" 
-                        checked={eventType === "virtual"} 
-                        onChange={(e) => setEventType(e.target.value)} 
+                      <input
+                        type="radio"
+                        name="eventType"
+                        value="virtual"
+                        checked={eventType === "virtual"}
+                        onChange={(e) => setEventType(e.target.value)}
                         className="w-4 h-4 accent-purple-500"
                       />
                       <span>Virtual Event</span>
@@ -1151,10 +1274,10 @@ if (banner_url) {
                         <label className="text-white font-medium mb-2 block flex items-center gap-2 text-sm">
                           <Calendar size={16} /> Date *
                         </label>
-                        <input 
-                          type="date" 
-                          value={date} 
-                          onChange={(e) => setDate(e.target.value)} 
+                        <input
+                          type="date"
+                          value={date}
+                          onChange={(e) => setDate(e.target.value)}
                           className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
                           required
                           min={new Date().toISOString().split('T')[0]}
@@ -1164,10 +1287,10 @@ if (banner_url) {
                         <label className="text-white font-medium mb-2 block flex items-center gap-2 text-sm">
                           <Clock size={16} /> Time ({currentTimezone}) *
                         </label>
-                        <input 
-                          type="time" 
-                          value={time} 
-                          onChange={(e) => setTime(e.target.value)} 
+                        <input
+                          type="time"
+                          value={time}
+                          onChange={(e) => setTime(e.target.value)}
                           className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
                           required
                         />
@@ -1191,8 +1314,7 @@ if (banner_url) {
                           <option key={cat.id} value={cat.id}>{cat.name}</option>
                         ))}
                       </select>
-                      
-                      {/* Trending categories */}
+
                       {(categoryId === 4 || categoryId === 16) && (
                         <p className="text-purple-300 text-xs mt-1 flex items-center gap-1">
                           <Star size={12} /> Great choice! {categoryId === 4 ? 'Rave parties' : 'Beach parties'} are trending!
@@ -1240,7 +1362,9 @@ if (banner_url) {
                           value={country}
                           onChange={(e) => setCountry(e.target.value)}
                           className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
+                          readOnly
                         />
+                        <p className="text-gray-500 text-xs mt-1">Auto-set from currency</p>
                       </div>
                     </div>
 
@@ -1396,7 +1520,7 @@ if (banner_url) {
                 <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
                     <div>
-                      <h2 className="text-lg sm:text-xl font-bold text-white">Guest Artistes</h2>
+                      <h2 className="text-lg sm:text-xl font-bold text-white">Guest Artistes (Optional)</h2>
                       <p className="text-gray-400 text-xs sm:text-sm mt-1">Add performers, speakers, or special guests</p>
                     </div>
                     <button
@@ -1407,157 +1531,170 @@ if (banner_url) {
                     </button>
                   </div>
 
-                  <div className="space-y-4">
-                    {guestArtistes.map((artiste) => (
-                      <div key={artiste.id} className="bg-white/5 border border-white/10 rounded-xl p-4 relative">
-                        {guestArtistes.length > 1 && (
-                          <button
-                            onClick={() => removeGuestArtiste(artiste.id)}
-                            className="absolute top-3 right-3 text-gray-400 hover:text-red-400 transition"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
-
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div>
-                              <label className="text-white font-medium mb-2 block text-sm">Name *</label>
-                              <input
-                                value={artiste.name}
-                                onChange={(e) => updateGuestArtiste(artiste.id, "name", e.target.value)}
-                                placeholder="e.g., Burna Boy, Wizkid"
-                                className="w-full px-3 py-2 bg-white/10 rounded-lg text-white placeholder-gray-500 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-white font-medium mb-2 block text-sm">Role</label>
-                              <select
-                                value={artiste.role}
-                                onChange={(e) => updateGuestArtiste(artiste.id, "role", e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-800 rounded-lg text-white text-sm border border-white/10"
-                              >
-                                {GUEST_ROLES.map(role => (
-                                  <option key={role} value={role}>
-                                    {role}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Guest Image Upload */}
-                          <div>
-                            <label className="text-white font-medium mb-2 block text-sm">Profile Image</label>
-                            <div
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                setGuestDragActive(artiste.id);
-                              }}
-                              onDragLeave={() => setGuestDragActive(null)}
-                              onDrop={(e) => handleGuestDrop(e, artiste.id)}
-                              className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-all ${guestDragActive === artiste.id ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
-                                }`}
+                  {guestArtistes.length === 0 ? (
+                    <div className="text-center py-8 bg-white/5 rounded-xl border border-white/10">
+                      <UserPlus size={40} className="mx-auto text-gray-500 mb-3" />
+                      <p className="text-gray-400">No guest artistes added yet</p>
+                      <button
+                        onClick={addGuestArtiste}
+                        className="mt-3 text-purple-400 hover:text-purple-300 font-medium text-sm"
+                      >
+                        + Add your first artiste
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {guestArtistes.map((artiste) => (
+                        <div key={artiste.id} className="bg-white/5 border border-white/10 rounded-xl p-4 relative">
+                          {guestArtistes.length > 1 && (
+                            <button
+                              onClick={() => removeGuestArtiste(artiste.id)}
+                              className="absolute top-3 right-3 text-gray-400 hover:text-red-400 transition"
                             >
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => e.target.files?.[0] && handleGuestImageChange(artiste.id, e.target.files[0])}
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                              />
-                              {artiste.imagePreview ? (
-                                <div className="relative">
-                                  <img
-                                    src={artiste.imagePreview}
-                                    alt="Preview"
-                                    className="w-24 h-24 object-cover rounded-lg mx-auto"
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      setGuestArtistes(prev => prev.map(a => {
-                                        if (a.id === artiste.id) {
-                                          if (a.imagePreview) URL.revokeObjectURL(a.imagePreview);
-                                          return { ...a, imageFile: null, imagePreview: null };
-                                        }
-                                        return a;
-                                      }));
-                                    }}
-                                    className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 p-1 rounded-full transition"
-                                  >
-                                    <X size={14} className="text-white" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="space-y-2 py-2">
-                                  <ImageIcon size={32} className="mx-auto text-gray-500" />
-                                  <p className="text-white font-medium text-sm">Drop image or click to upload</p>
-                                  <p className="text-gray-500 text-xs">PNG, JPG up to 5MB</p>
-                                </div>
-                              )}
+                              <Trash2 size={18} />
+                            </button>
+                          )}
+
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="text-white font-medium mb-2 block text-sm">Name *</label>
+                                <input
+                                  value={artiste.name}
+                                  onChange={(e) => updateGuestArtiste(artiste.id, "name", e.target.value)}
+                                  placeholder="e.g., Burna Boy, Wizkid"
+                                  className="w-full px-3 py-2 bg-white/10 rounded-lg text-white placeholder-gray-500 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-white font-medium mb-2 block text-sm">Role</label>
+                                <select
+                                  value={artiste.role}
+                                  onChange={(e) => updateGuestArtiste(artiste.id, "role", e.target.value)}
+                                  className="w-full px-3 py-2 bg-gray-800 rounded-lg text-white text-sm border border-white/10"
+                                >
+                                  {GUEST_ROLES.map(role => (
+                                    <option key={role} value={role}>
+                                      {role}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
-                          </div>
 
-                          <div>
-                            <label className="text-white font-medium mb-2 block text-sm">Bio</label>
-                            <textarea
-                              value={artiste.bio}
-                              onChange={(e) => updateGuestArtiste(artiste.id, "bio", e.target.value)}
-                              rows={2}
-                              placeholder="Short description about the artiste..."
-                              className="w-full px-3 py-2 bg-white/10 rounded-lg text-white placeholder-gray-500 resize-none text-sm"
-                            />
-                          </div>
+                            {/* Guest Image Upload */}
+                            <div>
+                              <label className="text-white font-medium mb-2 block text-sm">Profile Image</label>
+                              <div
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  setGuestDragActive(artiste.id);
+                                }}
+                                onDragLeave={() => setGuestDragActive(null)}
+                                onDrop={(e) => handleGuestDrop(e, artiste.id)}
+                                className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-all ${guestDragActive === artiste.id ? "border-purple-500 bg-purple-500/10" : "border-white/20 hover:border-purple-500/50"
+                                  }`}
+                              >
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => e.target.files?.[0] && handleGuestImageChange(artiste.id, e.target.files[0])}
+                                  className="absolute inset-0 opacity-0 cursor-pointer"
+                                />
+                                {artiste.imagePreview ? (
+                                  <div className="relative">
+                                    <img
+                                      src={artiste.imagePreview}
+                                      alt="Preview"
+                                      className="w-24 h-24 object-cover rounded-lg mx-auto"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        setGuestArtistes(prev => prev.map(a => {
+                                          if (a.id === artiste.id) {
+                                            if (a.imagePreview) URL.revokeObjectURL(a.imagePreview);
+                                            return { ...a, imageFile: null, imagePreview: null };
+                                          }
+                                          return a;
+                                        }));
+                                      }}
+                                      className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 p-1 rounded-full transition"
+                                    >
+                                      <X size={14} className="text-white" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2 py-2">
+                                    <ImageIcon size={32} className="mx-auto text-gray-500" />
+                                    <p className="text-white font-medium text-sm">Drop image or click to upload</p>
+                                    <p className="text-gray-500 text-xs">PNG, JPG up to 5MB</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
 
-                          {/* Social Media */}
-                          <div className="bg-white/5 rounded-lg p-3">
-                            <label className="text-white font-medium mb-3 block text-sm">Social Media Links</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">Instagram</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.instagram || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.instagram", e.target.value)}
-                                  placeholder="https://instagram.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">Twitter/X</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.twitter || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.twitter", e.target.value)}
-                                  placeholder="https://twitter.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">YouTube</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.youtube || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.youtube", e.target.value)}
-                                  placeholder="https://youtube.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-gray-300 text-xs mb-1 block">Spotify</label>
-                                <input
-                                  type="url"
-                                  value={artiste.social_media.spotify || ""}
-                                  onChange={(e) => updateGuestArtiste(artiste.id, "social_media.spotify", e.target.value)}
-                                  placeholder="https://open.spotify.com/"
-                                  className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
-                                />
+                            <div>
+                              <label className="text-white font-medium mb-2 block text-sm">Bio</label>
+                              <textarea
+                                value={artiste.bio}
+                                onChange={(e) => updateGuestArtiste(artiste.id, "bio", e.target.value)}
+                                rows={2}
+                                placeholder="Short description about the artiste..."
+                                className="w-full px-3 py-2 bg-white/10 rounded-lg text-white placeholder-gray-500 resize-none text-sm"
+                              />
+                            </div>
+
+                            {/* Social Media */}
+                            <div className="bg-white/5 rounded-lg p-3">
+                              <label className="text-white font-medium mb-3 block text-sm">Social Media Links</label>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">Instagram</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.instagram || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.instagram", e.target.value)}
+                                    placeholder="https://instagram.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">Twitter/X</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.twitter || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.twitter", e.target.value)}
+                                    placeholder="https://twitter.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">YouTube</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.youtube || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.youtube", e.target.value)}
+                                    placeholder="https://youtube.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-300 text-xs mb-1 block">Spotify</label>
+                                  <input
+                                    type="url"
+                                    value={artiste.social_media.spotify || ""}
+                                    onChange={(e) => updateGuestArtiste(artiste.id, "social_media.spotify", e.target.value)}
+                                    placeholder="https://open.spotify.com/"
+                                    className="w-full px-3 py-2 bg-white/10 rounded text-white text-xs"
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Ticket Tiers */}
@@ -1565,7 +1702,9 @@ if (banner_url) {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
                     <div>
                       <h2 className="text-lg sm:text-xl font-bold text-white">Ticket Tiers</h2>
-                      <p className="text-gray-400 text-xs sm:text-sm mt-1">Configure your ticket pricing and availability</p>
+                      <p className="text-gray-400 text-xs sm:text-sm mt-1">
+                        Prices in {selectedCurrency} ({CURRENCY_INFO[selectedCurrency].symbol})
+                      </p>
                     </div>
                     <button
                       onClick={addTicketTier}
@@ -1574,7 +1713,13 @@ if (banner_url) {
                       <Plus size={18} /> Add Tier
                     </button>
                   </div>
-                  
+
+                  <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                    <p className="text-xs sm:text-sm text-purple-300">
+                      💡 <span className="font-medium">Note:</span> Prices stored in NGN ({EXCHANGE_RATES[selectedCurrency].toLocaleString()} NGN per 1 {selectedCurrency})
+                    </p>
+                  </div>
+
                   <div className="space-y-3">
                     {ticketTiers.map((tier) => (
                       <div key={tier.id} className="bg-white/5 border border-white/10 rounded-xl p-4 relative">
@@ -1586,7 +1731,7 @@ if (banner_url) {
                             <X size={18} />
                           </button>
                         )}
-                        
+
                         <div className="space-y-3">
                           <div>
                             <label className="text-white font-medium mb-2 block text-sm">Tier Name *</label>
@@ -1598,22 +1743,31 @@ if (banner_url) {
                               required
                             />
                           </div>
-                          
+
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             <div>
                               <label className="text-white font-medium mb-2 block flex items-center gap-2 text-sm">
-                                <DollarSign size={14} /> Price (₦) *
+                                <DollarSign size={14} /> Price ({selectedCurrency}) *
                               </label>
-                              <input
-                                type="number"
-                                value={tier.price}
-                                onChange={(e) => updateTier(tier.id, "price", e.target.value)}
-                                placeholder="0.00"
-                                min="0"
-                                step="0.01"
-                                className="w-full px-3 py-2 bg-white/10 rounded-lg text-white text-sm"
-                                required
-                              />
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={tier.price}
+                                  onChange={(e) => updateTier(tier.id, "price", e.target.value)}
+                                  placeholder="0.00"
+                                  min="0"
+                                  step="0.01"
+                                  className="w-full pl-8 pr-3 py-2 bg-white/10 rounded-lg text-white text-sm"
+                                />
+                                <div className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                                  {CURRENCY_INFO[selectedCurrency].symbol}
+                                </div>
+                              </div>
+                              {tier.price && tier.price !== "0" && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  ≈ ₦{(parseFloat(tier.price) * EXCHANGE_RATES[selectedCurrency]).toLocaleString()} NGN
+                                </p>
+                              )}
                             </div>
                             <div>
                               <label className="text-white font-medium mb-2 block flex items-center gap-2 text-sm">
@@ -1649,9 +1803,147 @@ if (banner_url) {
                               />
                             </div>
                           </div>
+
+                          {/* Price summary */}
+                          {tier.price && tier.price !== "0" && (
+                            <div className="pt-3 border-t border-white/10">
+                              <div className="flex justify-between text-xs sm:text-sm">
+                                <span className="text-gray-400">Price Summary:</span>
+                                <div className="text-right">
+                                  <div className="text-white font-medium">{formatPrice(tier.price)} {selectedCurrency}</div>
+                                  <div className="text-gray-500 text-xs">
+                                    ≈ ₦{(parseFloat(tier.price) * EXCHANGE_RATES[selectedCurrency]).toLocaleString()} NGN
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                {/* Fee Settings */}
+                <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
+                  <h2 className="text-lg sm:text-xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
+                    <Receipt size={20} /> Fee Settings
+                  </h2>
+                  <p className="text-gray-400 text-sm mb-4">
+                    Choose who pays the <span className="text-purple-400 font-medium">5% service fee</span>. 
+                    VAT is always calculated at checkout based on the buyer's country and paid by the buyer.
+                  </p>
+
+                  <div className="space-y-3">
+                    {/* Option 1: Pass to attendees */}
+                    <label className={`flex items-center justify-between p-4 bg-white/5 border rounded-xl transition cursor-pointer ${
+                      feeStrategy === 'pass_to_attendees' 
+                        ? 'border-purple-500 bg-purple-500/10' 
+                        : 'border-white/10 hover:bg-white/10'
+                    }`}>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="radio"
+                          name="feeStrategy"
+                          value="pass_to_attendees"
+                          checked={feeStrategy === 'pass_to_attendees'}
+                          onChange={(e) => setFeeStrategy('pass_to_attendees')}
+                          className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-white/20 bg-white/10"
+                        />
+                        <div>
+                          <p className="text-white font-medium">Pass fees to attendees</p>
+                          <p className="text-gray-400 text-sm">Buyers pay ticket price + 5% service fee + VAT</p>
+                        </div>
+                      </div>
+                      {feeStrategy === 'pass_to_attendees' && (
+                        <span className="text-purple-400 text-xs sm:text-sm font-medium bg-purple-500/20 px-3 py-1 rounded-full">
+                          Recommended
+                        </span>
+                      )}
+                    </label>
+
+                    {/* Option 2: Organizer absorbs fees */}
+                    <label className={`flex items-center p-4 bg-white/5 border rounded-xl transition cursor-pointer ${
+                      feeStrategy === 'absorb_fees' 
+                        ? 'border-purple-500 bg-purple-500/10' 
+                        : 'border-white/10 hover:bg-white/10'
+                    }`}>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="radio"
+                          name="feeStrategy"
+                          value="absorb_fees"
+                          checked={feeStrategy === 'absorb_fees'}
+                          onChange={(e) => setFeeStrategy('absorb_fees')}
+                          className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-white/20 bg-white/10"
+                        />
+                        <div>
+                          <p className="text-white font-medium">I'll pay the fees myself</p>
+                          <p className="text-gray-400 text-sm">Organizer absorbs 5% service fee, buyers only pay ticket price + VAT</p>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                    <p className="text-xs sm:text-sm text-purple-300">
+                      <span className="font-medium">💡 Note:</span> VAT is calculated in real-time at checkout based on the buyer's selected country and is always paid by the buyer. 
+                      The service fee is a fixed 5% of the ticket price.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Payment Settings – Subaccounts */}
+                <div className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl p-4 sm:p-6">
+                  <h2 className="text-lg sm:text-xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
+                    <CreditCard size={20} /> Payment Settings (Subaccounts)
+                  </h2>
+                  <p className="text-gray-400 text-sm mb-4">
+                    If you have a Paystack or Flutterwave subaccount, enter the codes below to receive ticket revenue directly (minus platform fees). Leave empty to use the default account.
+                  </p>
+
+                  <div className="space-y-4">
+                    {/* Paystack Subaccount */}
+                    <div>
+                      <label className="text-white font-medium mb-2 block text-sm sm:text-base flex items-center gap-2">
+                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                        Paystack Subaccount Code
+                      </label>
+                      <input
+                        type="text"
+                        value={organizerSubaccountCode}
+                        onChange={(e) => setOrganizerSubaccountCode(e.target.value)}
+                        placeholder="e.g., ACCT_6uujpqtzmnufzkw"
+                        className="w-full px-4 sm:px-5 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-lg sm:rounded-xl text-white placeholder-gray-500 text-sm sm:text-base"
+                      />
+                      <p className="text-gray-500 text-xs mt-1">
+                        Find this in your Paystack dashboard → Settings → Subaccounts.
+                      </p>
+                    </div>
+
+                    {/* Flutterwave Subaccount */}
+                    <div>
+                      <label className="text-white font-medium mb-2 block text-sm sm:text-base flex items-center gap-2">
+                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                        Flutterwave Subaccount ID
+                      </label>
+                      <input
+                        type="text"
+                        value={organizerFlutterwaveSubaccount}
+                        onChange={(e) => setOrganizerFlutterwaveSubaccount(e.target.value)}
+                        placeholder="e.g., RS_D87A9EE339AE28BFA2AE86041C6DE70E"
+                        className="w-full px-4 sm:px-5 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-lg sm:rounded-xl text-white placeholder-gray-500 text-sm sm:text-base"
+                      />
+                      <p className="text-gray-500 text-xs mt-1">
+                        Find this in your Flutterwave dashboard → Subaccounts.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                    <p className="text-xs sm:text-sm text-purple-300">
+                      <span className="font-medium">💡 How it works:</span> When a buyer pays, the exact ticket price (minus fees) goes to the subaccount you provide. Fees are credited to your main platform account.
+                    </p>
                   </div>
                 </div>
 
@@ -1674,7 +1966,7 @@ if (banner_url) {
                       </>
                     )}
                   </button>
-                  
+
                   <button
                     onClick={() => navigate("/organizer/my-events")}
                     className="px-4 py-4 border border-white/20 text-white rounded-xl hover:bg-white/10 transition text-sm"
@@ -1684,7 +1976,7 @@ if (banner_url) {
                 </div>
 
                 <p className="text-gray-500 text-xs text-center pt-4">
-                  * Required fields | Timezone: {currentTimezone}
+                  * Required fields | Base Currency: {selectedCurrency} ({CURRENCY_INFO[selectedCurrency].symbol}) | Timezone: {currentTimezone}
                 </p>
               </div>
             </div>

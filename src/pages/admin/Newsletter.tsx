@@ -1,4 +1,4 @@
-// src/pages/admin/Users.tsx - COMPLETE UPDATE
+// src/pages/admin/Newsletter.tsx - NEWSLETTER SUBSCRIBERS
 import Sidebar from "../../components/Sidebar";
 import Navbar from "../../components/AdminNavbar";
 import { useEffect, useState, useCallback } from "react";
@@ -6,61 +6,59 @@ import { supabase } from "../../lib/supabaseClient";
 import { useNavigate } from "react-router-dom";
 import { Toaster, toast } from "react-hot-toast";
 import {
+  Mail,
   Users,
   Search,
   RefreshCw,
   Loader2,
   Menu,
-  Edit,
   Trash2,
   MoreVertical,
   AlertCircle,
-  UserCheck,
-  UserCog,
-  User,
+  CheckCircle,
+  XCircle,
+  Download,
 } from "lucide-react";
 import Modal from "../../components/Modal";
 
-interface Profile {
+interface Subscriber {
   id: string;
   email: string;
-  role: string;
-  full_name?: string;
   created_at: string;
-  last_sign_in?: string;
+  status?: "active" | "unsubscribed";
+  source?: string;
 }
 
-interface RoleOption {
-  value: string;
-  label: string;
-  color: string;
+interface Stats {
+  total: number;
+  active: number;
+  unsubscribed: number;
+  newThisMonth: number;
 }
 
-const ROLE_OPTIONS: RoleOption[] = [
-  { value: "admin", label: "Admin", color: "bg-purple-500/20 text-purple-300 border-purple-500/50" },
-  { value: "organizer", label: "Organizer", color: "bg-blue-500/20 text-blue-300 border-blue-500/50" },
-  { value: "attendee", label: "Attendee", color: "bg-green-500/20 text-green-300 border-green-500/50" },
-];
-
-export default function AdminUsers() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [filteredProfiles, setFilteredProfiles] = useState<Profile[]>([]);
+export default function AdminNewsletter() {
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [filteredSubscribers, setFilteredSubscribers] = useState<Subscriber[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<Stats>({
+    total: 0,
+    active: 0,
+    unsubscribed: 0,
+    newThisMonth: 0,
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("newest");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [refreshing, setRefreshing] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedSubscriber, setSelectedSubscriber] = useState<Subscriber | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [editRole, setEditRole] = useState<string>("");
+  const [sortBy, setSortBy] = useState<string>("newest");
 
   const navigate = useNavigate();
 
-  const fetchProfiles = useCallback(async () => {
+  const fetchSubscribers = useCallback(async () => {
     try {
       setRefreshing(true);
       setError(null);
@@ -71,18 +69,37 @@ export default function AdminUsers() {
         return;
       }
 
-      const { data, error: profilesError } = await supabase
-        .from("profiles")
-        .select("id, email, role, full_name, created_at, last_sign_in")
+      // Fetch subscribers from newsletters table
+      const { data, error: fetchError } = await supabase
+        .from("newsletters")
+        .select("id, email, created_at, status, source")
         .order("created_at", { ascending: false });
 
-      if (profilesError) throw profilesError;
+      if (fetchError) throw fetchError;
 
-      setProfiles(data || []);
+      const typedData = (data || []).map((item: any) => ({
+        id: item.id,
+        email: item.email,
+        created_at: item.created_at,
+        status: item.status || "active",
+        source: item.source || "website",
+      }));
+
+      setSubscribers(typedData);
+
+      // Calculate stats
+      const total = typedData.length;
+      const active = typedData.filter(s => s.status === "active").length;
+      const unsubscribed = typedData.filter(s => s.status === "unsubscribed").length;
+      const now = new Date();
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const newThisMonth = typedData.filter(s => s.created_at >= firstDayOfMonth).length;
+
+      setStats({ total, active, unsubscribed, newThisMonth });
     } catch (err: any) {
-      console.error("Fetch profiles error:", err);
+      console.error("Fetch subscribers error:", err);
       setError(err.message);
-      toast.error("Failed to load users");
+      toast.error("Failed to load subscribers");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -90,25 +107,20 @@ export default function AdminUsers() {
   }, [navigate]);
 
   useEffect(() => {
-    fetchProfiles();
-  }, [fetchProfiles]);
+    fetchSubscribers();
+  }, [fetchSubscribers]);
 
-  // Filter and sort profiles
+  // Filter and sort subscribers
   useEffect(() => {
-    let filtered = [...profiles];
+    let filtered = [...subscribers];
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (p) =>
-          p.email.toLowerCase().includes(term) ||
-          p.full_name?.toLowerCase().includes(term) ||
-          p.role.toLowerCase().includes(term)
-      );
+      filtered = filtered.filter(s => s.email.toLowerCase().includes(term));
     }
 
-    if (roleFilter !== "all") {
-      filtered = filtered.filter((p) => p.role === roleFilter);
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(s => s.status === statusFilter);
     }
 
     if (sortBy === "newest") {
@@ -119,17 +131,15 @@ export default function AdminUsers() {
       filtered.sort((a, b) => a.email.localeCompare(b.email));
     } else if (sortBy === "email-desc") {
       filtered.sort((a, b) => b.email.localeCompare(a.email));
-    } else if (sortBy === "role") {
-      filtered.sort((a, b) => a.role.localeCompare(b.role));
     }
 
-    setFilteredProfiles(filtered);
-  }, [profiles, searchTerm, roleFilter, sortBy]);
+    setFilteredSubscribers(filtered);
+  }, [subscribers, searchTerm, statusFilter, sortBy]);
 
   const handleRefresh = () => {
     setLoading(true);
-    fetchProfiles();
-    toast.success("Users refreshed!");
+    fetchSubscribers();
+    toast.success("Subscribers refreshed!");
   };
 
   const formatDate = (dateString: string) => {
@@ -139,72 +149,79 @@ export default function AdminUsers() {
         year: "numeric",
         month: "short",
         day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch {
       return "Invalid date";
     }
   };
 
-  const getRoleBadge = (role: string) => {
-    const option = ROLE_OPTIONS.find(o => o.value === role);
-    return option?.color || "bg-gray-500/20 text-gray-300 border-gray-500/50";
+  const getStatusBadge = (status: string) => {
+    if (status === "active") {
+      return "bg-green-500/20 text-green-300 border-green-500/50";
+    }
+    return "bg-gray-500/20 text-gray-300 border-gray-500/50";
   };
 
-  const openEditModal = (profile: Profile) => {
-    setSelectedUser(profile);
-    setEditRole(profile.role);
-    setShowEditModal(true);
-    setOpenMenuId(null);
-  };
-
-  const openDeleteModal = (profile: Profile) => {
-    setSelectedUser(profile);
+  const openDeleteModal = (subscriber: Subscriber) => {
+    setSelectedSubscriber(subscriber);
     setShowDeleteModal(true);
     setOpenMenuId(null);
   };
 
-  const handleUpdateRole = async () => {
-    if (!selectedUser) return;
+  const handleDelete = async () => {
+    if (!selectedSubscriber) return;
     try {
       const { error } = await supabase
-        .from("profiles")
-        .update({ role: editRole })
-        .eq("id", selectedUser.id);
-
-      if (error) throw error;
-
-      toast.success("User role updated successfully");
-      setShowEditModal(false);
-      fetchProfiles();
-    } catch (err: any) {
-      toast.error("Failed to update role: " + err.message);
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!selectedUser) return;
-    try {
-      // Delete from profiles (auth user remains)
-      const { error } = await supabase
-        .from("profiles")
+        .from("newsletters")
         .delete()
-        .eq("id", selectedUser.id);
+        .eq("id", selectedSubscriber.id);
 
       if (error) throw error;
 
-      toast.success("User deleted from profiles");
+      toast.success("Subscriber removed");
       setShowDeleteModal(false);
-      fetchProfiles();
+      fetchSubscribers();
     } catch (err: any) {
-      toast.error("Failed to delete user: " + err.message);
+      toast.error("Failed to delete: " + err.message);
     }
   };
 
-  const stats = {
-    total: profiles.length,
-    admins: profiles.filter(p => p.role === "admin").length,
-    organizers: profiles.filter(p => p.role === "organizer").length,
-    attendees: profiles.filter(p => p.role === "attendee").length,
+  const handleToggleStatus = async (subscriber: Subscriber) => {
+    const newStatus = subscriber.status === "active" ? "unsubscribed" : "active";
+    try {
+      const { error } = await supabase
+        .from("newsletters")
+        .update({ status: newStatus })
+        .eq("id", subscriber.id);
+
+      if (error) throw error;
+
+      toast.success(`Subscriber marked as ${newStatus}`);
+      fetchSubscribers();
+    } catch (err: any) {
+      toast.error("Failed to update status");
+    }
+  };
+
+  const exportCSV = () => {
+    const headers = ["Email", "Subscribed At", "Status", "Source"];
+    const rows = filteredSubscribers.map(s => [
+      s.email,
+      new Date(s.created_at).toLocaleString(),
+      s.status,
+      s.source || "",
+    ]);
+    const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `newsletter_subscribers_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("CSV exported");
   };
 
   if (loading) {
@@ -220,7 +237,7 @@ export default function AdminUsers() {
       <div className="flex min-h-screen bg-gray-950 items-center justify-center p-4">
         <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-6 text-center max-w-md">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-white mb-2">Error Loading Users</h3>
+          <h3 className="text-xl font-bold text-white mb-2">Error Loading Subscribers</h3>
           <p className="text-red-300 mb-4">{error}</p>
           <button
             onClick={handleRefresh}
@@ -261,18 +278,24 @@ export default function AdminUsers() {
       </div>
 
       {/* Main content */}
-{/* Main content */}
-<div className="flex-1 flex flex-col min-w-0 lg:ml-64">
-          <Navbar role="admin" />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Navbar role="admin" />
         <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-900 via-purple-900/5 to-gray-900">
           <main className="p-4 sm:p-6 lg:p-8 xl:p-10">
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
               <div>
-                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white">Users</h1>
-                <p className="text-gray-400 text-sm sm:text-base">Manage platform users and roles</p>
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white">Newsletter Subscribers</h1>
+                <p className="text-gray-400 text-sm sm:text-base">Manage email subscribers</p>
               </div>
               <div className="flex gap-2">
+                <button
+                  onClick={exportCSV}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition"
+                >
+                  <Download size={16} />
+                  Export CSV
+                </button>
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
@@ -289,11 +312,11 @@ export default function AdminUsers() {
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 lg:p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-gray-400 text-xs sm:text-sm">Total Users</p>
+                    <p className="text-gray-400 text-xs sm:text-sm">Total Subscribers</p>
                     <p className="text-2xl sm:text-3xl font-bold text-white mt-1">{stats.total}</p>
                   </div>
                   <div className="w-10 h-10 lg:w-12 lg:h-12 bg-purple-500/20 rounded-lg lg:rounded-xl flex items-center justify-center">
-                    <Users className="text-purple-400 w-5 h-5 lg:w-6 lg:h-6" />
+                    <Mail className="text-purple-400 w-5 h-5 lg:w-6 lg:h-6" />
                   </div>
                 </div>
               </div>
@@ -301,35 +324,35 @@ export default function AdminUsers() {
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 lg:p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-gray-400 text-xs sm:text-sm">Admins</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-purple-400 mt-1">{stats.admins}</p>
-                  </div>
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-purple-500/20 rounded-lg lg:rounded-xl flex items-center justify-center">
-                    <UserCog className="text-purple-400 w-5 h-5 lg:w-6 lg:h-6" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 lg:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-gray-400 text-xs sm:text-sm">Organizers</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-blue-400 mt-1">{stats.organizers}</p>
-                  </div>
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-blue-500/20 rounded-lg lg:rounded-xl flex items-center justify-center">
-                    <UserCheck className="text-blue-400 w-5 h-5 lg:w-6 lg:h-6" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 lg:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-gray-400 text-xs sm:text-sm">Attendees</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-green-400 mt-1">{stats.attendees}</p>
+                    <p className="text-gray-400 text-xs sm:text-sm">Active</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-green-400 mt-1">{stats.active}</p>
                   </div>
                   <div className="w-10 h-10 lg:w-12 lg:h-12 bg-green-500/20 rounded-lg lg:rounded-xl flex items-center justify-center">
-                    <User className="text-green-400 w-5 h-5 lg:w-6 lg:h-6" />
+                    <CheckCircle className="text-green-400 w-5 h-5 lg:w-6 lg:h-6" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 lg:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-xs sm:text-sm">Unsubscribed</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-gray-400 mt-1">{stats.unsubscribed}</p>
+                  </div>
+                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-gray-500/20 rounded-lg lg:rounded-xl flex items-center justify-center">
+                    <XCircle className="text-gray-400 w-5 h-5 lg:w-6 lg:h-6" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 lg:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-xs sm:text-sm">New This Month</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-blue-400 mt-1">{stats.newThisMonth}</p>
+                  </div>
+                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-blue-500/20 rounded-lg lg:rounded-xl flex items-center justify-center">
+                    <Users className="text-blue-400 w-5 h-5 lg:w-6 lg:h-6" />
                   </div>
                 </div>
               </div>
@@ -341,7 +364,7 @@ export default function AdminUsers() {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input
                   type="text"
-                  placeholder="Search by email, name, role..."
+                  placeholder="Search by email..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/60"
@@ -350,14 +373,13 @@ export default function AdminUsers() {
 
               <div className="flex gap-2">
                 <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
                   className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm appearance-none cursor-pointer focus:outline-none focus:border-purple-500/60"
                 >
-                  <option value="all">All Roles</option>
-                  <option value="admin">Admin</option>
-                  <option value="organizer">Organizer</option>
-                  <option value="attendee">Attendee</option>
+                  <option value="all">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="unsubscribed">Unsubscribed</option>
                 </select>
 
                 <select
@@ -369,62 +391,68 @@ export default function AdminUsers() {
                   <option value="oldest">Oldest First</option>
                   <option value="email-asc">Email A-Z</option>
                   <option value="email-desc">Email Z-A</option>
-                  <option value="role">Role</option>
                 </select>
               </div>
             </div>
 
-            {/* Users Table */}
+            {/* Subscribers Table */}
             <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-white/10 text-gray-300">
                     <tr>
-                      <th className="px-6 py-3 font-medium">User</th>
                       <th className="px-6 py-3 font-medium">Email</th>
-                      <th className="px-6 py-3 font-medium">Role</th>
-                      <th className="px-6 py-3 font-medium">Joined</th>
-                      <th className="px-6 py-3 font-medium">Last Sign In</th>
+                      <th className="px-6 py-3 font-medium">Subscribed At</th>
+                      <th className="px-6 py-3 font-medium">Status</th>
+                      <th className="px-6 py-3 font-medium">Source</th>
                       <th className="px-6 py-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {filteredProfiles.map((profile) => (
-                      <tr key={profile.id} className="hover:bg-white/5">
+                    {filteredSubscribers.map((sub) => (
+                      <tr key={sub.id} className="hover:bg-white/5">
+                        <td className="px-6 py-4 text-white">{sub.email}</td>
+                        <td className="px-6 py-4 text-gray-400">{formatDate(sub.created_at)}</td>
                         <td className="px-6 py-4">
-                          <div className="text-white font-medium">{profile.full_name || "—"}</div>
-                        </td>
-                        <td className="px-6 py-4 text-gray-300">{profile.email}</td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getRoleBadge(profile.role)}`}>
-                            {profile.role}
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusBadge(sub.status || "active")}`}>
+                            {sub.status || "active"}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-gray-400">{formatDate(profile.created_at)}</td>
-                        <td className="px-6 py-4 text-gray-400">{formatDate(profile.last_sign_in || "")}</td>
+                        <td className="px-6 py-4 text-gray-400">{sub.source || "—"}</td>
                         <td className="px-6 py-4">
                           <div className="relative">
                             <button
-                              onClick={() => setOpenMenuId(openMenuId === profile.id ? null : profile.id)}
+                              onClick={() => setOpenMenuId(openMenuId === sub.id ? null : sub.id)}
                               className="p-1 hover:bg-white/10 rounded-lg transition"
                             >
                               <MoreVertical size={16} className="text-gray-400" />
                             </button>
-                            {openMenuId === profile.id && (
+                            {openMenuId === sub.id && (
                               <>
                                 <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
                                 <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-white/10 rounded-lg shadow-xl z-20 py-1">
                                   <button
-                                    onClick={() => openEditModal(profile)}
+                                    onClick={() => {
+                                      handleToggleStatus(sub);
+                                      setOpenMenuId(null);
+                                    }}
                                     className="w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10 flex items-center gap-2"
                                   >
-                                    <Edit size={14} /> Edit Role
+                                    {sub.status === "active" ? (
+                                      <>
+                                        <XCircle size={14} /> Mark as Unsubscribed
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle size={14} /> Mark as Active
+                                      </>
+                                    )}
                                   </button>
                                   <button
-                                    onClick={() => openDeleteModal(profile)}
+                                    onClick={() => openDeleteModal(sub)}
                                     className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-white/10 flex items-center gap-2"
                                   >
-                                    <Trash2 size={14} /> Delete User
+                                    <Trash2 size={14} /> Delete
                                   </button>
                                 </div>
                               </>
@@ -433,10 +461,10 @@ export default function AdminUsers() {
                         </td>
                       </tr>
                     ))}
-                    {filteredProfiles.length === 0 && (
+                    {filteredSubscribers.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
-                          No users found
+                        <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
+                          No subscribers found
                         </td>
                       </tr>
                     )}
@@ -447,66 +475,24 @@ export default function AdminUsers() {
 
             {/* Summary footer */}
             <div className="mt-4 text-sm text-gray-500">
-              Showing {filteredProfiles.length} of {stats.total} total users
+              Showing {filteredSubscribers.length} of {stats.total} total subscribers
             </div>
           </main>
         </div>
       </div>
 
-      {/* Edit Role Modal */}
-      {showEditModal && selectedUser && (
-        <Modal>
-          <div className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
-            <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-xl font-bold text-white mb-4">Edit User Role</h3>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-gray-300">User: <span className="text-white">{selectedUser.email}</span></p>
-                </div>
-                <div>
-                  <label className="text-white font-medium mb-2 block">Role</label>
-                  <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-purple-500/60"
-                  >
-                    {ROLE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={handleUpdateRole}
-                    className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
-                  >
-                    Update
-                  </button>
-                  <button
-                    onClick={() => setShowEditModal(false)}
-                    className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Modal>
-      )}
-
       {/* Delete Confirmation Modal */}
-      {showDeleteModal && selectedUser && (
+      {showDeleteModal && selectedSubscriber && (
         <Modal>
           <div className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4" onClick={() => setShowDeleteModal(false)}>
             <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-xl font-bold text-white mb-4">Delete User</h3>
+              <h3 className="text-xl font-bold text-white mb-4">Remove Subscriber</h3>
               <p className="text-gray-300 mb-6">
-                Are you sure you want to delete user <span className="text-white font-medium">{selectedUser.email}</span>? This action cannot be undone.
+                Are you sure you want to remove <span className="text-white font-medium">{selectedSubscriber.email}</span> from the newsletter? This action cannot be undone.
               </p>
               <div className="flex gap-3">
                 <button
-                  onClick={handleDeleteUser}
+                  onClick={handleDelete}
                   className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
                 >
                   Delete

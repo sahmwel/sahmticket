@@ -78,86 +78,85 @@ export default function OrganizerDashboard() {
     return 'WAT (UTC+1)';
   };
 
-  const fetchEvents = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/auth");
-        return;
-      }
+const fetchEvents = useCallback(async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
 
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("events")
-        .select("*")
-        .eq("organizer_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(8);
+    // Fetch all events for this organizer
+    const { data: eventsData, error: eventsError } = await supabase
+      .from("events")
+      .select("*")
+      .eq("organizer_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(8);
 
-      if (eventsError) throw eventsError;
+    if (eventsError) throw eventsError;
 
-      const enrichedEvents = await Promise.all(
-        (eventsData || []).map(async (event: any) => {
-          let totalSold = 0;
-          let totalRevenue = 0;
-          let ticketTiers: any[] = [];
+    const enrichedEvents = await Promise.all(
+      (eventsData || []).map(async (event: any) => {
+        let totalSold = 0;
+        let totalRevenue = 0;
+        let ticketTiers: any[] = [];
 
-          // Check purchases table
-          const { data: purchases } = await supabase
-            .from("purchases")
-            .select("quantity, price")
+        // ✅ Use tickets table for sales data (most accurate)
+        const { data: tickets } = await supabase
+          .from("tickets")
+          .select("quantity, amount_in_ngn")
+          .eq("event_id", event.id);
+
+        if (tickets && tickets.length > 0) {
+          tickets.forEach((t: any) => {
+            const qty = t.quantity || 1;
+            const amount = t.amount_in_ngn || 0;
+            totalSold += qty;
+            totalRevenue += amount;
+          });
+        } else {
+          // Fallback to ticketTiers if no tickets exist (e.g., no sales yet)
+          const { data: tiersData } = await supabase
+            .from("ticketTiers")
+            .select("quantity_sold, price")
             .eq("event_id", event.id);
 
-          if (purchases && purchases.length > 0) {
-            purchases.forEach((p: any) => {
-              const qty = Number(p.quantity) || 0;
-              const price = Number(p.price) || 0;
-              totalSold += qty;
-              totalRevenue += (price * qty);
+          if (tiersData && tiersData.length > 0) {
+            tiersData.forEach((tier: any) => {
+              const sold = tier.quantity_sold || 0;
+              const price = tier.price || 0;
+              totalSold += sold;
+              totalRevenue += price * sold;
             });
           }
+        }
 
-          // Fallback to ticketTiers table
-          if (totalSold === 0) {
-            const { data: tiersData } = await supabase
-              .from("ticketTiers")
-              .select("quantity_sold, price")
-              .eq("event_id", event.id);
+        // Get ticket tier count (for display)
+        const { data: tiersCount } = await supabase
+          .from("ticketTiers")
+          .select("id")
+          .eq("event_id", event.id);
 
-            if (tiersData && tiersData.length > 0) {
-              tiersData.forEach((tier: any) => {
-                const sold = Number(tier.quantity_sold) || 0;
-                const price = Number(tier.price) || 0;
-                totalSold += sold;
-                totalRevenue += (price * sold);
-              });
-            }
-          }
+        ticketTiers = tiersCount || [];
 
-          // Get ticket tiers count
-          const { data: tiersCount } = await supabase
-            .from("ticketTiers")
-            .select("id")
-            .eq("event_id", event.id);
+        return {
+          ...event,
+          ticketTiers,
+          total_tickets_sold: totalSold,
+          total_revenue: totalRevenue,
+        };
+      })
+    );
 
-          ticketTiers = tiersCount || [];
-
-          return {
-            ...event,
-            ticketTiers: ticketTiers,
-            total_tickets_sold: totalSold,
-            total_revenue: totalRevenue,
-          };
-        })
-      );
-
-      setEvents(enrichedEvents);
-    } catch (err: any) {
-      console.error("Error fetching events:", err);
-      toast.error("Failed to load dashboard data");
-    } finally {
-      setLoading(false);
-    }
-  }, [navigate]);
+    setEvents(enrichedEvents);
+  } catch (err: any) {
+    console.error("Error fetching events:", err);
+    toast.error("Failed to load dashboard data");
+  } finally {
+    setLoading(false);
+  }
+}, [navigate]);
 
   useEffect(() => {
     fetchEvents();

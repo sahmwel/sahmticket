@@ -296,30 +296,61 @@ const TimelineSchedule = ({ events, showPast = false }: { events: Event[]; showP
   const navigate = useNavigate();
   
   // FIXED: Get date group function - only uses date comparisons, not formatted dates
-  const getDateGroup = useCallback((dateStr: string): string => {
+  // Inside TimelineSchedule component, replace the existing getDateGroup with:
+
+const getDateGroup = useCallback((dateStr: string): string => {
   if (!dateStr) return "No Date";
   
   try {
     const now = new Date();
     const eventDate = new Date(dateStr);
     
-    // Calculate the difference in days
-    const diffMs = eventDate.getTime() - now.getTime();
+    // Compare dates at midnight for accurate day difference
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const eventDay = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+    
+    const diffMs = eventDay.getTime() - today.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     
-    // Check if event is within the next 24 hours for "Today"
-    const isWithin24Hours = diffMs >= 0 && diffMs < (1000 * 60 * 60 * 24);
+    // Past events (if you ever include them)
+    if (diffDays < 0) {
+      if (diffDays >= -7) return "Last Week";
+      if (diffDays >= -30) return "Last Month";
+      return "Long Ago";
+    }
     
-    if (isWithin24Hours) return "Today";
+    // Near‑term: keep day‑based grouping for immediacy
+    if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Tomorrow";
-    if (diffDays > 1 && diffDays <= 7) return "This Week";
-    if (diffDays > 7 && diffDays <= 14) return "Next Week";
-    if (diffDays > 14 && diffDays <= 30) return "This Month";
-    if (diffDays > 30 && diffDays <= 60) return "Next Month";
-    if (diffDays > 60) return "Future Events";
-    if (diffDays < 0 && diffDays >= -7) return "Last Week";
-    if (diffDays < -7 && diffDays >= -30) return "Last Month";
-    return "Long Ago";
+    if (diffDays <= 7) return "This Week";
+    
+    // Beyond 7 days: use calendar month comparison
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const eventMonth = eventDate.getMonth();
+    const eventYear = eventDate.getFullYear();
+    
+    if (eventYear === currentYear) {
+      if (eventMonth === currentMonth) {
+        return "This Month";
+      }
+      if (eventMonth === currentMonth + 1) {
+        return "Next Month";
+      }
+      if (eventMonth > currentMonth + 1) {
+        return "Future Events";
+      }
+    } else if (eventYear === currentYear + 1) {
+      // Handle December → January next year as "Next Month"
+      if (currentMonth === 11 && eventMonth === 0) {
+        return "Next Month";
+      }
+      return "Future Events";
+    } else if (eventYear > currentYear + 1) {
+      return "Future Events";
+    }
+    
+    return "Future Events";
   } catch {
     return "Unknown Date";
   }

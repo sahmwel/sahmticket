@@ -27,7 +27,7 @@ import OrganizerMyEvents from "./pages/organizer/MyEvents";
 import OrganizerProfile from "./pages/organizer/Profile";
 import OrganizerTickets from "./pages/organizer/Tickets";
 import EditEvent from "./pages/organizer/EditEvent";
-import EventDetail from "./pages/EventDetails"; // Add this import
+import OrganizerEventDetails from "./pages/organizer/EventDetails";
 
 // Admin
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -35,7 +35,7 @@ import AdminUsers from "./pages/admin/Users";
 import AdminEvents from "./pages/admin/Events";
 import AdminTickets from "./pages/admin/Tickets";
 import AdminSettings from "./pages/admin/Settings";
-import OrganizerEventDetails from "./pages/organizer/EventDetails";
+import AdminNewsletter from "./pages/admin/Newsletter"; // <-- NEW
 
 function App() {
   return (
@@ -86,6 +86,7 @@ function App() {
           <Route path="events" element={<AdminEvents />} />
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="newsletter" element={<AdminNewsletter />} /> {/* <-- NEW */}
         </Route>
 
         {/* 404 */}
