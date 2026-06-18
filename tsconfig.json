@@ -22,10 +22,9 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react",
 
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "server/lib/emailTemplates", "server/server.ts"]
+  "include": ["src"]
 }

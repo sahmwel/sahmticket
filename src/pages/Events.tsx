@@ -38,6 +38,18 @@ const PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1540575467063-178a5
 const EVENTS_PER_PAGE = 50;
 const CAROUSEL_INTERVAL = 5000;
 
+// Currency symbols for display
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  NGN: "₦",
+  USD: "$",
+  GBP: "£",
+  EUR: "€",
+  GHS: "GH₵",
+  KES: "KSh",
+  ZAR: "R",
+  CAD: "C$"
+};
+
 // --- Hardcoded Categories (matches CreateEvent) ---
 const COMPLETE_CATEGORIES = [
   { id: 1, name: "🎵 Concerts & Live Music" },
@@ -76,7 +88,6 @@ const getCategoryGradient = (id: number): string => {
     "from-rose-500 to-pink-600",
     "from-fuchsia-500 to-purple-600",
   ];
-  // Use modulo to cycle through gradients
   return gradients[id % gradients.length];
 };
 
@@ -93,15 +104,17 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 };
 
-// --- Type Definitions ---
+// --- Type Definitions (aligned with new schema) ---
 interface TicketTier {
+  id?: string;
   name: string;
-  price: string | number;
-  sold?: number;
-  available?: number;
-  quantity_sold?: number;
-  quantity_available?: number;
+  price: number;               // price in NGN (stored)
+  original_price?: number;      // price in original currency
+  original_currency?: string;   // original currency code
   description?: string;
+  quantity_available?: number;
+  quantity_sold?: number;
+  is_active?: boolean;
 }
 
 interface Event {
@@ -122,6 +135,7 @@ interface Event {
   coordinates?: { lat: number; lng: number };
   slug?: string;
   isPast?: boolean;
+  base_currency?: string;
 }
 
 // --- Date Formatting Functions ---
@@ -200,73 +214,81 @@ const isEventPast = (dateString: string): boolean => {
   }
 };
 
-// --- Helper Functions ---
-const parsePrice = (price: string | number): { amount: number; isFree: boolean } => {
-  if (typeof price === 'number') return { amount: price, isFree: price === 0 };
-  if (typeof price === 'string') {
-    const lowerPrice = price.toLowerCase().trim();
-    if (['free', '0', '₦0', 'ngn0', 'n0', '0.00', '0.0'].includes(lowerPrice)) {
-      return { amount: 0, isFree: true };
-    }
-    const cleaned = price.replace(/[^\d.-]/g, '');
-    const amount = parseFloat(cleaned) || 0;
-    return { amount, isFree: amount === 0 };
+// --- Price Helpers (using original currency) ---
+const getLowestPriceFromTiers = (ticketTiers: TicketTier[], baseCurrency = 'NGN'): { price: number; currency: string; isFree: boolean } => {
+  if (!ticketTiers?.length) {
+    return { price: 0, currency: baseCurrency, isFree: true };
   }
-  return { amount: 0, isFree: true };
-};
 
-const getLowestPriceFromTiers = (ticketTiers: TicketTier[]): { price: number; isFree: boolean } => {
-  if (!ticketTiers?.length) return { price: 0, isFree: true };
   let hasPaidTier = false;
   let lowestPaidPrice = Infinity;
   let hasFreeTier = false;
+  let detectedCurrency = baseCurrency;
+
   ticketTiers.forEach(tier => {
-    if (!tier) return;
-    const available = tier.available ?? tier.quantity_available;
-    const sold = tier.sold ?? tier.quantity_sold ?? 0;
-    if (available !== undefined && (available === 0 || sold >= available)) return;
-    const priceInfo = parsePrice(tier.price);
-    if (priceInfo.isFree) hasFreeTier = true;
-    else if (priceInfo.amount > 0) {
+    if (!tier || tier.is_active === false) return;
+
+    // Skip if sold out
+    if (tier.quantity_available !== undefined && 
+        (tier.quantity_available === 0 || (tier.quantity_sold || 0) >= tier.quantity_available)) {
+      return;
+    }
+
+    // Use original price + currency if available, otherwise fallback to NGN price
+    const price = tier.original_price ?? tier.price;
+    const currency = tier.original_currency || baseCurrency;
+    detectedCurrency = currency; // assume all tiers use same currency
+
+    if (price === 0) {
+      hasFreeTier = true;
+    } else if (price > 0) {
       hasPaidTier = true;
-      lowestPaidPrice = Math.min(lowestPaidPrice, priceInfo.amount);
+      if (price < lowestPaidPrice) {
+        lowestPaidPrice = price;
+      }
     }
   });
-  if (hasPaidTier) return { price: lowestPaidPrice, isFree: false };
-  if (hasFreeTier) return { price: 0, isFree: true };
-  return { price: 0, isFree: true };
+
+  if (hasPaidTier) {
+    return { price: lowestPaidPrice, currency: detectedCurrency, isFree: false };
+  }
+  if (hasFreeTier) {
+    return { price: 0, currency: detectedCurrency, isFree: true };
+  }
+  return { price: 0, currency: detectedCurrency, isFree: true };
+};
+
+const formatPriceDisplay = (price: number, currency: string, isFree: boolean): string => {
+  if (isFree) return "Free";
+  const symbol = CURRENCY_SYMBOLS[currency] || (currency === 'NGN' ? '₦' : currency);
+  
+  if (currency === 'NGN') {
+    return `${symbol}${price.toLocaleString('en-NG')}`;
+  }
+  return `${symbol}${price.toFixed(2)}`;
 };
 
 const isEventSoldOut = (ticketTiers: TicketTier[]): boolean => {
   if (!ticketTiers?.length) return false;
-  const hasAvailableTickets = ticketTiers.some(tier => {
-    if (!tier) return false;
-    const available = tier.available ?? tier.quantity_available;
-    const sold = tier.sold ?? tier.quantity_sold ?? 0;
-    if (available == null) return true;
-    return available > 0 && sold < available;
+  
+  return !ticketTiers.some(tier => {
+    if (tier.is_active === false) return false;
+    const available = tier.quantity_available;
+    const sold = tier.quantity_sold || 0;
+    return available == null || available > sold;
   });
-  return !hasAvailableTickets;
 };
 
 const getAvailableTickets = (ticketTiers: TicketTier[]): number => {
   if (!ticketTiers?.length) return 0;
+  
   return ticketTiers.reduce((total, tier) => {
-    if (!tier) return total;
-    const available = tier.available ?? tier.quantity_available;
-    const sold = tier.sold ?? tier.quantity_sold ?? 0;
+    if (tier.is_active === false) return total;
+    const available = tier.quantity_available;
+    const sold = tier.quantity_sold || 0;
     if (available == null) return total + 9999;
     return total + Math.max(0, available - sold);
   }, 0);
-};
-
-const formatPriceDisplay = (price: number, isFree: boolean): string => {
-  if (isFree) return "Free";
-  return new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
-    minimumFractionDigits: 0,
-  }).format(price);
 };
 
 // --- Map Components ---
@@ -395,7 +417,7 @@ const EventCard: React.FC<{
   onEventClick: (event: Event) => void;
 }> = React.memo(({ event, onEventClick }) => {
   const [imageError, setImageError] = useState(false);
-  const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
+  const { price, currency, isFree } = getLowestPriceFromTiers(event.ticketTiers, event.base_currency);
   const soldOut = isEventSoldOut(event.ticketTiers);
   const availableTickets = getAvailableTickets(event.ticketTiers);
   const isLowStock = availableTickets > 0 && availableTickets <= 10;
@@ -411,6 +433,8 @@ const EventCard: React.FC<{
   }, [event, onEventClick]);
   const handleImageError = useCallback(() => setImageError(true), []);
 
+  const priceDisplay = formatPriceDisplay(price, currency, isFree);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -420,7 +444,7 @@ const EventCard: React.FC<{
       onKeyDown={handleKeyDown}
       tabIndex={0}
       role="button"
-      aria-label={`View details for ${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+      aria-label={`View details for ${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : priceDisplay}`}
       className={`bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all cursor-pointer border overflow-hidden group flex flex-col h-full focus:outline-none focus:ring-4 focus:ring-purple-300 ${
         eventIsPast ? 'border-gray-200 opacity-80 hover:opacity-100' :
         soldOut ? 'opacity-90 border-gray-200' : 'border-purple-100'
@@ -501,7 +525,7 @@ const EventCard: React.FC<{
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:scale-105'
                   : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105'
           }`}
-          aria-label={`${eventIsPast ? 'View past event: ' : ''}${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+          aria-label={`${eventIsPast ? 'View past event: ' : ''}${event.title} - ${eventIsPast ? 'Past Event' : soldOut ? 'Sold Out' : isFree ? 'Free' : priceDisplay}`}
           disabled={soldOut && !eventIsPast}
         >
           <Ticket size={24} aria-hidden="true" />
@@ -509,7 +533,7 @@ const EventCard: React.FC<{
             ? 'View Event Details'
             : soldOut
               ? 'SOLD OUT'
-              : `Get Ticket • ${isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`
+              : `Get Ticket • ${priceDisplay}`
           }
         </button>
       </div>
@@ -605,7 +629,7 @@ export default function EventsPage() {
     return withDistance.slice(0, 8);
   }, [futureEvents, userLocation]);
 
-  // --- Data Fetching ---
+  // --- Data Fetching (UPDATED to use base_currency and ticketTiers JSON) ---
   const fetchEvents = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -629,44 +653,51 @@ export default function EventsPage() {
           slug,
           lat,
           lng,
-          ticketTiers!ticketTiers_event_id_fkey (
-            tier_name,
-            price,
-            description,
-            quantity_total,
-            quantity_sold
-          )
+          base_currency,
+          ticketTiers
         `)
         .eq("status", "published")
         .order("date", { ascending: true })
         .limit(EVENTS_PER_PAGE);
       if (fetchError) throw fetchError;
-      const parsedEvents = (data || []).map((item: any) => ({
-        id: item.id,
-        title: item.title || "Untitled Event",
-        description: item.description,
-        category_id: item.category_id ?? 0,
-        date: item.date,
-        time: item.time || "",
-        venue: item.venue || "",
-        location: item.location || item.venue || "Location TBD",
-        image: item.image || PLACEHOLDER_IMAGE,
-        ticketTiers: (item.ticketTiers || []).map((tier: any) => ({
-          name: tier.tier_name || "General Admission",
-          price: tier.price ?? 0,
-          description: tier.description,
-          quantity_sold: tier.quantity_sold ?? 0,
-          quantity_available: tier.quantity_total ?? null,
-        })),
-        featured: item.featured ?? false,
-        trending: item.trending ?? false,
-        isNew: item.isnew ?? false,
-        sponsored: item.sponsored ?? false,
-        coordinates: item.lat && item.lng
-          ? { lat: Number(item.lat), lng: Number(item.lng) }
-          : undefined,
-        slug: item.slug,
-      }));
+      const parsedEvents = (data || []).map((item: any) => {
+        // Parse ticketTiers JSON column
+        let ticketTiers: TicketTier[] = [];
+        if (item.ticketTiers && Array.isArray(item.ticketTiers)) {
+          ticketTiers = item.ticketTiers.map((tier: any) => ({
+            id: tier.id,
+            name: tier.name || tier.tier_name || "General Admission",
+            price: Number(tier.price) || 0,
+            original_price: tier.original_price || undefined,
+            original_currency: tier.original_currency || item.base_currency || 'NGN',
+            description: tier.description || "",
+            quantity_available: tier.quantity_available ?? tier.quantity_total ?? null,
+            quantity_sold: tier.quantity_sold || 0,
+            is_active: tier.is_active ?? true,
+          }));
+        }
+        return {
+          id: item.id,
+          title: item.title || "Untitled Event",
+          description: item.description,
+          category_id: item.category_id ?? 0,
+          date: item.date,
+          time: item.time || "",
+          venue: item.venue || "",
+          location: item.location || item.venue || "Location TBD",
+          image: item.image || PLACEHOLDER_IMAGE,
+          ticketTiers,
+          featured: item.featured ?? false,
+          trending: item.trending ?? false,
+          isNew: item.isnew ?? false,
+          sponsored: item.sponsored ?? false,
+          coordinates: item.lat && item.lng
+            ? { lat: Number(item.lat), lng: Number(item.lng) }
+            : undefined,
+          slug: item.slug,
+          base_currency: item.base_currency || 'NGN',
+        };
+      });
       setEvents(parsedEvents);
     } catch (err: any) {
       console.error("Events fetch failed:", err);
@@ -760,12 +791,12 @@ export default function EventsPage() {
 
   // --- Main Render ---
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 pt-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {/* Header */}
+        {/* Header - Updated to "Discover Events Near You" */}
         <motion.header initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-black text-gray-900 mb-3">
-            Discover Events Around You
+            Discover Events Near You
           </h1>
           <p className="text-xl text-gray-700">
             {showPastEvents ? 'All events including past' : 'Upcoming events only'} • {filteredEvents.length} events available
@@ -781,7 +812,36 @@ export default function EventsPage() {
           setShowPast={setShowPastEvents}
         />
 
-        {/* Featured Carousel - Only shows future featured events */}
+        {/* Near You Section - RIGHT AFTER SEARCH BAR (only if not showing past) */}
+        {!showPastEvents && nearYouEvents.length > 0 && (
+          <section className="mb-16" aria-label="Events near your location">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <div className="flex items-center gap-4">
+                  <Navigation className="w-10 h-10 text-purple-600" aria-hidden="true" />
+                  <h2 className="text-3xl sm:text-4xl font-black">Discover Events Near You</h2>
+                </div>
+                <p className="text-gray-600 mt-2 ml-14">Events happening close to your location</p>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Filter size={16} aria-hidden="true" />
+                <span>Closest first</span>
+              </div>
+            </div>
+            <motion.div
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ staggerChildren: 0.1 }}
+            >
+              {nearYouEvents.map((event) => (
+                <EventCard key={event.id} event={event} onEventClick={handleEventClick} />
+              ))}
+            </motion.div>
+          </section>
+        )}
+
+        {/* Featured Carousel - Only future featured events */}
         <AnimatePresence mode="wait">
           {featuredEvents.length > 0 && (
             <motion.section
@@ -826,16 +886,17 @@ export default function EventsPage() {
                   aria-atomic="true"
                 >
                   {featuredEvents.map((event, index) => {
-                    const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
+                    const { price, currency, isFree } = getLowestPriceFromTiers(event.ticketTiers, event.base_currency);
                     const soldOut = isEventSoldOut(event.ticketTiers);
                     const availableTickets = getAvailableTickets(event.ticketTiers);
                     const eventIsPast = isEventPast(event.date);
+                    const priceDisplay = formatPriceDisplay(price, currency, isFree);
                     return (
                       <div key={event.id} className="w-full flex-shrink-0">
                         <button
                           onClick={() => handleEventClick(event)}
                           className="w-full text-left focus:outline-none focus:ring-4 focus:ring-purple-300 rounded-3xl"
-                          aria-label={`Featured event ${index + 1}: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : `₦${price.toLocaleString('en-NG')}`}`}
+                          aria-label={`Featured event ${index + 1}: ${event.title} - ${soldOut ? 'Sold Out' : isFree ? 'Free' : priceDisplay}`}
                         >
                           <div className="relative h-96 md:h-[560px] bg-black rounded-3xl overflow-hidden group/carousel">
                             <img
@@ -876,7 +937,7 @@ export default function EventsPage() {
                                   isFree ? 'text-emerald-400' : 'text-purple-400'
                                 }`}>
                                   {soldOut ? 'SOLD OUT' :
-                                   isFree ? 'Free' : formatPriceDisplay(price, isFree)}
+                                   isFree ? 'Free' : priceDisplay}
                                 </p>
                                 <span className="text-white/80 text-lg">
                                   {event.location}
@@ -918,32 +979,6 @@ export default function EventsPage() {
             </motion.section>
           )}
         </AnimatePresence>
-
-        {/* Near You Section (Future Events Only, sorted by distance) */}
-        {!showPastEvents && nearYouEvents.length > 0 && (
-          <section className="mb-16" aria-label="Events near your location">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-4">
-                <Navigation className="w-10 h-10 text-purple-600" aria-hidden="true" />
-                <h2 className="text-3xl sm:text-4xl font-black">Near You</h2>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Filter size={16} aria-hidden="true" />
-                <span>Closest first</span>
-              </div>
-            </div>
-            <motion.div
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ staggerChildren: 0.1 }}
-            >
-              {nearYouEvents.map((event) => (
-                <EventCard key={event.id} event={event} onEventClick={handleEventClick} />
-              ))}
-            </motion.div>
-          </section>
-        )}
 
         {/* View Mode Toggle */}
         <motion.div
@@ -1030,11 +1065,12 @@ export default function EventsPage() {
               {filteredEvents
                 .filter(event => event.coordinates)
                 .map((event) => {
-                  const { price, isFree } = getLowestPriceFromTiers(event.ticketTiers);
+                  const { price, currency, isFree } = getLowestPriceFromTiers(event.ticketTiers, event.base_currency);
                   const soldOut = isEventSoldOut(event.ticketTiers);
                   const availableTickets = getAvailableTickets(event.ticketTiers);
                   const isLowStock = availableTickets > 0 && availableTickets <= 10;
                   const eventIsPast = isEventPast(event.date);
+                  const priceDisplay = formatPriceDisplay(price, currency, isFree);
                   return (
                     <Marker
                       key={event.id}
@@ -1083,7 +1119,7 @@ export default function EventsPage() {
                           }`}>
                             {eventIsPast ? 'PAST EVENT' :
                              soldOut ? 'SOLD OUT' :
-                             isFree ? 'Free' : formatPriceDisplay(price, isFree)}
+                             isFree ? 'Free' : priceDisplay}
                           </div>
                           <button
                             onClick={() => handleEventClick(event)}

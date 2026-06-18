@@ -9,7 +9,8 @@ import {
   BarChart, Megaphone, Settings, Heart, Sparkles, Rocket, TrendingUp as Growth,
   Award as Investor, Lightbulb, Code, GitBranch, Smartphone, Cloud,
   CheckCircle, Users as Community, BarChart3, Zap as Speed,
-  Mail, Phone, MapPin, CheckCircle2, Eye, BarChart4, Camera
+  Mail, Phone, MapPin, CheckCircle2, Eye, BarChart4, Camera, Compass, Flag,
+  BadgeCheck, ExternalLink
 } from "lucide-react";
 
 // Define the team member type
@@ -30,7 +31,6 @@ const teamMembers: TeamMember[] = [
     name: "Samuel Obute",
     role: "Founder & CEO",
     bio: "Full-stack developer who built the platform from scratch. Leads product vision and engineering.",
-    // image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&h=200&fit=crop&crop=face",
     icon: Code,
     color: "from-purple-500 to-pink-600",
     funFact: "I just needed coffee, Wi-Fi, and a concerning lack of self-preservation instincts",
@@ -40,67 +40,24 @@ const teamMembers: TeamMember[] = [
     name: "Susan Agbonika",
     role: "Head of Operations(Project Manager)",
     bio: "Ensures flawless event execution and team coordination. Manages promoter onboarding and support.",
-    // image: "https://images.unsplash.com/photo-1582750433449-648ed127bb54?q=80&w=200&h=200&fit=crop&crop=face",
     icon: Settings,
     color: "from-blue-500 to-cyan-600",
     funFact: "I can't read minds, but I can ask the right questions to get things done.",
     contact: "ufedosusan@gmail.com"
   },
   {
-    name: "Nereus Chori",
-    role: "Digital Marketing",
-    bio: "Creates buzz and drives ticket sales through targeted campaigns and social media strategy.",
-    // image: "https://images.unsplash.com/photo-1551836026-d5c2c5af78e4?q=80&w=200&h=200&fit=crop&crop=face",
-    icon: Megaphone,
-    color: "from-orange-500 to-red-600",
-    funFact: "Talk less, act more jolly fellow",
-    contact: "nereusbeatzofficial@gmail.com"
-  },
-    {
-    name: "Attah Achema",
-    role: "Digital Marketing",
-    bio: "Creates buzz and drives ticket sales through targeted campaigns and social media strategy.",
-    // image: "https://images.unsplash.com/photo-1551836026-d5c2c5af78e4?q=80&w=200&h=200&fit=crop&crop=face",
-    icon: Megaphone,
-    color: "from-orange-500 to-red-600",
-    funFact: "I ignore the task, panic a little, then deliver one hour before the deadline.",
-    contact: "achemaattah@gmail.com"
-  },
-  {
     name: "Rachael Benjamin",
     role: "Finance & Payouts",
     bio: "Manages all transactions and ensures 24-hour payouts. Handles financial compliance.",
-    // image: "https://images.unsplash.com/photo-1552664730-d307ca884978?q=80&w=200&h=200&fit=crop&crop=face",
     icon: DollarSign,
     color: "from-green-500 to-emerald-600",
     funFact: "Peace of mind is my favourite luxury.",
     contact: "rachaelobute@gmail.com"
   },
   {
-    name: "Anibe Achema",
-    role: "Product Design(UI/UX)",
-    bio: "Creates beautiful, intuitive interfaces that make ticket selling and buying seamless.",
-    // image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&h=200&fit=crop&crop=face",
-    icon: Palette,
-    color: "from-pink-500 to-rose-600",
-    funFact: "Garri is my favourite food.",
-    contact: "achemaanibe@gmail.com"
-  },
-  {
-  name: "Segun Jacob Abanize",
-  role: "Photography & Video",
-  bio: "Professional media coverage for events. Captures content for marketing and memories.",
-  // image: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=200&h=200&fit=crop&crop=face",
-  icon: Camera,
-  color: "from-violet-500 to-purple-600",
-  funFact: "A servant of the Most High God. Work smart, pray hard.",
-  contact: "abanisesegun@gmail.com"
-},
-  {
     name: "Support Team",
     role: "24/7 Customer Support",
     bio: "Dedicated team ready to help promoters succeed with their events.",
-    // image: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=200&h=200&fit=crop&crop=face",
     icon: CheckCircle,
     color: "from-indigo-500 to-blue-600",
     funFact: "Always available",
@@ -150,33 +107,33 @@ const platformFeatures = [
   }
 ];
 
-// Success Stories (Placeholder for future)
+// Global Success Roadmap
 const successStories = [
   {
     year: "2026 Q1",
-    milestone: "Platform Launch",
-    detail: "Full team assembled in Kaduna, ready to serve promoters",
+    milestone: "Global Launch",
+    detail: "Platform goes live from Kaduna, Nigeria – serving the world",
     icon: Rocket,
     color: "from-purple-500 to-pink-500"
   },
   {
     year: "2026 Q2",
-    milestone: "First 100 Events",
-    detail: "Target: Power 100 successful events across Nigeria",
+    milestone: "First Global Events",
+    detail: "Power events across Nigeria, Ghana, Kenya, South Africa, and the UK",
     icon: Target,
     color: "from-blue-500 to-cyan-500"
   },
   {
     year: "2026 Q3",
-    milestone: "National Expansion",
-    detail: "Expand to Lagos, Abuja, and other major cities",
+    milestone: "Pan-Continental Expansion",
+    detail: "Onboard promoters from Europe, Americas, Asia, and Australia",
     icon: Globe,
     color: "from-green-500 to-emerald-500"
   },
   {
     year: "2026 Q4",
-    milestone: "10,000+ Tickets",
-    detail: "Goal: Process 10,000+ tickets for Nigerian events",
+    milestone: "100,000+ Tickets Worldwide",
+    detail: "Process 100,000+ tickets for events across the globe",
     icon: Ticket,
     color: "from-orange-500 to-red-500"
   },
@@ -198,7 +155,7 @@ export default function About() {
 
   return (
     <>
-      {/* HERO SECTION - Ready to Sell Out */}
+      {/* HERO SECTION - Ready to Sell Out Globally */}
       <section className="pt-16 sm:pt-20 lg:pt-28 min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-pink-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
@@ -215,11 +172,11 @@ export default function About() {
               className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-600 to-rose-600 text-white px-6 py-3 rounded-full text-sm font-bold mb-4"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Ready to Sell Out • Full Team • 2026 Launch
+              Ready to Sell Out • Global Launch 2026
             </motion.div>
 
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-black">
-              Ready to Sell Out Your Event?
+              Ready to Sell Out Your Event Worldwide?
             </h1>
 
             <div className="relative">
@@ -227,7 +184,7 @@ export default function About() {
                 SahmTicketHub
               </p>
               <p className="text-sm sm:text-lg text-gray-300 mt-4">
-                Join thousands of promoters who trust SahmTicketHub
+                Join promoters from every corner of the globe
               </p>
             </div>
 
@@ -263,7 +220,7 @@ export default function About() {
                 <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Users className="w-6 h-6 text-white" />
                 </div>
-                <h3 className="text-xl font-bold mb-2">24/7 Support</h3>
+                <h3 className="text-xl font-bold mb-2">24/7 Global Support</h3>
                 <p className="text-gray-300 text-sm">Dedicated support team ready to help you succeed.</p>
               </div>
               
@@ -307,7 +264,219 @@ export default function About() {
         </div>
       </section>
 
-      {/* TEAM SECTION - Complete Team */}
+      {/* ===== OUR AIM & MISSION SECTION (Global Vision + CAC) ===== */}
+      <section className="py-20 bg-gradient-to-br from-purple-50 via-white to-pink-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-full text-sm font-bold mb-6">
+              <Compass className="w-4 h-4" />
+              Our North Star
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-6">
+              Our Aim & Mission
+            </h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Empowering event creators and connecting the world to unforgettable experiences.
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-12 lg:gap-16">
+            {/* Left: Mission */}
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="bg-white rounded-3xl shadow-xl p-8 hover:shadow-2xl transition-shadow"
+            >
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mb-6">
+                <Flag className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-4">Our Mission</h3>
+              <p className="text-gray-600 leading-relaxed mb-6">
+                To democratize event ticketing worldwide by providing a zero‑commission, 
+                fraud‑proof platform that gives every event creator — from grassroots 
+                organizers to global promoters — the tools and support they need to sell 
+                out with confidence.
+              </p>
+              <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                <p className="text-purple-800 font-medium text-sm">
+                  “No more fake tickets. No more hidden fees. Just sold‑out events – anywhere on Earth.”
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Right: Vision + Values */}
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="space-y-8"
+            >
+              <div className="bg-white rounded-3xl shadow-xl p-8">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-2xl flex items-center justify-center mb-6">
+                  <Eye className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Our Vision</h3>
+                <p className="text-gray-600 leading-relaxed">
+                  To become the heartbeat of the global live event economy — where every 
+                  ticket sold is authentic, every payout is instant, and every event 
+                  experience is unforgettable, no matter where you are in the world.
+                </p>
+              </div>
+
+              <div className="bg-white rounded-3xl shadow-xl p-8">
+                <div className="w-16 h-16 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl flex items-center justify-center mb-6">
+                  <Heart className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Core Values</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-700">Transparency first</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-700">Zero tolerance for fraud</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-700">Organizer success = our success</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-700">Relentless innovation</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-700">Community driven</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-700">Fast & fair global payouts</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* ===== CAC REGISTRATION & LEGAL STATUS (prominent card) ===== */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+            className="mt-16 bg-white rounded-3xl shadow-xl p-8 hover:shadow-2xl transition-shadow"
+          >
+            <div className="flex flex-col md:flex-row gap-8 items-start">
+              <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+                <BadgeCheck className="w-8 h-8 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">
+                  Fully Registered & Compliant with Nigerian Law
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  SahmTicketHub is a fully registered corporate entity in Nigeria under the 
+                  Corporate Affairs Commission (CAC) in accordance with the <strong className="font-semibold text-gray-800">Companies and Allied 
+                  Matters Act (CAMA) 2020</strong> (Section 729). We proudly display our registration details 
+                  as required by law, ensuring transparency, accountability, and peace of mind for our global users.
+                </p>
+
+                <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        Registered Name
+                      </p>
+                      <p className="text-lg font-bold text-gray-900">
+                        SAHM TICKET HUB LTD
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        Registration Number (RC)
+                      </p>
+                      <p className="text-lg font-bold text-gray-900">
+                        RC 9583245
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-600">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Fully compliant with CAMA 2020</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Transparent and accountable business</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Legally registered for your peace of mind</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Verified by Corporate Affairs Commission</span>
+                  </div>
+                </div>
+
+                {/* <div className="mt-6 pt-4 border-t border-gray-100">
+                  <p className="text-sm text-gray-500">
+                    You can verify our registration on the official CAC public search portal:
+                  </p>
+                  <a 
+                    href="https://publicsearch.cac.gov.ng/ComSearch/index.php"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 mt-2 text-purple-600 hover:text-purple-800 font-medium text-sm"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Verify on CAC Portal
+                  </a>
+                </div> */}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Why It Matters */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="mt-12 bg-gradient-to-r from-purple-600 to-pink-600 rounded-3xl p-8 text-white text-center"
+          >
+            <h3 className="text-2xl font-bold mb-4">Why This Matters to You</h3>
+            <p className="text-lg text-purple-100 max-w-3xl mx-auto">
+              Every feature we build, every policy we set, and every team member we hire 
+              is focused on one thing: <span className="font-bold">helping you sell out your event faster</span> 
+              while keeping your money safe and your fans happy – anywhere on Earth.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-4">
+              <div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
+                Zero Commission
+              </div>
+              <div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
+                QR Fraud Protection
+              </div>
+              <div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
+                24‑Hour Payouts
+              </div>
+              <div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
+                Global Support
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* TEAM SECTION - Complete Team (unchanged) */}
       <section className="py-20 bg-gradient-to-b from-gray-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
@@ -323,11 +492,9 @@ export default function About() {
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {teamMembers.map((member, i) => {
               const Icon = member.icon;
-              const hasImage = member.image && member.image.includes("unsplash.com");
-              
               return (
                 <motion.div
                   key={i}
@@ -340,21 +507,9 @@ export default function About() {
                   <div className="bg-white rounded-2xl shadow-xl hover:shadow-2xl transition-shadow overflow-hidden border border-gray-100 h-full">
                     <div className="relative h-48 overflow-hidden bg-gradient-to-br from-gray-100 to-white">
                       <div className={`absolute inset-0 bg-gradient-to-br ${member.color} opacity-5`} />
-                      
-                      {/* Team avatar */}
                       <div className="flex items-center justify-center h-full">
-                        <div className="relative">
-                          {hasImage ? (
-                            <img
-                              src={member.image}
-                              alt={member.name}
-                              className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg"
-                            />
-                          ) : (
-                            <div className={`bg-gradient-to-r ${member.color} w-32 h-32 rounded-full flex items-center justify-center`}>
-                              <Icon className="w-16 h-16 text-white" />
-                            </div>
-                          )}
+                        <div className={`bg-gradient-to-r ${member.color} w-32 h-32 rounded-full flex items-center justify-center`}>
+                          <Icon className="w-16 h-16 text-white" />
                         </div>
                       </div>
                     </div>
@@ -443,7 +598,7 @@ export default function About() {
         </div>
       </section>
 
-      {/* PLATFORM FEATURES */}
+      {/* PLATFORM FEATURES (unchanged) */}
       <section className="py-20 bg-gradient-to-br from-purple-50 to-pink-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
@@ -507,7 +662,7 @@ export default function About() {
                   See Organizer Dashboard 
                 </button>
               </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
+              {/* <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span>Total Tickets Sold</span>
@@ -526,21 +681,21 @@ export default function About() {
                     <span className="text-2xl font-bold">Every Friday</span>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </div>
           </div>
         </div>
       </section>
 
-      {/* SUCCESS ROADMAP */}
+      {/* SUCCESS ROADMAP - Global */}
       <section className="py-20 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-black text-gray-900 mb-4">
-              2026 Success Roadmap
+              2026 Global Success Roadmap
             </h2>
             <p className="text-gray-600">
-              Join us on our journey to transform Nigerian events
+              Join us on our journey to transform events worldwide
             </p>
           </div>
           
@@ -582,7 +737,7 @@ export default function About() {
         </div>
       </section>
 
-      {/* EVENT TYPES WE POWER */}
+      {/* EVENT TYPES WE POWER (unchanged) */}
       <section className="py-20 bg-gradient-to-b from-gray-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
@@ -590,7 +745,7 @@ export default function About() {
               Power Every Type of Event
             </h2>
             <p className="text-gray-600 max-w-3xl mx-auto">
-              From small gatherings to massive festivals
+              From small gatherings to massive festivals worldwide
             </p>
           </div>
 
@@ -613,17 +768,17 @@ export default function About() {
             })}
           </div>
 
-          {/* Location Badge */}
+          {/* Location Badge - Global */}
           <div className="mt-16 text-center">
             <div className="inline-flex items-center gap-3 bg-gradient-to-r from-purple-100 to-pink-100 text-purple-800 px-8 py-4 rounded-full font-bold">
-              <MapPin className="w-5 h-5" />
-              Built in Kaduna • Trusted by Nigeria's top promoters
+              <Globe className="w-5 h-5" />
+              Built in Kaduna, Nigeria • Trusted by promoters worldwide
             </div>
           </div>
         </div>
       </section>
 
-      {/* FINAL CTA SECTION */}
+      {/* FINAL CTA SECTION - Global */}
       <section className="py-20 bg-gradient-to-r from-gray-900 to-purple-900 text-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
@@ -637,11 +792,11 @@ export default function About() {
             </div>
             
             <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black">
-              Start Selling Tickets Today
+              Start Selling Tickets Today – Anywhere in the World
             </h2>
             
             <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              With our complete team and platform, you have everything you need to create and sell out your next event.
+              With our complete team and platform, you have everything you need to create and sell out your next event – no matter where you are.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
@@ -662,7 +817,7 @@ export default function About() {
               </button>
             </div>
 
-            {/* Quick Stats */}
+            {/* Quick Stats - Global */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-10">
               <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6">
                 <p className="text-3xl font-bold text-pink-400">0%</p>
@@ -673,7 +828,7 @@ export default function About() {
               <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6">
                 <p className="text-3xl font-bold text-blue-400">24h</p>
                 <p className="text-lg font-semibold">Payout Speed</p>
-                <p className="text-sm text-gray-400">Fastest in Nigeria</p>
+                <p className="text-sm text-gray-400">Fastest globally</p>
               </div>
               
               <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6">

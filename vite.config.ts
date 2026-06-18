@@ -1,10 +1,10 @@
-// vite.config.ts
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -20,18 +20,22 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            return 'vendor';
-          }
-        }
-      }
+        manualChunks: {
+          // Split large libraries into separate chunks
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-framer': ['framer-motion'],
+          'vendor-icons': ['lucide-react'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-qrcode': ['qrcode', 'react-qr-code'],
+          'vendor-others': ['axios', 'date-fns', 'react-intersection-observer', 'react-scroll'],
+        },
+      },
     },
     chunkSizeWarningLimit: 1000,
   },
   server: {
     fs: {
-      allow: ['..']
-    }
-  }
+      allow: ['..'],
+    },
+  },
 });

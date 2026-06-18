@@ -23,6 +23,10 @@ export default function Footer() {
     }, 1200);
   };
 
+  // === CAC REGISTRATION DETAILS – UPDATE WITH YOUR ACTUAL INFO ===
+  const companyName = "SAHM TICKET HUB LTD"; 
+  const rcNumber = "9583245";        
+
   return (
     <footer className="bg-gradient-to-t from-purple-950 via-purple-900 to-pink-900 text-white">
       <div className="max-w-7xl mx-auto px-6 py-20 md:py-28">
@@ -140,8 +144,11 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Copyright */}
+        {/* LEGAL & CAC REGISTRATION – Nigerian CAMA 2020 Requirement */}
         <div className="mt-20 pt-10 border-t border-white/10 text-center">
+          <p className="text-pink-200 text-sm mb-2">
+            {companyName} — RC {rcNumber}
+          </p>
           <p className="text-pink-200 text-sm md:text-base font-medium">
             © 2026 <span className="text-white font-bold">SahmTicketHub</span> • Made with love in Kaduna, Nigeria
           </p>
